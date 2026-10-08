@@ -1,0 +1,23 @@
+{
+  "name": "meme",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mirror coding-agent sessions into one local SQLite file and continue them in any agent.",
+  "bin": {
+    "meme": "src/cli/main.ts"
+  },
+  "scripts": {
+    "dev": "bun src/cli/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun scripts/build.ts"
+  },
+  "dependencies": {
+    "@letta-ai/trajectory": "0.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}
