@@ -1,0 +1,237 @@
+import type { Database } from "bun:sqlite";
+import { callsOf, contentOf, promptText, type Rec } from "../model/record";
+import { firstLine } from "../model/title";
+import { callSummary, oneLine } from "../model/tools";
+import { endingOf, groupTurns, kindOf, mayBeRunning, type Ending, type Turn } from "../model/turns";
+import { displayPath } from "../platform/paths";
+import { predecessors, sessionRecords, uidsOf, type SessionRow } from "../store/queries";
+import { coloredLabel, type Style } from "./labels";
+import { ago, padStart, plural, size, span, trimmedLines, truncate, width, wrap } from "./text";
+
+export interface ShowModel {
+  session: SessionRow;
+  records: Rec[];
+  turns: Turn[];
+  /** Turn number → the session the turns before it came from (a continuation point). */
+  separators: Map<number, string>;
+  ending: Ending;
+}
+
+export function buildShow(db: Database, session: SessionRow): ShowModel {
+  const records = sessionRecords(db, session.id);
+  const { turns } = groupTurns(records);
+  return { session, records, turns, separators: continuationPoints(db, session.id, turns), ending: endingOf(records) };
+}
+
+/**
+ * Where the chain changes hands. B continued from A starts with A's records; a
+ * turn belongs to the oldest session that has its prompt.
+ */
+function continuationPoints(db: Database, id: string, turns: Turn[]): Map<number, string> {
+  const out = new Map<number, string>();
+  const chain = predecessors(db, id);
+  if (chain.length === 0) return out;
+  const sets = chain.map((p) => ({ id: p, uids: uidsOf(db, p) }));
+  const originOf = (t: Turn) => {
+    const uid = (t.prompt ?? t.records[0])?.uid;
+    return (uid && sets.find((s) => s.uids.has(uid))?.id) || id;
+  };
+  let prev: string | null = null;
+  for (const t of turns) {
+    const origin = originOf(t);
+    if (prev !== null && origin !== prev) out.set(t.n, prev);
+    prev = origin;
+  }
+  return out;
+}
+
+export interface ShowOptions {
+  st: Style;
+  /** Line width; lines are cut (plain) or wrapped (terminal) to it. */
+  width: number;
+  home: string;
+  now: number;
+  /** Tool results and injected messages in full, nothing cut. */
+  full: boolean;
+  /** Also injected messages and reasoning. */
+  all: boolean;
+  /** Wrap long lines instead of cutting them (the interactive viewer). */
+  wrap: boolean;
+}
+
+export function headerLines(m: ShowModel, o: ShowOptions): string[] {
+  const s = m.session;
+  const title = `${o.st.bold(s.title ?? "(untitled)")}  [${coloredLabel(o.st, s.agent, s.env)}]`;
+  const facts = [
+    s.project ? displayPath(s.project, o.home) : null,
+    s.branch,
+    span(s.started_at, s.ended_at, new Date(o.now)),
+    plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn"),
+    size(s.size),
+  ].filter(Boolean);
+  return [title, o.st.dim(facts.join(" · "))];
+}
+
+export function endingLine(m: ShowModel, o: ShowOptions): string {
+  const text: Record<Ending, string> = {
+    finished: "Last turn finished",
+    interrupted: "Last turn was interrupted",
+    unfinished: "Last turn did not finish (it stopped at a tool call or without a reply)",
+  };
+  let line = text[m.ending];
+  if (mayBeRunning(m.session.mtime, o.now)) line += `; the file changed ${ago(new Date(m.session.mtime!).toISOString(), o.now, true)}, it may still be running`;
+  return line;
+}
+
+export function numberWidth(m: ShowModel): number {
+  return String(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0).length;
+}
+
+export function separatorLine(fromId: string, o: ShowOptions): string {
+  return o.st.dim(`  ── continued from ${fromId.slice(0, 8)} ──`);
+}
+
+const RESULT_LINES = 3;
+
+function stepFacts(t: Turn): string[] {
+  const facts: string[] = [];
+  if (t.steps) facts.push(plural(t.steps, "step"));
+  if (t.commands) facts.push(plural(t.commands, "command"));
+  if (t.edited.length) facts.push(`edited ${plural(t.edited.length, "file")}`);
+  if (t.failed) facts.push(`${t.failed} failed`);
+  if (t.interrupted) facts.push("interrupted");
+  return facts;
+}
+
+function promptOf(t: Turn): string {
+  const c = t.prompt ? contentOf(t.prompt.body) : null;
+  return c === null ? "" : promptText(c);
+}
+
+/** One turn folded into at most three lines (list.md §6, style B). */
+export function foldedTurn(t: Turn, numW: number, o: ShowOptions, selected = false): string[] {
+  const indent = " ".repeat(2 + numW + 3);
+  const room = Math.max(10, o.width - indent.length);
+  const prompt = promptOf(t);
+  const head = firstLine(prompt);
+  const more = trimmedLines(prompt).length > 1 || width(head) > room;
+  const num = padStart(String(t.n), numW);
+  const out = [`  ${selected ? o.st.inverse(num) : o.st.bold(num)} ${o.st.cyan("❯")} ${truncate(head, room) + (more && width(head) <= room ? "…" : "")}`];
+  const facts = stepFacts(t);
+  if (facts.length) out.push(indent + o.st.dim("▸ " + facts.join(" · ")));
+  if (t.reply) {
+    const r = firstLine(t.reply);
+    const cut = truncate(r, room - 2);
+    const tail = cut === r && trimmedLines(t.reply).length > 1 ? "…" : "";
+    out.push(indent + "● " + cut + tail);
+  }
+  return out;
+}
+
+/** One turn in full, a line per step (list.md §6, style A). */
+export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = false): string[] {
+  const indent = " ".repeat(2 + numW + 3);
+  const out: string[] = [];
+  const room = Math.max(10, o.width - indent.length - 2);
+  // What people said is never cut (wrapped on screen); tool output is cut unless --full.
+  const prose = (s: string): string[] => (o.wrap ? wrap(s, room) : [s]);
+  const detail = (s: string): string[] => (o.full ? prose(s) : [truncate(s, room)]);
+  const push = (mark: string, text: string[], style: (s: string) => string = (s) => s, fit = detail) => {
+    text.forEach((line, i) => {
+      for (const [j, piece] of fit(line).entries()) out.push(indent + (i === 0 && j === 0 ? mark : "  ") + style(piece));
+    });
+  };
+  const limited = (text: string, max = RESULT_LINES): string[] => {
+    const all = trimmedLines(text);
+    if (o.full || all.length <= max) return all.length ? all : ["(empty)"];
+    return [...all.slice(0, max), o.st.dim(`… ${plural(all.length - max, "more line")}`)];
+  };
+
+  const results = new Map<string, Rec>();
+  for (const rec of t.records) if (rec.body.role === "tool") results.set(rec.body.tool_call_id, rec);
+  const shown = new Set<Rec>();
+
+  const num = padStart(String(t.n), numW);
+  for (const rec of t.records) {
+    if (shown.has(rec)) continue;
+    const body = rec.body;
+    const kind = kindOf(rec);
+    if (rec === t.prompt) {
+      const text = trimmedLines(promptOf(t));
+      const head = `  ${selected ? o.st.inverse(num) : o.st.bold(num)} ${o.st.cyan("❯")} `;
+      text.forEach((line, i) => {
+        for (const [j, piece] of prose(line).entries()) out.push((i === 0 && j === 0 ? head : indent) + piece);
+      });
+      continue;
+    }
+    if (kind === "injected") {
+      if (o.all) push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
+      else out.push(indent + o.st.dim("⚙ injected message (hidden)"));
+      continue;
+    }
+    if (kind === "interrupt") {
+      out.push(indent + o.st.yellow("⏹ " + oneLine(contentOf(body) ?? "")));
+      continue;
+    }
+    if (kind === "output" || kind === "prompt") {
+      push("⎿ ", limited(promptText(contentOf(body) ?? "")));
+      continue;
+    }
+    if (body.role === "reasoning") {
+      if (o.all) push(o.st.dim("∴ "), limited(body.content, o.full ? Infinity : 10), o.st.dim);
+      continue;
+    }
+    if (body.role === "assistant" && "tool_calls" in body) {
+      for (const call of callsOf(body)) {
+        const result = results.get(call.id);
+        const failed = result?.body.role === "tool" && result.body.ok === false;
+        const summary = callSummary(call);
+        const line = `${call.name}${summary ? "  " + summary : ""}`;
+        out.push(indent + (failed ? o.st.red("✗ ") : o.st.green("⏺ ")) + (o.full ? line : truncate(line, room)));
+        if (result) {
+          shown.add(result);
+          const text = contentOf(result.body) ?? "";
+          push(o.st.dim("⎿ "), limited(text), o.st.dim);
+        }
+      }
+      continue;
+    }
+    if (body.role === "assistant") {
+      push("● ", trimmedLines(body.content), undefined, prose);
+      continue;
+    }
+    if (body.role === "tool") {
+      push(o.st.dim("⎿ "), limited(body.content), o.st.dim);
+      continue;
+    }
+    if (body.role === "system" || body.role === "observation") {
+      push(o.st.dim("⚙ "), limited(body.content), o.st.dim);
+    }
+  }
+  return out;
+}
+
+/** The whole session as plain text: folded, or with the given turns expanded. */
+export function showText(m: ShowModel, o: ShowOptions, expand: "none" | "all" | number): string {
+  const out = headerLines(m, o);
+  const numW = numberWidth(m);
+  const id8 = m.session.id.slice(0, 8);
+  if (typeof expand === "number") {
+    const t = m.turns.find((x) => x.n === expand);
+    if (!t) throw new RangeError(`session ${id8} has ${plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn")}; there is no turn ${expand}`);
+    out.push(...expandedTurn(t, numW, o));
+    return out.join("\n") + "\n";
+  }
+  for (const t of m.turns) {
+    const from = m.separators.get(t.n);
+    if (from) out.push(separatorLine(from, o));
+    out.push(...(expand === "all" ? expandedTurn(t, numW, o) : foldedTurn(t, numW, o)));
+  }
+  if (m.turns.length === 0) out.push(o.st.dim("  (no conversation)"));
+  if (m.session.continued_in) out.push(o.st.dim(`  ── continued in ${m.session.continued_in.slice(0, 8)}: run \`meme show ${m.session.continued_in.slice(0, 8)}\` ──`));
+  out.push(o.st.dim(endingLine(m, o) + "."));
+  if (expand === "none" && m.turns.length) {
+    out.push(`Run \`meme show ${id8} <turn>\` to expand a turn, or \`meme show ${id8} --full\` for everything.`);
+  }
+  return out.join("\n") + "\n";
+}
