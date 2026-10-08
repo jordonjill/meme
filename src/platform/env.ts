@@ -1,0 +1,24 @@
+import { readFileSync } from "node:fs";
+
+export type Env = "win" | "wsl" | "mac" | "linux";
+
+const ENVS: readonly Env[] = ["win", "wsl", "mac", "linux"];
+
+export function isEnv(v: unknown): v is Env {
+  return typeof v === "string" && (ENVS as readonly string[]).includes(v);
+}
+
+/** Which system this meme runs on. `MEME_ENV` overrides detection (tests only). */
+export function detectEnv(): Env {
+  const forced = process.env.MEME_ENV;
+  if (isEnv(forced)) return forced;
+  if (process.platform === "win32") return "win";
+  if (process.platform === "darwin") return "mac";
+  if (process.platform === "linux") {
+    if (process.env.WSL_DISTRO_NAME) return "wsl";
+    try {
+      if (/microsoft/i.test(readFileSync("/proc/sys/kernel/osrelease", "utf8"))) return "wsl";
+    } catch {}
+  }
+  return "linux";
+}
