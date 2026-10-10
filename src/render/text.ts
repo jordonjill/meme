@@ -19,6 +19,34 @@ export function truncate(s: string, max: number): string {
   return out + "…";
 }
 
+/**
+ * A path cut to `max` columns in the middle: as many of its last folders as fit,
+ * then as much of its start as is left room for (at least `~`, `C:`, `/home`):
+ * `~\\AppData\\…\\bots\\cindy\\default-workspace`. The last folders tell
+ * projects apart. For lists only, never for a path to act on.
+ */
+export function shortPath(p: string, max: number): string {
+  if (width(p) <= max) return p;
+  const sep = p.includes("\\") && !p.includes("/") ? "\\" : "/";
+  const parts = p.split(/[\\/]/);
+  // "/home/u/x" splits into "", "home", …: keep "/home".
+  const headCount = parts[0] === "" ? 2 : 1;
+  let head = parts.slice(0, headCount).join(sep);
+  let tail: string[] = [];
+  for (let i = parts.length - 1; i >= headCount; i--) {
+    const next = [parts[i]!, ...tail];
+    if (width(`${head}${sep}…${sep}${next.join(sep)}`) > max) break;
+    tail = next;
+  }
+  if (!tail.length) return truncate(`${head}${sep}…${sep}${parts.at(-1)}`, max);
+  for (let h = headCount; h < parts.length - tail.length; h++) {
+    const longer = parts.slice(0, h + 1).join(sep);
+    if (width(`${longer}${sep}…${sep}${tail.join(sep)}`) > max) break;
+    head = longer;
+  }
+  return `${head}${sep}…${sep}${tail.join(sep)}`;
+}
+
 export function padEnd(s: string, cols: number): string {
   const w = width(s);
   return w >= cols ? s : s + " ".repeat(cols - w);
@@ -27,6 +55,20 @@ export function padEnd(s: string, cols: number): string {
 export function padStart(s: string, cols: number): string {
   const w = width(s);
   return w >= cols ? s : " ".repeat(cols - w) + s;
+}
+
+/** Join parts with `sep` into lines of at most `cols` columns, breaking only between parts. */
+export function wrapParts(parts: string[], sep: string, cols: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const p of parts) {
+    if (cur && width(cur + sep + p) > cols) {
+      out.push(cur);
+      cur = p;
+    } else cur = cur ? cur + sep + p : p;
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 /** Split one line into pieces of at most `cols` columns. */

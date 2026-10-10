@@ -38,12 +38,12 @@ export function makeStyle(color: boolean): Style {
   };
 }
 
-const AGENT_SHORT: Record<Agent, string> = { "claude-code": "CC", codex: "Codex" };
+const AGENT_SHORT: Record<Agent, string> = { "claude-code": "Claude", codex: "Codex" };
 const ENV_SHORT: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
 /** One color per agent (256-color palette): Claude orange, Codex blue. */
 const AGENT_COLOR: Record<Agent, number> = { "claude-code": 209, codex: 75 };
 
-/** The source label, e.g. `CC·WSL`. */
+/** The source label, e.g. `Claude·WSL`. */
 export function label(agent: Agent, env: Env): string {
   return `${AGENT_SHORT[agent] ?? agent}·${ENV_SHORT[env] ?? env}`;
 }

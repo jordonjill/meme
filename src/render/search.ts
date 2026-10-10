@@ -10,6 +10,10 @@ export interface SearchTextOptions {
   all: boolean;
   /** Hits listed per session before `… N more`. */
   perSession: number;
+  /** First line: the current project has no sessions, so all projects were searched. */
+  notice?: string;
+  /** Only the current project (`where`) was searched: these are the hits in the others (plan §3.3). */
+  elsewhere?: { groups: HitGroup[]; where: string };
 }
 
 const ROLE: Record<string, string> = { user: "You:", assistant: "AI:", tool: "Tool:", system: "Sys:", observation: "Sys:" };
@@ -55,11 +59,16 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
   const listed = groups.reduce((n, g) => n + listedOf(g).length, 0);
   const calls = count((h) => h.call);
   const output = count((h) => h.toolOutput);
-  if (listed + calls + output === 0) return "No matches.\n";
+  const away = o.elsewhere ? elsewhereText(o.elsewhere.groups, listedOf) : null;
+  const top = o.notice ? [o.notice] : [];
+  if (listed + calls + output === 0) {
+    const none = away && o.elsewhere ? `No matches in ${o.elsewhere.where}; ${away}` : "No matches.";
+    return [...top, none].join("\n") + "\n";
+  }
   const shownGroups = groups.filter((g) => listedOf(g).length > 0);
   const extra = [calls ? `+${calls} in tool calls` : "", output ? `+${output} in tool output` : ""].filter(Boolean).join(", ");
   const hidden = !o.all && extra ? ` (${extra}; use --all)` : "";
-  const out = [listed ? `${plural(listed, "match", "matches")} in ${plural(shownGroups.length, "session")}${hidden}` : `No matches in what was said${hidden}`];
+  const out = [...top, listed ? `${plural(listed, "match", "matches")} in ${plural(shownGroups.length, "session")}${hidden}` : `No matches in what was said${hidden}`];
 
   for (const g of shownGroups) {
     const hits = listedOf(g);
@@ -82,5 +91,14 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
         : `  → meme show ${s.short} ${firstTurn}`,
     );
   }
+  if (away) out.push("", `+${away}`);
   return out.join("\n") + "\n";
+}
+
+/** What other projects have, counted the way the list counts: what was said, or everything with --all. */
+function elsewhereText(groups: HitGroup[], listedOf: (g: HitGroup) => Hit[]): string | null {
+  const listed = groups.reduce((n, g) => n + listedOf(g).length, 0);
+  if (listed) return `${plural(listed, "match", "matches")} in ${plural(groups.filter((g) => listedOf(g).length).length, "session")} in other projects (use -a)`;
+  const tools = groups.reduce((n, g) => n + g.hits.length, 0);
+  return tools ? `${tools} in tool calls and tool output in other projects (use -a --all)` : null;
 }

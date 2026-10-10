@@ -3,7 +3,10 @@ import type { Env } from "../platform/env";
 import { displayPath, samePath } from "../platform/paths";
 import type { SessionRow } from "../store/queries";
 import { coloredLabel, label, type Style } from "./labels";
-import { ago, padEnd, plural, size, truncate, width } from "./text";
+import { ago, padEnd, plural, shortPath, size, truncate, width } from "./text";
+
+/** The project column of a list across projects: longer paths lose their middle. */
+const PROJECT_COLS = 40;
 
 export interface ListFilter {
   /** All projects instead of the current one. */
@@ -82,7 +85,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     ago: ago(r.ended_at, o.now),
     branch: truncate(r.branch ?? "", 20),
     size: size(r.size),
-    project: filter.all ? displayPath(r.project ?? "", o.home) : "",
+    project: filter.all ? shortPath(displayPath(r.project ?? "", o.home), PROJECT_COLS) : "",
     title: r.title ?? "(untitled)",
     archived: r.archived === 1,
   }));
@@ -92,11 +95,11 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
   const wAgo = colW("ago");
   const wBranch = colW("branch");
   const wSize = colW("size");
-  const wProject = Math.min(colW("project"), 40);
+  const wProject = colW("project");
   const out = [fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`];
   for (const c of cells) {
     let line = `  ${padEnd(c.id, wId)}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
-    if (filter.all) line += padEnd(truncate(c.project, wProject), wProject) + "  ";
+    if (filter.all) line += padEnd(c.project, wProject) + "  ";
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
     out.push(line + truncate(c.title, Math.max(20, o.width - used - (c.archived ? 11 : 0))) + (c.archived ? o.st.dim(" (archived)") : ""));
   }
@@ -127,17 +130,17 @@ export function numberedText({ rows, filter, fellBack, others }: Listing, o: Num
     label: label(r.agent, r.env),
     labelColored: coloredLabel(o.st, r.agent, r.env),
     ago: ago(r.ended_at, o.now),
-    project: filter.all ? displayPath(r.project ?? "", o.home) : "",
+    project: filter.all ? shortPath(displayPath(r.project ?? "", o.home), PROJECT_COLS) : "",
     title: truncate(r.title ?? "(untitled)", 48) + (r.archived ? " (archived)" : ""),
     id: r.short,
   }));
   const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));
   const [wN, wLabel, wAgo, wTitle] = [colW("n"), colW("label"), colW("ago"), colW("title")];
-  const wProject = Math.min(colW("project"), 40);
+  const wProject = colW("project");
   const out = [o.heading ?? (fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`)];
   for (const c of cells) {
     let line = `  ${o.numbered ? c.n.padStart(wN) + "  " : ""}${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  `;
-    if (filter.all) line += padEnd(truncate(c.project, wProject), wProject) + "  ";
+    if (filter.all) line += padEnd(c.project, wProject) + "  ";
     out.push(line + padEnd(c.title, wTitle) + "  " + c.id);
   }
   const hint = othersHint(others, o.allHint);
