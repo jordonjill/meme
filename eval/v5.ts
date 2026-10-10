@@ -16,7 +16,7 @@ import { createContext } from "../src/cli/context";
 import { buildHandoff } from "../src/handoff/build";
 import { estimateTokens } from "../src/handoff/budget";
 import { callsOf, contentOf, promptText } from "../src/model/record";
-import { editedFile } from "../src/model/tools";
+import { editedFiles } from "../src/model/tools";
 import { groupTurns } from "../src/model/turns";
 import { resolveSession, sessionRecords } from "../src/store/queries";
 
@@ -56,8 +56,7 @@ for (const c of cases) {
   const next = turns.find((t) => t.n === k + 1);
   const edited = new Set<string>();
   for (const t of turns.filter((t) => t.n <= k)) for (const r of t.records) for (const call of callsOf(r.body)) {
-    const f = editedFile(call);
-    if (f) edited.add(f);
+    for (const f of editedFiles(call)) edited.add(f);
   }
   const truth = {
     session: session.id,

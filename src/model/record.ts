@@ -43,5 +43,13 @@ export function searchText(body: Body): string | null {
 /** A user prompt as people read it: `! cmd` for shell input typed with `!`. */
 export function promptText(content: string): string {
   const m = /^\s*<bash-input>([\s\S]*?)<\/bash-input>\s*$/.exec(content);
-  return m ? "! " + m[1] : content;
+  if (m) return "! " + m[1];
+  const codex = /^\s*<user_shell_command>\s*<command>\n?([\s\S]*?)\n?<\/command>/.exec(content);
+  return codex ? "! " + codex[1] : content;
+}
+
+/** The output of a `!` command in Codex, which it records together with the command. */
+export function shellOutput(content: string): string | null {
+  const m = /<result>\n?([\s\S]*?)\n?<\/result>\s*<\/user_shell_command>\s*$/.exec(content);
+  return m ? m[1]! : null;
 }

@@ -1,6 +1,6 @@
 import { userKind, type UserKind } from "./injected";
 import { callsOf, contentOf, type Rec } from "./record";
-import { editedFile, isCommandTool } from "./tools";
+import { commandOf, editedFiles, resultFailed } from "./tools";
 
 /**
  * Turn numbers (plan §4.6.4): each real user prompt starts the next turn.
@@ -60,14 +60,13 @@ function summarize(t: Turn): void {
       const calls = callsOf(rec.body);
       for (const call of calls) {
         t.steps++;
-        if (isCommandTool(call.name)) t.commands++;
-        const f = editedFile(call);
-        if (f) edited.add(f);
+        if (commandOf(call) !== null) t.commands++;
+        for (const f of editedFiles(call)) edited.add(f);
       }
       const text = contentOf(rec.body);
       if (text && text.trim()) t.reply = text;
     }
-    if (rec.body.role === "tool" && rec.body.ok === false) t.failed++;
+    if (rec.body.role === "tool" && resultFailed(rec.body.ok, rec.body.content)) t.failed++;
   }
   t.edited = [...edited];
 }
@@ -95,6 +94,12 @@ export function endingOf(records: Rec[]): Ending {
 
 /** A session whose file changed in the last few minutes may still be running. */
 const RUNNING_WINDOW_MS = 5 * 60_000;
+
+/** When a session was last active: its last record's time, which (unlike the file's mtime) agents do not bump by housekeeping. */
+export function lastActive(endedAt: string | null): number | null {
+  const t = endedAt ? Date.parse(endedAt) : NaN;
+  return Number.isNaN(t) ? null : t;
+}
 
 export function mayBeRunning(mtimeMs: number | null, now = Date.now()): boolean {
   if (mtimeMs === null) return false;

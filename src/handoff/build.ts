@@ -1,7 +1,7 @@
 import type { Rec } from "../model/record";
 import { callsOf, contentOf, promptText } from "../model/record";
-import { callSummary, editedFile, isCommandTool, oneLine, type ParsedCall } from "../model/tools";
-import { endingOf, groupTurns, mayBeRunning, type Turn } from "../model/turns";
+import { commandOf, describeCall, editedFiles as filesOfCall, exitCodeOf, oneLine, resultFailed, resultText, type ParsedCall } from "../model/tools";
+import { endingOf, groupTurns, lastActive, mayBeRunning, type Turn } from "../model/turns";
 import type { Env } from "../platform/env";
 import { isWindowsPath, winToWsl } from "../platform/paths";
 import { label } from "../render/labels";
@@ -66,9 +66,10 @@ function stepLines(t: Turn): string[] {
     if (rec.body.role === "user" && /^\s*\[Request interrupted by user/.test(contentOf(rec.body) ?? "")) out.push("- ⏹ Interrupted by the user");
     for (const call of callsOf(rec.body)) {
       const result = resultFor(t, call);
-      const failed = result?.body.role === "tool" && result.body.ok === false;
-      const first = result ? (trimmedLines(contentOf(result.body) ?? "").find((l) => l.trim()) ?? "(empty)") : "(no result)";
-      out.push(`- ${failed ? "✗ " : ""}${call.name}(${truncate(oneLine(callSummary(call)), 120)}) → ${truncate(oneLine(first), 100)}`);
+      const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
+      const first = result ? (trimmedLines(resultText(contentOf(result.body) ?? "")).find((l) => l.trim()) ?? "(empty)") : "(no result)";
+      const { name, summary } = describeCall(call);
+      out.push(`- ${failed ? "✗ " : ""}${name}(${truncate(oneLine(summary), 120)}) → ${truncate(oneLine(first), 100)}`);
     }
   }
   return out;
@@ -98,8 +99,7 @@ function editedFiles(turns: Turn[]): string[] {
   for (const t of turns) {
     for (const rec of t.records) {
       for (const call of callsOf(rec.body)) {
-        const f = editedFile(call);
-        if (f) (files.get(f) ?? files.set(f, new Set()).get(f)!).add(t.n);
+        for (const f of filesOfCall(call)) (files.get(f) ?? files.set(f, new Set()).get(f)!).add(t.n);
       }
     }
   }
@@ -114,12 +114,14 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
     const t = turns[i]!;
     const calls = t.records.flatMap((r) => callsOf(r.body)).reverse();
     for (const call of calls) {
-      const command = typeof call.args.command === "string" ? call.args.command : "";
-      if (!isCommandTool(call.name) || !VERIFY.test(command)) continue;
+      const command = commandOf(call);
+      if (!command || !VERIFY.test(command)) continue;
       const result = resultFor(t, call);
-      const output = result ? (contentOf(result.body) ?? "") : "";
-      const exit = /^\s*Exit code (\d+)/m.exec(output)?.[1];
-      const failed = (result?.body.role === "tool" && result.body.ok === false) || (exit !== undefined && exit !== "0");
+      const raw = result ? (contentOf(result.body) ?? "") : "";
+      const output = resultText(raw);
+      const code = exitCodeOf(raw);
+      const exit = code === null ? undefined : String(code);
+      const failed = result?.body.role === "tool" && resultFailed(result.body.ok, raw);
       const status = !result ? "no result" : failed ? `failed${exit ? ` (exit code ${exit})` : ""}` : "passed";
       const tail = trimmedLines(output).slice(-OUTPUT_TAIL);
       return {
@@ -153,8 +155,9 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     `last turn: ${ending}`,
   ].filter(Boolean);
   const head = [`# Handoff: ${s.title ?? "(untitled)"}`, `Source: ${facts.join(" · ")}`];
-  if (mayBeRunning(s.mtime, input.now)) {
-    head.push(`Warning: the session's file changed ${ago(new Date(s.mtime!).toISOString(), input.now, true)}; it may still be running in another window. Check with the user before you start.`);
+  const active = lastActive(s.ended_at);
+  if (mayBeRunning(active, input.now)) {
+    head.push(`Warning: the session was active ${ago(new Date(active!).toISOString(), input.now, true)}; it may still be running in another window. Check with the user before you start.`);
   }
   if (input.env === "wsl" && s.env === "win") {
     head.push("Note: the repository is on the Windows side. In WSL, run git with `-c core.autocrlf=true -c core.filemode=false`, or every file looks modified.");
