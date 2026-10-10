@@ -31,7 +31,7 @@ export async function show(argv: string[]): Promise<number> {
   if (positionals.length === 0) throw new UsageError("show needs a session id; run `meme ls` to find one");
   if (positionals.length > 2) throw new UsageError(`too many arguments: ${positionals.slice(2).join(" ")}`);
   const turn = intOption(positionals[1], "turn", 1);
-  const ctx = createContext();
+  const ctx = await createContext();
   const model = buildShow(ctx.store.db, resolveSession(ctx.store.db, positionals[0]!));
   const out = output(Boolean(values.plain));
   const opts = { st: out.st, width: out.width, home: ctx.platform.home, now: ctx.now, full: Boolean(values.full), all: Boolean(values.all), wrap: false };

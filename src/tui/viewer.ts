@@ -6,7 +6,8 @@ import {
   type ShowModel, type ShowOptions,
 } from "../render/show";
 import type { Key } from "./keys";
-import { Tui, type View } from "./screen";
+import { width, wrapParts } from "../render/text";
+import { Tui, wrapLine, type View } from "./screen";
 
 interface Layout {
   lines: string[];
@@ -61,12 +62,14 @@ export class SessionView implements View {
     return { ...this.base, width: this.cols, wrap: true };
   }
 
-  private headerHeight(): number {
-    return 3;
+  /** The header, wrapped to the window rather than cut at its edge. */
+  private head(o: ShowOptions): string[] {
+    return [...headerLines(this.m, o).flatMap((l) => wrapLine(l, this.cols - 1, " ")), o.st.dim("─".repeat(this.cols))];
   }
 
   private bodyRows(): number {
-    return Math.max(1, this.rows - this.headerHeight() - 1);
+    const o = this.options();
+    return Math.max(1, this.rows - this.head(o).length - this.footer(o).length);
   }
 
   private layout(): Layout {
@@ -85,7 +88,7 @@ export class SessionView implements View {
     if (this.m.turns.length === 0) lines.push(o.st.dim("  (no conversation)"));
     lines.push("");
     if (this.m.continuedIn) lines.push(o.st.dim(`  ── continued in ${this.m.continuedIn} ──`));
-    lines.push(o.st.dim("  " + endingLine(this.m, o)));
+    lines.push(...wrapLine(o.st.dim("  " + endingLine(this.m, o)), this.cols - 1, "  "));
     return { lines, spans };
   }
 
@@ -114,17 +117,24 @@ export class SessionView implements View {
       l = this.layout();
     }
     this.top = Math.max(0, Math.min(this.top, this.maxTop(l)));
-    const out = [...headerLines(this.m, o), o.st.dim("─".repeat(cols))];
+    const out = this.head(o);
     out.push(...l.lines.slice(this.top, this.top + this.bodyRows()));
-    while (out.length < rows - 1) out.push("");
-    out.push(this.footer(o));
+    const footer = this.footer(o);
+    while (out.length < rows - footer.length) out.push("");
+    out.push(...footer);
     return out;
   }
 
-  private footer(o: ShowOptions): string {
-    if (this.query !== null) return `/${this.query}▏`;
-    if (this.message) return o.st.yellow(this.message);
-    return o.st.dim("↑↓ select · Enter expand · / search · n next match · PgUp/PgDn scroll · Esc back");
+  /** While typing a search, the terminal's cursor is at its end (for input methods). */
+  cursor(): { row: number; col: number } | null {
+    return this.query === null ? null : { row: this.rows - 1, col: 1 + width(this.query) };
+  }
+
+  private footer(o: ShowOptions): string[] {
+    if (this.query !== null) return [`/${this.query}`];
+    if (this.message) return wrapLine(o.st.yellow(this.message), this.cols - 1);
+    const keys = ["↑↓ select", "Enter expand", "/ search", "n next match", "PgUp/PgDn scroll", "Esc back"];
+    return wrapParts(keys, " · ", this.cols - 1).map((l) => o.st.dim(l));
   }
 
   key(k: Key): void {

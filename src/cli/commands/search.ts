@@ -1,4 +1,4 @@
-import { samePath } from "../../platform/paths";
+import { displayPath, samePath } from "../../platform/paths";
 import { searchText } from "../../render/search";
 import { allSessions, ancestors, resolveSession } from "../../store/queries";
 import { compile, groupByChain, PatternError, search as runSearch } from "../../store/search";
@@ -15,7 +15,8 @@ searched, and text copied into a continued session counts once.
   -F, --fixed-strings   the pattern is plain text
   -i, --ignore-case     ignore case
   -C, --context <n>     show n lines around each match
-  -a                    all projects (default: the current project)
+  -a                    all projects (default: the current project, or all of
+                        them when it has no sessions; matches elsewhere are counted)
   --session <session>   only this session (and the sessions it continued)
   --all                 also list matches in tool calls and tool output (use it to
                         find commands, errors and code), and every match
@@ -46,20 +47,38 @@ export async function search(argv: string[]): Promise<number> {
     if (err instanceof PatternError) throw new UsageError(err.message);
     throw err;
   }
-  const ctx = createContext();
+  const ctx = await createContext();
   const db = ctx.store.db;
   const rows = allSessions(db);
+  // The current project by default, like `meme ls` (plan §3.3): all projects when it
+  // has no sessions; when it has, the matches in other projects are counted too.
+  const where = displayPath(ctx.project, ctx.platform.home);
   let scope: string[] | null;
+  let notice: string | undefined;
+  let mine = false;
   if (values.session) {
     const s = resolveSession(db, values.session);
     scope = [...ancestors(db, s.id).map((a) => a.id), s.id];
   } else if (values.a) scope = null;
-  else scope = rows.filter((r) => r.project !== null && samePath(r.project, ctx.project)).map((r) => r.id);
+  else {
+    scope = rows.filter((r) => r.project !== null && samePath(r.project, ctx.project)).map((r) => r.id);
+    mine = scope.length > 0;
+    if (!mine) {
+      scope = null;
+      notice = `No sessions in ${where} — searching all projects`;
+    }
+  }
 
-  const hits = runSearch(db, { ...query, context, sessions: scope });
-  const groups = groupByChain(db, hits, new Map(rows.map((r) => [r.id, r])));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const groups = groupByChain(db, runSearch(db, { ...query, context, sessions: scope }), byId);
+  let elsewhere: { groups: ReturnType<typeof groupByChain>; where: string } | undefined;
+  if (mine) {
+    const here = new Set(scope);
+    const others = runSearch(db, { ...query, context: 0, sessions: null }).filter((h) => !here.has(h.session));
+    if (others.length) elsewhere = { groups: groupByChain(db, others, byId), where };
+  }
   const out = output(Boolean(values.plain));
   const all = Boolean(values.all);
-  write(searchText(groups, { st: out.st, width: out.width, now: ctx.now, all, perSession: all || values.session ? Infinity : 3 }));
+  write(searchText(groups, { st: out.st, width: out.width, now: ctx.now, all, perSession: all || values.session ? Infinity : 3, notice, elsewhere }));
   return 0;
 }

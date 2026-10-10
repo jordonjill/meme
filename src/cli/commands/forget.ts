@@ -8,7 +8,7 @@ import { displayPath } from "../../platform/paths";
 import { commandLine } from "../../platform/spawn";
 import { coloredLabel } from "../../render/labels";
 import { ago, padEnd } from "../../render/text";
-import { ancestors, getSession, resolveSession, type SessionRow } from "../../store/queries";
+import { ancestors, getSession, resolveSession, sessionFiles, type SessionRow } from "../../store/queries";
 import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
@@ -16,10 +16,10 @@ import { createContext, insideAgent, output, write, type Context } from "../cont
 
 export const forgetHelp = `Usage: meme forget [<session>...] [--yes] [--chain]
 
-Delete sessions for good: from the agent that made them, then from meme's
+Permanently delete sessions: from the agent that made them, then from meme's
 mirror. Name each session by its id (any unique start of it), or, in a
 terminal, leave the ids out and pick the session from the list. meme lists
-everything it will delete and asks you to type yes.
+everything it will delete and asks before deleting.
 
   --yes     do not ask; needed inside an agent, and only when the user has
             explicitly asked to delete these sessions
@@ -35,10 +35,6 @@ interface Item {
   session: SessionRow;
   plan: ForgetPlan;
   files: string[];
-}
-
-function filesOf(ctx: Context, id: string): string[] {
-  return ctx.store.db.query<{ path: string }, [string]>("SELECT path FROM files WHERE session = ? ORDER BY path").all(id).map((r) => r.path);
 }
 
 /** The sessions a continued session came from, nearest first (Claude Code's continued-in chain). */
@@ -64,6 +60,11 @@ function ask(question: string): string {
   return (prompt(question) ?? "").trim().toLowerCase();
 }
 
+/** y/N: only y or yes deletes; Enter alone does not (the list's Enter must not run on into a delete). */
+function agreed(question: string): boolean {
+  return ["y", "yes"].includes(ask(`${question} [y/N] `));
+}
+
 export async function forget(argv: string[]): Promise<number> {
   const { values, positionals } = parse(argv, {
     yes: { type: "boolean" },
@@ -81,7 +82,7 @@ export async function forget(argv: string[]): Promise<number> {
     if (!/^[0-9a-f][0-9a-f-]{3,}$/i.test(ref)) throw new UsageError(`forget takes session ids (at least 4 characters), not "${ref}"`);
   }
 
-  const ctx = createContext();
+  const ctx = await createContext();
   if (ctx.store.readonly) throw new CommandError("nothing can be deleted here: meme is in read-only mode (inside a sandbox?)");
   const out = output(false);
   const st = out.st;
@@ -107,13 +108,13 @@ export async function forget(argv: string[]): Promise<number> {
     const names = earlier.map((e) => e.short).join(", ");
     write(`${s.short} was continued from ${names}. ${names} still ${earlier.length === 1 ? "holds" : "hold"} the first part of this conversation; if only ${s.short} is deleted, ${names} ${earlier.length === 1 ? "shows" : "show"} up in the list again.\n`);
     let include = Boolean(values.chain);
-    if (!include && interactive) include = ["y", "yes"].includes(ask(`Also delete ${names}? [y/N] `));
+    if (!include && interactive) include = agreed(`Also delete ${names}?`);
     if (include) for (const e of earlier) if (!ctx.current.has(e.id)) chosen.push(e);
     write("\n");
   }
 
   const items: Item[] = chosen.map((session) => {
-    const files = filesOf(ctx, session.id);
+    const files = sessionFiles(ctx.store.db, session.id);
     const adapter = adapterFor(session.agent);
     let plan: ForgetPlan = adapter
       ? adapter.forgetPlan({ id: session.id, env: session.env, files }, ctx.platform)
@@ -140,7 +141,7 @@ export async function forget(argv: string[]): Promise<number> {
   items.sort((a, b) => order(a) - order(b));
 
   // Everything that will happen, before anything does.
-  const lines = ["meme forget deletes these sessions for good:"];
+  const lines = [`meme forget will permanently delete ${items.length === 1 ? "this session" : "these sessions"}:`];
   for (const { session: s, plan, files } of items) {
     const active = lastActive(s.ended_at);
     lines.push("", `  ${st.bold(s.title ?? "(untitled)")}  [${coloredLabel(st, s.agent, s.env)}]  ${s.short}  last active ${active ? ago(new Date(active).toISOString(), ctx.now, true) : "at an unknown time"}`);
@@ -154,7 +155,7 @@ export async function forget(argv: string[]): Promise<number> {
       if (step.kind === "remove") lines.push(`    ${padEnd(displayPath(step.path, home) + (step.dir ? "/" : ""), w)}  ${st.dim(step.what)}`);
       else {
         const program = path.basename(step.cmd[0]!).replace(/\.(exe|cmd|bat)$/i, "");
-        lines.push(`    runs: ${[program, ...step.cmd.slice(1)].join(" ")}`, `    ${st.dim(step.what + ":")}`);
+        lines.push(`    runs: ${step.shown ?? [program, ...step.cmd.slice(1)].join(" ")}`, `    ${st.dim(step.what + ":")}`);
         for (const f of files) lines.push(`      ${displayPath(f, home)}`);
       }
     }
@@ -185,11 +186,11 @@ export async function forget(argv: string[]): Promise<number> {
       return 1;
     }
   } else {
-    if (ask("Type yes to delete them: ") !== "yes") {
+    if (!agreed(deletable.length === 1 ? "Delete this session?" : `Delete these ${deletable.length} sessions?`)) {
       write("Nothing deleted.\n");
       return 1;
     }
-    if (warnings.length && ask("There are warnings above. Type yes again to delete anyway: ") !== "yes") {
+    if (warnings.length && !agreed("There are warnings above. Delete anyway?")) {
       write("Nothing deleted.\n");
       return 1;
     }
@@ -205,8 +206,8 @@ export async function forget(argv: string[]): Promise<number> {
         if (step.kind === "remove") (step.dir ? removeDir : removeFile)(step.path);
         else {
           const line = commandLine(step.cmd[0]!, step.cmd.slice(1));
-          const p = Bun.spawnSync(line, { stdout: "pipe", stderr: "pipe", windowsVerbatimArguments: line[0] === "cmd.exe" });
-          if (p.exitCode !== 0) throw new Error(`\`${step.cmd.slice(1).join(" ")}\` failed: ${(p.stderr.toString() || p.stdout.toString()).trim().split("\n")[0]}`);
+          const p = Bun.spawnSync(line, { cwd: step.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsVerbatimArguments: line[0] === "cmd.exe" });
+          if (p.exitCode !== 0) throw new Error(`\`${step.shown ?? step.cmd.slice(1).join(" ")}\` failed: ${(p.stderr.toString() || p.stdout.toString()).trim().split("\n")[0]}`);
         }
       }
       const left = plan.gone.filter((f) => existsSync(f));

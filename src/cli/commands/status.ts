@@ -20,7 +20,7 @@ export async function status(argv: string[]): Promise<number> {
     return 0;
   }
   if (positionals.length) throw new UsageError(`status takes no arguments, got ${positionals[0]}`);
-  const ctx = createContext();
+  const ctx = await createContext();
   const { db, file, readonly, memory } = ctx.store;
   const home = ctx.platform.home;
   let dbSize = "";

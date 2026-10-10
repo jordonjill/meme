@@ -1,13 +1,15 @@
 import { existsSync } from "node:fs";
 import { ADAPTERS, launchable } from "../../adapters";
+import type { Adapter } from "../../adapters/types";
 import { CODEX_BYTES, LIMITS } from "../../handoff/budget";
 import { buildHandoff } from "../../handoff/build";
 import { displayPath } from "../../platform/paths";
 import { runAttached } from "../../platform/spawn";
+import { findInWsl, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
 import { agentName } from "../../render/labels";
 import { listing, numberedText, type ListFilter, type Listing } from "../../render/ls";
-import { allSessions, getSession, sessionRecords, type SessionRow } from "../../store/queries";
-import { chooseHandover } from "../../tui/handover";
+import { allSessions, getSession, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
+import { chooseHandover, type AgentChoice, type Launchable } from "../../tui/handover";
 import { CommandError, parse, UsageError } from "../args";
 import { createContext, output, write, type Context } from "../context";
 import { isListNumber, resolveTarget } from "../target";
@@ -65,6 +67,30 @@ function chainHead(ctx: Context, picked: SessionRow): SessionRow {
   return cur;
 }
 
+/** Windows reading a WSL session: the distribution its files are in (plan step 5). */
+function wslOf(ctx: Context, s: SessionRow): WslPlace | null {
+  if (ctx.platform.env !== "win" || s.env !== "wsl") return null;
+  const file = sessionFiles(ctx.store.db, s.id)[0];
+  return file ? wslPlace(ctx.platform, file) : null;
+}
+
+/**
+ * A WSL session pushed from Windows continues in WSL: the agents and meme are
+ * looked up there, as the user's shell finds them; the agent there fetches the
+ * handoff with WSL's meme.
+ */
+function agentsInWsl(ctx: Context, s: SessionRow, place: WslPlace, wanted: readonly Adapter[]): AgentChoice {
+  const dir = s.project;
+  if (!dir) return { problem: `the session's project directory is unknown` };
+  const there = `open WSL with \`wsl -d ${place.distro} --cd ${dir}\` and run \`meme continue ${s.short}\``;
+  const r = findInWsl(ctx.platform, place, dir, ["meme", ...wanted.map((a) => a.launch("").cmd)]);
+  if (!r.ok) return { problem: `could not start anything in WSL (${place.distro}): ${r.error}. To continue there yourself, ${there}` };
+  if (!r.found.meme) return { problem: `meme is not installed in WSL (${place.distro}), and the agent there needs it to fetch the handoff. Install it there, then ${there}` };
+  const agents: Launchable[] = wanted.filter((a) => r.found[a.launch("").cmd]).map((a) => ({ adapter: a, exe: r.found[a.launch("").cmd]!, wsl: place }));
+  if (!agents.length) return { problem: `no agent to continue in, in WSL (${place.distro}): ${wanted.map((a) => `\`${a.launch("").cmd}\``).join(", ")} not found there` };
+  return { agents };
+}
+
 export async function continueSession(argv: string[]): Promise<number> {
   const { values, positionals } = parse(argv, {
     in: { type: "string" },
@@ -88,7 +114,7 @@ export async function continueSession(argv: string[]): Promise<number> {
     throw new UsageError("--in starts an agent, which needs a terminal; here `meme continue <target>` prints the handoff instead");
   }
 
-  const ctx = createContext();
+  const ctx = await createContext();
   const db = ctx.store.db;
   const rows = allSessions(db);
   const filter: ListFilter = { all: Boolean(values.all), project: ctx.project, exclude: ctx.current };
@@ -118,7 +144,7 @@ export async function continueSession(argv: string[]): Promise<number> {
     if (picked) {
       // Codex cuts command output at about 40,000 bytes; keep the handoff under that there.
       const limits = ctx.platform.vars.CODEX_THREAD_ID ? { ...LIMITS, bytes: CODEX_BYTES } : LIMITS;
-      const handoff = buildHandoff({ session: picked, records: sessionRecords(db, picked.id), env: ctx.platform.env, now: ctx.now }, { fresh: Boolean(values.fresh), limits });
+      const handoff = buildHandoff({ session: picked, records: sessionRecords(db, picked.id), env: ctx.platform.env, wsl: wslOf(ctx, picked), now: ctx.now }, { fresh: Boolean(values.fresh), limits });
       write(handoff.text);
       return 0;
     }
@@ -142,23 +168,34 @@ export async function continueSession(argv: string[]): Promise<number> {
 
   // At a terminal: choose what is missing, then start the agent and let it fetch the handoff.
   if (problem) throw new CommandError(problem);
-  const agents = launchable(ctx.platform).filter((a) => !target || a.adapter.agent === target);
-  if (!agents.length) {
-    const names = (target ? ADAPTERS.filter((a) => a.agent === target) : ADAPTERS).map((a) => `${agentName(a.agent)} (\`${a.launch("").cmd}\`)`);
-    throw new CommandError(`no agent to continue in: ${names.join(", ")} not found on PATH`);
-  }
-  let agent = target ? agents[0]! : null;
+  const wanted = ADAPTERS.filter((a) => !target || a.agent === target);
+  const local = launchable(ctx.platform).filter((a) => !target || a.adapter.agent === target);
+  const noAgent = `no agent to continue in: ${wanted.map((a) => `${agentName(a.agent)} (\`${a.launch("").cmd}\`)`).join(", ")} not found on PATH`;
+  // A WSL session seen from Windows may still have agents in WSL.
+  if (!local.length && !ctx.platform.wsl.length && !(picked && wslOf(ctx, picked))) throw new CommandError(noAgent);
+  const agentsFor = (s: SessionRow): AgentChoice => {
+    const place = wslOf(ctx, s);
+    if (place) return agentsInWsl(ctx, s, place, wanted);
+    return local.length ? { agents: local } : { problem: noAgent };
+  };
   let session = picked;
-  if (!session || !agent) {
+  let agent: Launchable | null = null;
+  if (session && target) {
+    const c = agentsFor(session);
+    if ("problem" in c) throw new CommandError(c.problem);
+    agent = c.agents[0]!;
+  } else {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw new UsageError("choosing needs a terminal; name the session and add --in claude");
     const pickFrom = choices ? { ...filter, all: true, only: new Set(choices.rows.map((r) => r.id)) } : filter;
-    const chosen = await chooseHandover(ctx, out, pickFrom, session, agents, agent);
+    const chosen = await chooseHandover(ctx, out, pickFrom, session, agentsFor, Boolean(target));
     if (!chosen) return 0;
+    if ("problem" in chosen) throw new CommandError(chosen.problem);
     ({ session, agent } = chosen);
   }
 
   const dir = session.project;
-  if (!dir || !existsSync(dir)) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
+  // In WSL the directory was checked when wsl.exe started there to look for the agent.
+  if (!dir || (!agent.wsl && !existsSync(dir))) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
   const sid = session.short;
   const command = `meme continue ${sid}${values.fresh ? " --fresh" : ""}`;
   const message =
@@ -167,7 +204,10 @@ export async function continueSession(argv: string[]): Promise<number> {
         `Continue an earlier session: run \`${command}\` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.`
       : `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`;
   const { args } = agent.adapter.launch(message);
-  write(`Continuing ${sid} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${displayPath(dir, ctx.platform.home)}\n`);
+  const where = agent.wsl ? `${dir} (WSL: ${agent.wsl.distro})` : displayPath(dir, ctx.platform.home);
+  write(`Continuing ${sid} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${where}\n`);
   ctx.store.db.close();
+  // wsl.exe starts in a Windows directory and changes to the project itself.
+  if (agent.wsl) return await runAttached(wslCommand(wslExe(ctx.platform)!, agent.wsl.distro, dir, [agent.exe, ...args]), ctx.platform.home);
   return await runAttached([agent.exe, ...args], dir);
 }

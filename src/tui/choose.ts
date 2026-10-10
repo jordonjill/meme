@@ -1,6 +1,7 @@
 import type { Style } from "../render/labels";
+import { wrapParts } from "../render/text";
 import type { Key } from "./keys";
-import type { Tui, View } from "./screen";
+import { wrapLine, type Tui, type View } from "./screen";
 
 export interface Choice {
   label: string;
@@ -23,15 +24,17 @@ export class ChoiceView implements View {
     this.sel = Math.max(0, Math.min(defaultIndex, choices.length - 1));
   }
 
-  render(rows: number): string[] {
-    const out = [...this.head, ""];
+  render(rows: number, cols: number): string[] {
+    // The head explains what happens next: wrapped to the window, never cut off.
+    const out = [...this.head.flatMap((l) => wrapLine(l, cols - 1, " ")), ""];
     this.choices.forEach((c, i) => {
       const line = `${i === this.sel ? this.st.cyan("❯ ") + this.st.bold(c.label) : "  " + c.label}${c.note ? "  " + this.st.dim(c.note) : ""}`;
-      out.push(" " + line);
+      out.push(...wrapLine(" " + line, cols - 1, "    "));
     });
-    while (out.length < rows - 1) out.push("");
-    out.length = rows - 1;
-    out.push(this.st.dim(this.footer));
+    const keys = wrapParts(this.footer.split(" · "), " · ", cols - 1).map((l) => this.st.dim(l));
+    while (out.length < rows - keys.length) out.push("");
+    out.length = rows - keys.length;
+    out.push(...keys);
     return out;
   }
 

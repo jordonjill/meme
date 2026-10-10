@@ -4,7 +4,7 @@ import { listing, lsText, type ListFilter } from "../../render/ls";
 import { allSessions } from "../../store/queries";
 import { runPicker } from "../../tui/picker";
 import { parse, UsageError } from "../args";
-import { createContext, output, write } from "../context";
+import { createContext, output, stoppedNotice, write } from "../context";
 
 export const lsHelp = `Usage: meme ls [-a] [--agent claude|codex] [--env wsl|win|mac|linux] [--plain]
 
@@ -50,11 +50,13 @@ export async function ls(argv: string[]): Promise<number> {
   }
   if (positionals.length) throw new UsageError(`ls takes no arguments, got ${positionals[0]}`);
   const filter: ListFilter = { all: Boolean(values.all), agent: parseAgent(values.agent), env: parseEnv(values.env), project: "" };
-  const ctx = createContext();
+  const ctx = await createContext();
   filter.project = ctx.project;
   filter.exclude = ctx.current;
   const out = output(Boolean(values.plain));
   if (out.interactive) return runPicker(ctx, out, filter);
+  const stopped = stoppedNotice(ctx.wslStopped, ctx.now);
+  if (stopped) write(stopped + "\n");
   write(lsText(listing(allSessions(ctx.store.db), filter), { home: ctx.platform.home, now: ctx.now, st: out.st, width: out.width }));
   return 0;
 }

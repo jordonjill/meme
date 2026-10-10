@@ -27,10 +27,64 @@ export function clip(line: string, cols: number): string {
   return out;
 }
 
+/**
+ * Word-wrap a styled line to `cols` columns: the screen cuts every line at its
+ * width, so text that must be read whole (notices, the keys, a header) is wrapped
+ * first. A continuation line starts with `indent` and the styles in force.
+ */
+export function wrapLine(line: string, cols: number, indent = ""): string[] {
+  if (cols <= 0 || Bun.stringWidth(line) <= cols) return [line];
+  // Cells: an escape code (no width) or one character.
+  const cells: { text: string; w: number; esc: boolean }[] = [];
+  for (let i = 0; i < line.length; ) {
+    if (line[i] === "\x1b") {
+      ANSI.lastIndex = i;
+      const m = ANSI.exec(line);
+      if (m) {
+        cells.push({ text: m[0], w: 0, esc: true });
+        i += m[0].length;
+        continue;
+      }
+    }
+    const ch = String.fromCodePoint(line.codePointAt(i)!);
+    cells.push({ text: ch, w: Bun.stringWidth(ch), esc: false });
+    i += ch.length;
+  }
+  const out: string[] = [];
+  let styles = "";
+  let cur: typeof cells = [];
+  let w = 0;
+  const flush = (part: typeof cells, start: string) => out.push(start + part.map((c) => c.text).join(""));
+  let start = "";
+  for (const cell of cells) {
+    if (!cell.esc && w + cell.w > cols && cur.some((c) => !c.esc)) {
+      // Break at the last space when there is one, else in the word.
+      const space = cur.map((c) => c.text).lastIndexOf(" ");
+      const keep = space > 0 ? cur.slice(0, space) : cur;
+      const rest = space > 0 ? cur.slice(space + 1) : [];
+      flush(keep, start);
+      for (const c of keep) if (c.esc) styles += c.text;
+      start = styles + indent;
+      cur = rest;
+      w = Bun.stringWidth(indent) + rest.reduce((n, c) => n + c.w, 0);
+    }
+    cur.push(cell);
+    w += cell.w;
+  }
+  if (cur.length) flush(cur, start);
+  return out;
+}
+
 /** A full-screen view. `render` returns exactly the lines to show. */
 export interface View {
   render(rows: number, cols: number): string[];
   key(key: Key): void;
+  /**
+   * Where typing goes, as of the last render: the terminal's cursor is put
+   * there and shown, so an input method opens its candidates at the input.
+   * Without it the cursor stays hidden.
+   */
+  cursor?(): { row: number; col: number } | null;
 }
 
 /**
@@ -40,6 +94,7 @@ export interface View {
 export class Tui {
   private stack: View[] = [];
   private prev: string[] = [];
+  private prevCursor = "";
   private done: (() => void) | null = null;
   private readonly onData = (data: string) => {
     for (const key of parseKeys(data)) {
@@ -119,7 +174,11 @@ export class Tui {
       if (this.prev[r] !== line) buf += `\x1b[${r + 1};1H${line}\x1b[0m\x1b[K`;
     });
     this.prev = next;
-    if (buf) this.out.write(buf);
+    // Writing moves the cursor: put it back at the input, or keep it hidden.
+    const at = view.cursor?.() ?? null;
+    const cursor = at ? `\x1b[${Math.min(at.row, rows - 1) + 1};${Math.min(at.col, cols - 1) + 1}H\x1b[?25h` : "\x1b[?25l";
+    if (buf || cursor !== this.prevCursor) this.out.write(buf + cursor);
+    this.prevCursor = cursor;
   }
 
   private cleanup(): void {

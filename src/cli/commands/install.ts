@@ -61,7 +61,7 @@ export async function install(argv: string[]): Promise<number> {
     }
     summary = `would mirror them into ${displayPath(path.join(platform.dataDir, "meme.sqlite"), home)}`;
   } else {
-    const ctx = createContext();
+    const ctx = await createContext();
     for (const s of sources(ctx.store.db)) {
       table.push([label(s.agent, s.env), displayPath(s.root, home), s.reachable ? plural(s.sessions, "session") : "not readable"]);
     }

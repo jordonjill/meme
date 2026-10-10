@@ -37,7 +37,7 @@ if (!cases.length || cases.some((c) => !/^[0-9a-f-]+:\d+$/i.test(c))) {
 
 const root = path.resolve(import.meta.dir, "..", ".cache", "eval", "v5");
 mkdirSync(root, { recursive: true });
-const ctx = createContext();
+const ctx = await createContext();
 const db = ctx.store.db;
 
 for (const c of cases) {

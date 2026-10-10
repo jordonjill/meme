@@ -33,7 +33,7 @@ Commands:
   show        show a session, a turn per line
   search      search past sessions, like rg
   continue    hand a session over to a new agent session
-  forget      delete sessions for good, from the agent and from meme
+  forget      permanently delete sessions, from the agent and from meme
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data
