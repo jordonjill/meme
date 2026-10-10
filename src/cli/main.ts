@@ -5,6 +5,7 @@ import { currentPlatform } from "../platform/paths";
 import { LookupError } from "../store/queries";
 import { CommandError, UsageError } from "./args";
 import { continueHelp, continueSession } from "./commands/continue";
+import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
 import { search, searchHelp } from "./commands/search";
@@ -17,6 +18,7 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   show: { run: show, help: showHelp },
   search: { run: search, help: searchHelp },
   continue: { run: continueSession, help: continueHelp },
+  forget: { run: forget, help: forgetHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -31,6 +33,7 @@ Commands:
   show        show a session, a turn per line
   search      search past sessions, like rg
   continue    hand a session over to a new agent session
+  forget      delete sessions for good, from the agent and from meme
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data

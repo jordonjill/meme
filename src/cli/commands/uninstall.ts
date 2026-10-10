@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { removeDir } from "../../platform/fs";
 import { currentPlatform, displayPath } from "../../platform/paths";
+import { findCommand } from "../../platform/spawn";
 import { size } from "../../render/text";
 import { parse, UsageError } from "../args";
 import { write } from "../context";
@@ -24,8 +25,13 @@ function folderSize(dir: string): number {
   return total;
 }
 
-/** Where the program itself lives, if it is a built single file. */
-function programFile(): string | null {
+/**
+ * The program to delete afterwards: the `meme` on PATH (which may be a link to
+ * the file that runs), else the running single file itself.
+ */
+function programFile(vars: Record<string, string | undefined>): string | null {
+  const onPath = findCommand("meme", vars);
+  if (onPath) return onPath;
   const exe = process.execPath;
   return /^bun(\.exe)?$/i.test(path.basename(exe)) ? null : exe;
 }
@@ -43,8 +49,10 @@ export async function uninstall(argv: string[]): Promise<number> {
   const data = existsSync(platform.dataDir) ? platform.dataDir : null;
 
   const lines: string[] = [];
-  const program = programFile();
-  const programNote = program ? `To remove meme itself, delete ${program}.` : "meme is running from its sources; there is no program file to delete.";
+  const program = programFile(platform.vars);
+  const programNote = program
+    ? `To remove meme itself, delete ${displayPath(program, home)}${process.platform === "win32" ? " once this command has finished" : ""}.`
+    : "meme is running from its sources; there is no program file to delete.";
   if (!data) {
     lines.push(`Nothing to remove: there is no ${displayPath(platform.dataDir, home)}.`);
     lines.push(programNote);
