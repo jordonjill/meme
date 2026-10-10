@@ -1,4 +1,4 @@
-import { unlinkSync } from "node:fs";
+import { rmSync, unlinkSync } from "node:fs";
 
 const RETRY_CODES = new Set(["EBUSY", "EPERM", "ENOTEMPTY"]);
 const DELAYS_MS = [100, 200, 400, 800, 800];
@@ -27,6 +27,10 @@ export function removeFile(p: string): void {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
   });
+}
+
+export function removeDir(p: string): void {
+  withRetry(() => rmSync(p, { recursive: true, force: true }));
 }
 
 export function errorCode(err: unknown): string | undefined {

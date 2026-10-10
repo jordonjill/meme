@@ -48,6 +48,10 @@ export function label(agent: Agent, env: Env): string {
   return `${AGENT_SHORT[agent] ?? agent}·${ENV_SHORT[env] ?? env}`;
 }
 
+export function agentName(agent: Agent): string {
+  return agent === "claude-code" ? "Claude Code" : "Codex";
+}
+
 export function coloredLabel(st: Style, agent: Agent, env: Env): string {
   return st.fg(AGENT_COLOR[agent] ?? 250, label(agent, env));
 }
