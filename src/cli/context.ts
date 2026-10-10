@@ -1,5 +1,4 @@
 import { ADAPTERS } from "../adapters";
-import { pruneHandoffs } from "../handoff/file";
 import { projectResolver } from "../model/project";
 import { fileLogger, type Logger } from "../platform/log";
 import { currentPlatform, type Platform } from "../platform/paths";
@@ -32,7 +31,6 @@ export function createContext(): Context {
     log.error("import failed", err);
   }
   const now = Date.now();
-  if (!store.readonly) pruneHandoffs(platform.dataDir, now);
   return {
     platform,
     store,

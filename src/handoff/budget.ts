@@ -1,6 +1,18 @@
-/** Length budget of a handoff (plan §4.6.6). */
+/**
+ * Length budget of a handoff (plan §4.6.6): at most 15,000 tokens and 25,000
+ * characters. Claude Code keeps 30,000 characters of a command's output, both for
+ * `!` commands and for its Bash tool, so a handoff printed there is never cut.
+ */
 
 export const TOKEN_LIMIT = 15_000;
+export const CHAR_LIMIT = 25_000;
+
+export interface Limits {
+  tokens: number;
+  chars: number;
+}
+
+export const LIMITS: Limits = { tokens: TOKEN_LIMIT, chars: CHAR_LIMIT };
 
 const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
 
@@ -8,6 +20,15 @@ const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
 export function estimateTokens(s: string): number {
   const cjk = s.match(CJK)?.length ?? 0;
   return cjk + Math.ceil((s.length - cjk) / 4);
+}
+
+/**
+ * Size against both limits at once, counted in characters: text fits the budget
+ * when its weight is at most `limits.chars`. Summing weights over-counts a little
+ * for mixed text, which only errs on the short side.
+ */
+export function weight(s: string, limits: Limits = LIMITS): number {
+  return Math.max(s.length, Math.ceil((estimateTokens(s) * limits.chars) / limits.tokens));
 }
 
 /** Cut text to about `max` tokens on a line or character boundary. */

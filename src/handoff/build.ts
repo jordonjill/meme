@@ -7,7 +7,7 @@ import { isWindowsPath, winToWsl } from "../platform/paths";
 import { label } from "../render/labels";
 import { ago, plural, span, trimmedLines, truncate } from "../render/text";
 import type { SessionRow } from "../store/queries";
-import { cutToTokens, estimateTokens, fitMessages, TOKEN_LIMIT } from "./budget";
+import { cutToTokens, estimateTokens, fitMessages, LIMITS, weight, type Limits } from "./budget";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
 const MESSAGE_CHARS = 1500;
@@ -28,7 +28,8 @@ export interface HandoffInput {
 export interface HandoffOptions {
   /** `--fresh`: only the user's messages and the reminder to start from the repository. */
   fresh: boolean;
-  limit?: number;
+  /** Defaults to 15,000 tokens and 25,000 characters. */
+  limits?: Limits;
 }
 
 export interface Handoff {
@@ -133,7 +134,8 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
 /** The handoff for one session (plan §4.6.6), verbatim from the records, no LLM. */
 export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff {
   const { session: s, records } = input;
-  const limit = opts.limit ?? TOKEN_LIMIT;
+  const limits = opts.limits ?? LIMITS;
+  const size = (s: string) => weight(s, limits);
   const id8 = s.id.slice(0, 8);
   const { turns } = groupTurns(records);
   const ending = endingOf(records);
@@ -173,17 +175,18 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     if (verification) out.push("", "## Last verification", ...verification.lines);
     return out;
   };
-  const reserve = estimateTokens([...head, ...preamble(id8, opts, 0, 0, null, null)].join("\n")) + 120;
-  const firstLast = estimateTokens([messages[0] ?? "", messages[messages.length - 1] ?? ""].join("\n"));
+  // Slack for what is only known at the end: the counts in the preamble and the "left out" note.
+  const reserve = size([...head, ...preamble(id8, opts, 0, 0, null, null)].join("\n")) + Math.ceil(limits.chars * 0.03);
+  const firstLast = size([messages[0] ?? "", messages[messages.length - 1] ?? ""].join("\n"));
   let tail = tailFor(Infinity);
   for (const cap of [4000, 2000, 1000, 500, 200]) {
-    if (reserve + firstLast + estimateTokens(tail.join("\n")) <= limit) break;
+    if (reserve + firstLast + size(tail.join("\n")) <= limits.chars) break;
     tail = tailFor(cap);
   }
 
   const keep = fitMessages(
-    messages.map((m) => estimateTokens(m) + 1),
-    limit - reserve - estimateTokens(tail.join("\n")),
+    messages.map((m) => size(m) + 1),
+    limits.chars - reserve - size(tail.join("\n")),
   );
   const body = ["## User messages" + (keep.size === messages.length ? " (all)" : "")];
   let skipped: number[] = [];
@@ -220,6 +223,8 @@ function preamble(id8: string, opts: HandoffOptions, kept: number, total: number
     opts.fresh
       ? "Start fresh: only the user's messages are included, not how the previous agent went about it. Treat the repository as the source of truth: run `git log` and `git status` before you start."
       : "Treat the repository as the source of truth: run `git log` and `git status` before you start.",
+    // There is no skill to say what to do with a handoff, so it says so itself (plan §3.4).
+    "Before you change anything, tell the user in two or three sentences what was being done, where it stopped and what you would do next, then wait for their go-ahead.",
     `Included: ${included.join("; ")}.`,
     `For anything else: \`meme show ${id8} <turn>\` · \`meme search <text> --session ${id8}\``,
   ];
