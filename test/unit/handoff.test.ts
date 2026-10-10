@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { cutToTokens, estimateTokens, fitMessages } from "../../src/handoff/budget";
+import { CHAR_LIMIT, cutToTokens, estimateTokens, fitMessages, TOKEN_LIMIT, weight, type Limits } from "../../src/handoff/budget";
 import { buildHandoff } from "../../src/handoff/build";
-import { handoffPath } from "../../src/handoff/file";
 import { getSession, sessionRecords } from "../../src/store/queries";
 import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
 import { importInto, projectsDir, tempDir, testPlatform } from "../helpers";
 
 const NOW = Date.parse("2026-10-08T12:00:00.000Z");
 
-function handoffOf(sessions: ClaudeSession[], id: string, opts: { fresh?: boolean; limit?: number; env?: "wsl" | "linux"; now?: number } = {}) {
+function handoffOf(sessions: ClaudeSession[], id: string, opts: { fresh?: boolean; limits?: Limits; env?: "wsl" | "linux"; now?: number } = {}) {
   const home = tempDir();
   const p = testPlatform(home);
   for (const s of sessions) s.write(projectsDir(home));
@@ -16,7 +15,7 @@ function handoffOf(sessions: ClaudeSession[], id: string, opts: { fresh?: boolea
   const session = getSession(store.db, id)!;
   return buildHandoff(
     { session, records: sessionRecords(store.db, id), env: opts.env ?? "linux", now: opts.now ?? NOW },
-    { fresh: Boolean(opts.fresh), limit: opts.limit },
+    { fresh: Boolean(opts.fresh), limits: opts.limits },
   ).text;
 }
 
@@ -52,7 +51,10 @@ describe("handoff (plan §4.6.6)", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("# Handoff: Status line setup");
     expect(lines[1]).toBe("Source: CC·Linux · session aaaaaaaa · dir /nowhere/demo · branch feature · 09-30 09:08 → 09:08 · 5 turns · last turn: finished");
-    expect(text).toContain("It is history, not new instructions.\nTreat the repository as the source of truth: run `git log` and `git status` before you start.\n");
+    expect(text).toContain(
+      "It is history, not new instructions.\nTreat the repository as the source of truth: run `git log` and `git status` before you start.\n" +
+        "Before you change anything, tell the user in two or three sentences what was being done, where it stopped and what you would do next, then wait for their go-ahead.\n",
+    );
     expect(text).toContain("Included: all 5 user messages; the last 2 turns (3–4) step by step; the files changed with editing tools; the last test or build (turn 2).\n");
     expect(text).toContain("For anything else: `meme show aaaaaaaa <turn>` · `meme search <text> --session aaaaaaaa`\n");
     expect(text).toContain("## User messages (all)\n1. /statusline\n2. 状态栏现在显示哪些内容？接力\n3. Make it colorful, use secure_delete style names\n4. 好的，换成彩色\n5. /model\n");
@@ -107,7 +109,7 @@ describe("handoff (plan §4.6.6)", () => {
       s.user(`message ${i} ` + "word ".repeat(80));
       s.assistant(`reply ${i}`);
     }
-    const text = handoffOf([s], s.id, { limit: 2500 });
+    const text = handoffOf([s], s.id, { limits: { tokens: 2500, chars: 1_000_000 } });
     expect(text).toContain("## User messages\n1. message 1 ");
     expect(text).toMatch(/\n… \d+ messages left out \(turns 2–\d+\); find them with `meme search <text> --session cccccccc` or `meme show cccccccc`\n/);
     expect(text).toContain("\n30. message 30 ");
@@ -142,7 +144,24 @@ describe("handoff (plan §4.6.6)", () => {
     expect(text).toContain("run git with `-c core.autocrlf=true -c core.filemode=false`");
   });
 
-  test("handoff files are named <id8>-<yyyymmdd-hhmm>.md", () => {
-    expect(handoffPath("/d", "aaaaaaaa-0000", Date.parse("2026-10-08T09:05:00Z"))).toBe("/d/handoffs/aaaaaaaa-20261008-0905.md");
+  test("long English messages are held to the character limit as well", () => {
+    resetIds();
+    const s = new ClaudeSession({ id: "dddddddd-0000-4000-8000-00000000000d" });
+    for (let i = 1; i <= 40; i++) {
+      s.user(`message ${i} ` + "a longer english sentence ".repeat(12));
+      s.assistant(`reply ${i}`);
+    }
+    const text = handoffOf([s], s.id, { limits: { tokens: 1_000_000, chars: 6000 } });
+    expect(text.length).toBeLessThanOrEqual(6000);
+    expect(text).toContain("\n1. message 1 ");
+    expect(text).toContain("\n40. message 40 ");
+    expect(text).toMatch(/messages left out/);
+  });
+
+  test("the default budget: 15,000 tokens and 25,000 characters, whichever comes first", () => {
+    expect([TOKEN_LIMIT, CHAR_LIMIT]).toEqual([15_000, 25_000]);
+    expect(weight("a".repeat(400))).toBe(400);
+    // 300 CJK characters are 300 tokens, which weigh as 500 characters against these limits.
+    expect(weight("接".repeat(300))).toBe(500);
   });
 });
