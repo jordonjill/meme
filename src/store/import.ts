@@ -28,19 +28,28 @@ interface StoredFile {
 /**
  * Incremental import (plan §4.6.1). Runs before every command. A source that
  * cannot be read is skipped and nothing from it is deleted; a file that cannot be
- * read keeps its old mirror.
+ * read keeps its old mirror. `only` limits it to some sources (on Windows the WSL
+ * ones come second, once `wsl.exe` has said which distributions are running).
  */
-export function importAll(store: Store, platform: Platform, adapters: readonly Adapter[], log: Logger): ImportResult {
+export function importAll(store: Store, platform: Platform, adapters: readonly Adapter[], log: Logger, only?: (root: SourceRoot) => boolean): ImportResult {
   const started = performance.now();
   const result: ImportResult = { scanned: 0, changed: 0, deleted: 0, failed: 0, unreachable: [], ms: 0 };
   if (store.readonly && !store.memory) return result;
   const { db } = store;
-  const project = projectResolver(platform);
+  const local = projectResolver(platform);
+  const inWsl = new Map<string, (cwd: string | null) => string | null>();
+  const projectFor = (root: SourceRoot) => {
+    if (!root.wsl) return local;
+    let r = inWsl.get(root.wsl.root);
+    if (!r) inWsl.set(root.wsl.root, (r = projectResolver(platform, root.wsl)));
+    return r;
+  };
   const touched = new Set<string>();
   try {
     for (const adapter of adapters) {
       for (const root of adapter.roots(platform)) {
-        importRoot(db, adapter, root, project, log, result, touched);
+        if (only && !only(root)) continue;
+        importRoot(db, adapter, root, projectFor(root), log, result, touched);
       }
     }
     if (result.changed + result.deleted > 0) {

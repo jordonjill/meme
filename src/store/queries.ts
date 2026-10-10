@@ -72,6 +72,11 @@ SELECT s.*,
   (SELECT MIN(n.id) FROM sessions n WHERE n.id > s.id) AS next_id
 FROM sessions s`;
 
+/** The original files of a session, as meme last read them. */
+export function sessionFiles(db: Database, id: string): string[] {
+  return db.query<{ path: string }, [string]>("SELECT path FROM files WHERE session = ? ORDER BY path").all(id).map((r) => r.path);
+}
+
 /** All sessions, newest first. */
 export function allSessions(db: Database): SessionRow[] {
   return db.query<Loaded, []>(`${SESSION_SELECT} ORDER BY s.ended_at DESC, s.id`).all().map(withShort);

@@ -2,13 +2,14 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isWindowsPath, winToWsl } from "../platform/paths";
 import type { Platform } from "../platform/paths";
+import { toHost, toLinux, type WslPlace } from "../platform/wsl";
 
 /**
  * D12: the project is the git repository above the start directory, the same way
  * Claude Code groups sessions. A worktree belongs to its main repository. Without
  * `.git` anywhere above, the start directory itself is the project.
  */
-export function findProject(cwd: string, mapPath: (p: string) => string = (p) => p): string {
+export function findProject(cwd: string, mapPath: (p: string) => string = (p) => p, top?: string): string {
   const start = path.resolve(cwd);
   let dir = start;
   for (;;) {
@@ -21,7 +22,7 @@ export function findProject(cwd: string, mapPath: (p: string) => string = (p) =>
     if (kind === "dir") return dir;
     if (kind === "file") return worktreeMain(dotGit, dir, mapPath) ?? dir;
     const parent = path.dirname(dir);
-    if (parent === dir) return start;
+    if (parent === dir || dir === top) return start;
     dir = parent;
   }
 }
@@ -43,10 +44,24 @@ function worktreeMain(dotGitFile: string, dir: string, mapPath: (p: string) => s
 
 /**
  * Project lookup for one import run, cached by start directory. In WSL, Windows
- * paths from sessions under /mnt/c are converted first.
+ * paths from sessions under /mnt/c are converted first. On Windows, a WSL
+ * session's directory is looked up through `\\wsl.localhost`, not above the
+ * distribution's `/`, and the project stays a WSL path.
  */
-export function projectResolver(platform: Platform): (cwd: string | null) => string | null {
+export function projectResolver(platform: Platform, wsl?: WslPlace): (cwd: string | null) => string | null {
   const cache = new Map<string, string>();
+  if (wsl) {
+    const toHostPath = (p: string) => (p.startsWith("/") ? toHost(wsl.root, p) : p);
+    return (cwd) => {
+      if (!cwd?.startsWith("/")) return cwd;
+      let project = cache.get(cwd);
+      if (project === undefined) {
+        project = toLinux(wsl.root, findProject(toHostPath(cwd), toHostPath, wsl.root)) ?? cwd;
+        cache.set(cwd, project);
+      }
+      return project;
+    };
+  }
   const toLocal = (p: string) => (platform.env === "wsl" && isWindowsPath(p) ? winToWsl(p) : p);
   return (cwd) => {
     if (!cwd) return null;
