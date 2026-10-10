@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 export function testPlatform(home: string, env: Env = "linux", windowsUsersDir: string | null = null): Platform {
-  return { env, home, dataDir: path.join(home, ".meme"), windowsUsersDir, vars: {} };
+  return { env, home, dataDir: path.join(home, ".meme"), windowsUsersDir, wsl: [], vars: {} };
 }
 
 export function projectsDir(home: string): string {
