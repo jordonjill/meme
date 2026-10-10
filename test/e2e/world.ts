@@ -8,7 +8,7 @@ import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
 import { tempDir } from "../helpers";
 
 const ROOT = path.resolve(import.meta.dir, "../..");
-const BIN = process.env.MEME_BIN ? [process.env.MEME_BIN] : [process.execPath, path.join(ROOT, "src/cli/main.ts")];
+const BIN = process.env.MEME_BIN ? [path.resolve(process.env.MEME_BIN)] : [process.execPath, path.join(ROOT, "src/cli/main.ts")];
 
 export function world() {
   resetIds();
