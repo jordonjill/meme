@@ -43,7 +43,7 @@ export async function chooseHandover(
       ` ${st.bold(s.title ?? "(untitled)")}  [${coloredLabel(st, s.agent, s.env)}]`,
       ` ${st.dim(facts.join(" · "))}`,
       "",
-      st.dim(" meme writes a handoff file, then starts the agent in the session's project with a first message that points at it."),
+      st.dim(" meme starts the agent in the session's project; its first message asks it to run `meme continue` for this session."),
     ];
     const def = Math.max(0, agents.findIndex((a) => a.adapter.agent === s.agent));
     return new ChoiceView(tui, st, head, agents.map((a) => ({ label: agentName(a.adapter.agent), note: a.exe })), def, (i) => done(s, agents[i]!));

@@ -13,6 +13,8 @@ export interface ListFilter {
   env?: Env;
   /** The session that is running meme right now: not listed (plan §3.1). */
   exclude?: string | null;
+  /** Only these sessions (the matches of a `meme continue` target). */
+  only?: Set<string>;
 }
 
 /**
@@ -25,6 +27,7 @@ export function listed(rows: SessionRow[], f: ListFilter): SessionRow[] {
       r.talked === 1 &&
       r.superseded === 0 &&
       r.id !== f.exclude &&
+      (!f.only || f.only.has(r.id)) &&
       (f.all || (r.project !== null && samePath(r.project, f.project))) &&
       (!f.agent || r.agent === f.agent) &&
       (!f.env || r.env === f.env),
@@ -98,5 +101,45 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
   const hint = othersHint(others, "use -a");
   if (hint) out.push(hint);
   out.push(o.footer ?? "Run `meme continue <id>` to continue one.");
+  return out.join("\n") + "\n";
+}
+
+export interface NumberedOptions extends LsTextOptions {
+  /** Number the rows; a list of matches is named by id only. */
+  numbered: boolean;
+  /** Replaces the first line, e.g. for the matches of a target. */
+  heading?: string;
+  /** How to see the other projects, in the "+N sessions" line. */
+  allHint: string;
+}
+
+/**
+ * The list of `meme continue` for agents and pipes (plan §3.4):
+ * `1  Codex·WSL  2h ago  <title>  01a11a65`, then the given last line.
+ */
+export function numberedText({ rows, filter, fellBack, others }: Listing, o: NumberedOptions): string {
+  const where = filter.all ? "all projects" : displayPath(filter.project, o.home);
+  if (rows.length === 0) return "No sessions found.\n";
+  const cells = rows.map((r, i) => ({
+    n: String(i + 1),
+    label: label(r.agent, r.env),
+    labelColored: coloredLabel(o.st, r.agent, r.env),
+    ago: ago(r.ended_at, o.now),
+    project: filter.all ? displayPath(r.project ?? "", o.home) : "",
+    title: truncate(r.title ?? "(untitled)", 48),
+    id: r.id.slice(0, 8),
+  }));
+  const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));
+  const [wN, wLabel, wAgo, wTitle] = [colW("n"), colW("label"), colW("ago"), colW("title")];
+  const wProject = Math.min(colW("project"), 40);
+  const out = [o.heading ?? (fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`)];
+  for (const c of cells) {
+    let line = `  ${o.numbered ? c.n.padStart(wN) + "  " : ""}${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  `;
+    if (filter.all) line += padEnd(truncate(c.project, wProject), wProject) + "  ";
+    out.push(line + padEnd(c.title, wTitle) + "  " + c.id);
+  }
+  const hint = othersHint(others, o.allHint);
+  if (hint) out.push(hint);
+  if (o.footer) out.push(o.footer);
   return out.join("\n") + "\n";
 }
