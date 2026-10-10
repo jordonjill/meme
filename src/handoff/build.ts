@@ -4,6 +4,7 @@ import { commandOf, describeCall, editedFiles as filesOfCall, exitCodeOf, oneLin
 import { endingOf, groupTurns, lastActive, mayBeRunning, type Turn } from "../model/turns";
 import type { Env } from "../platform/env";
 import { isWindowsPath, winToWsl } from "../platform/paths";
+import { toHost, type WslPlace } from "../platform/wsl";
 import { label } from "../render/labels";
 import { ago, plural, span, trimmedLines, truncate } from "../render/text";
 import type { SessionRow } from "../store/queries";
@@ -22,6 +23,8 @@ export interface HandoffInput {
   records: Rec[];
   /** Where meme runs: a Windows session read from WSL gets a note about git line endings. */
   env: Env;
+  /** Windows reading a WSL session: the distribution it is in, for a note on where to work. */
+  wsl?: WslPlace | null;
   now: number;
 }
 
@@ -144,11 +147,12 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const lastN = turns.length ? turns[turns.length - 1]!.n : 0;
 
   const dir = startDir(records, s);
-  const localDir = dir && input.env === "wsl" && isWindowsPath(dir) ? winToWsl(dir) : dir;
+  const wsl = input.wsl && dir?.startsWith("/") ? input.wsl : null;
+  const localDir = wsl ? toHost(wsl.root, dir!) : dir && input.env === "wsl" && isWindowsPath(dir) ? winToWsl(dir) : dir;
   const facts = [
     label(s.agent, s.env),
     `session ${sid}`,
-    dir ? `dir ${localDir}${localDir !== dir ? ` (${dir})` : ""}` : null,
+    dir ? `dir ${localDir}${localDir !== dir ? ` (${dir}${wsl ? ` in WSL ${wsl.distro}` : ""})` : ""}` : null,
     s.branch ? `branch ${s.branch}` : null,
     span(s.started_at, s.ended_at, new Date(input.now)),
     plural(lastN, "turn"),
@@ -161,6 +165,9 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   }
   if (input.env === "wsl" && s.env === "win") {
     head.push("Note: the repository is on the Windows side. In WSL, run git with `-c core.autocrlf=true -c core.filemode=false`, or every file looks modified.");
+  }
+  if (wsl) {
+    head.push(`Note: the repository is inside WSL (${wsl.distro}). From Windows it is at ${localDir}, where git and builds are slow and can fail. Tell the user, and suggest continuing in WSL instead: \`wsl -d ${wsl.distro} --cd ${dir}\`, then \`meme continue ${sid}\` there.`);
   }
 
   const prompts = turns.filter((t) => t.prompt);
