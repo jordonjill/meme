@@ -1,6 +1,7 @@
 import type { Body } from "../model/record";
 import type { Env } from "../platform/env";
 import type { Platform } from "../platform/paths";
+import type { WslPlace } from "../platform/wsl";
 
 export type Agent = "claude-code" | "codex";
 
@@ -10,6 +11,8 @@ export interface SourceRoot {
   agent: Agent;
   env: Env;
   path: string;
+  /** Windows reading a WSL distribution: its paths are WSL paths under this root. */
+  wsl?: WslPlace;
 }
 
 /** The 8 per-session fields of format.md §2 (the files are tracked by the store). */
@@ -57,7 +60,14 @@ export interface ConvertContext {
 /** One thing `meme forget` does to remove a session from the agent (plan §3.5). */
 export type ForgetStep =
   | { kind: "remove"; path: string; dir: boolean; what: string }
-  | { kind: "run"; cmd: string[]; what: string };
+  | {
+      kind: "run";
+      cmd: string[];
+      what: string;
+      /** What the user is shown instead of `cmd`, when that runs the agent on the other side (WSL, Windows). */
+      shown?: string;
+      cwd?: string;
+    };
 
 export interface ForgetPlan {
   /** In order; the session's main file comes last, so a failure leaves the session whole. */

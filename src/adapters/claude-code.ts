@@ -6,6 +6,7 @@ import type { Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
+import { toHost } from "../platform/wsl";
 import { parseLines, readJsonl } from "./read";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type SourceRoot } from "./types";
 
@@ -67,6 +68,11 @@ export const claudeCode: Adapter = {
         const dir = path.join(platform.windowsUsersDir, user, ".claude", "projects");
         if (isDir(dir)) roots.push({ id: sourceId(AGENT, "win", dir), agent: AGENT, env: "win", path: dir });
       }
+    }
+    // On Windows: the running WSL distributions (plan step 5).
+    for (const h of platform.wsl) {
+      const dir = path.join(toHost(h.root, h.home), ".claude", "projects");
+      if (isDir(dir)) roots.push({ id: sourceId(AGENT, "wsl", dir), agent: AGENT, env: "wsl", path: dir, wsl: { distro: h.distro, root: h.root } });
     }
     return roots;
   },

@@ -1,15 +1,16 @@
 import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import { userKind, type UserKind } from "../model/injected";
 import type { Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
-import { displayPath, type Platform } from "../platform/paths";
+import { displayPath, wslToWin, type Platform } from "../platform/paths";
 import { BOUNDS } from "./claude-code";
 import { dropPartialLine } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
+import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type SourceRoot } from "./types";
 
 const AGENT = "codex" as const;
@@ -208,9 +209,59 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
 }
 
 /** Older Codex versions have no `delete`, and without a terminal it needs `--force`. */
-function codexCanDelete(exe: string): boolean {
+/**
+ * How to run the codex of the side a session is on: here, in WSL from Windows
+ * (through wsl.exe and the user's login shell), or on Windows from WSL (a .cmd
+ * through cmd.exe). Codex deletes its own sessions; meme never writes its files.
+ */
+interface CodexRunner {
+  /** The command; `commandLine` still applies (a .cmd on Windows). */
+  line: (args: string[]) => string[];
+  cwd?: string;
+  /** Where, for the user: "in WSL (Ubuntu)"; empty here. */
+  where: string;
+  history: string;
+}
+
+function codexRunner(target: ForgetTarget, platform: Platform, home: string): CodexRunner | string {
+  if (target.env === platform.env) {
+    const exe = findCommand("codex", platform.vars);
+    if (!exe) return "`codex delete` is not available here";
+    return { line: (args) => [exe, ...args], where: "", history: displayPath(path.join(home, "history.jsonl"), platform.home) };
+  }
+  const file = target.files[0];
+  if (platform.env === "win" && target.env === "wsl" && file) {
+    const place = wslPlace(platform, file);
+    const exe = wslExe(platform);
+    const linux = place && toLinux(place.root, file);
+    const codexHome = linux && /^(.*\/\.codex)\//.exec(linux)?.[1];
+    if (!place || !exe || !codexHome) return "this Codex session is in WSL, and wsl.exe is not available here";
+    const dir = path.posix.dirname(codexHome);
+    return { line: (args) => wslCommand(exe, place.distro, dir, ["codex", ...args]), where: `in WSL (${place.distro})`, history: `${codexHome}/history.jsonl in WSL` };
+  }
+  if (platform.env === "wsl" && target.env === "win" && file && platform.windowsUsersDir) {
+    const user = path.relative(platform.windowsUsersDir, file).split("/")[0];
+    const codexHome = /^(.*\/\.codex)\//.exec(file)?.[1] ?? path.join(platform.windowsUsersDir, user ?? "", ".codex");
+    const npm = user ? path.join(platform.windowsUsersDir, user, "AppData", "Roaming", "npm", "codex.cmd") : null;
+    const exe = findCommand("codex.cmd", platform.vars) ?? findCommand("codex.exe", platform.vars) ?? (npm && existsSync(npm) ? npm : null);
+    if (!exe) return "this Codex session is on the Windows side, and Codex is not installed there (or not on the PATH WSL sees)";
+    const viaCmd = /\.(cmd|bat)$/i.test(exe);
+    return {
+      line: (args) => (viaCmd ? ["cmd.exe", "/d", "/c", wslToWin(exe), ...args] : [exe, ...args]),
+      // cmd.exe cannot start in a WSL directory.
+      cwd: platform.windowsUsersDir,
+      where: "on the Windows side",
+      history: wslToWin(`${codexHome}/history.jsonl`),
+    };
+  }
+  return `this Codex session is on ${target.env}`;
+}
+
+function canDelete(r: CodexRunner): boolean {
   try {
-    const p = Bun.spawnSync(commandLine(exe, ["delete", "--help"]), { stdout: "pipe", stderr: "pipe" });
+    const [exe, ...args] = r.line(["delete", "--help"]);
+    const line = commandLine(exe!, args);
+    const p = Bun.spawnSync(line, { cwd: r.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 30_000, windowsVerbatimArguments: line[0] === "cmd.exe" });
     return p.exitCode === 0 && p.stdout.toString().includes("--force");
   } catch {
     return false;
@@ -239,17 +290,16 @@ export const codex: Adapter = {
    */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan {
     const instead = `delete it in Codex with /delete, or with \`codex delete ${target.id}\``;
-    if (target.env !== platform.env) {
-      return { steps: [], gone: [], notes: [], blocked: `this Codex session is on the ${target.env === "win" ? "Windows" : target.env} side; ${instead} there. meme's copy follows on its own.` };
+    const r = codexRunner(target, platform, this.home(platform));
+    if (typeof r === "string") return { steps: [], gone: [], notes: [], blocked: `${r}; ${instead}${target.env !== platform.env ? " there" : ""}. meme's copy follows on its own.` };
+    if (!canDelete(r)) {
+      return { steps: [], gone: [], notes: [], blocked: `\`codex delete\` is not available ${r.where || "here"}; ${instead}${r.where ? " there" : ""}. meme's copy follows on its own.` };
     }
-    const exe = findCommand("codex", platform.vars);
-    if (!exe || !codexCanDelete(exe)) {
-      return { steps: [], gone: [], notes: [], blocked: `\`codex delete\` is not available here; ${instead}. meme's copy follows on its own.` };
-    }
+    const shown = r.where ? `codex delete --force ${target.id} ${r.where}` : undefined;
     return {
-      steps: [{ kind: "run", cmd: [exe, "delete", "--force", target.id], what: "Codex removes the session's files and its database rows" }],
+      steps: [{ kind: "run", cmd: r.line(["delete", "--force", target.id]), cwd: r.cwd, shown, what: "Codex removes the session's files and its database rows" }],
       gone: target.files,
-      notes: [`Codex keeps what you typed in its own input history (${displayPath(path.join(this.home(platform), "history.jsonl"), platform.home)}).`],
+      notes: [`Codex keeps what you typed in its own input history (${r.history}).`],
     };
   },
 
@@ -270,6 +320,11 @@ export const codex: Adapter = {
         const dir = path.join(platform.windowsUsersDir, user, ".codex");
         if (isDir(path.join(dir, "sessions")) || isDir(path.join(dir, "archived_sessions"))) roots.push({ id: sourceId(AGENT, "win", dir), agent: AGENT, env: "win", path: dir });
       }
+    }
+    // On Windows: the running WSL distributions (plan step 5).
+    for (const h of platform.wsl) {
+      const dir = path.join(toHost(h.root, h.home), ".codex");
+      if (isDir(path.join(dir, "sessions")) || isDir(path.join(dir, "archived_sessions"))) roots.push({ id: sourceId(AGENT, "wsl", dir), agent: AGENT, env: "wsl", path: dir, wsl: { distro: h.distro, root: h.root } });
     }
     return roots;
   },
