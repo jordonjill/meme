@@ -34,6 +34,15 @@ function tabsFor(rows: SessionRow[]): Tab[] {
   return ALL_TABS.filter((t) => (!t.env && !t.agent) || (t.env && envs.size > 1 && envs.has(t.env)) || (t.agent && agents.size > 1 && agents.has(t.agent)));
 }
 
+/** `meme continue` and `meme forget` turn the list into a chooser: Enter picks the session. */
+export interface Pick {
+  /** The first line, e.g. "Continue which session?". */
+  title: string;
+  /** What Enter does, in the keys line. */
+  verb: string;
+  onPick: (row: SessionRow) => void;
+}
+
 /**
  * `meme ls` in a terminal, modeled on Claude Code's `/resume` (list.md §4): two
  * lines per session, type to search, Space to preview, Enter to open.
@@ -49,16 +58,12 @@ export class PickerView implements View {
   /** Set when the current project has no sessions and all projects are shown instead. */
   private notice: string | null = null;
 
-  /**
-   * `onPick` turns the list into a chooser (`meme continue`): Enter picks the
-   * session instead of opening it.
-   */
   constructor(
     private readonly tui: Tui,
     private readonly ctx: Context,
     private readonly out: Output,
     private readonly filter: ListFilter,
-    private readonly onPick?: (row: SessionRow) => void,
+    private readonly pick?: Pick,
   ) {
     this.rows = allSessions(ctx.store.db);
     const start = listing(this.rows, filter);
@@ -92,7 +97,7 @@ export class PickerView implements View {
     const list = this.visible();
     const where = this.all ? "all projects" : displayPath(this.filter.project, this.ctx.platform.home);
     const out = this.notice ? [st.yellow(` ${this.notice}`)] : [];
-    out.push(` ${st.bold(this.onPick ? "Continue which session?" : "Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
+    out.push(` ${st.bold(this.pick?.title ?? "Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
     if (this.tabs.length > 1) out.push(" " + this.tabs.map((t, i) => (i === this.tab ? st.inverse(` ${t.name} `) : st.dim(` ${t.name} `))).join(" "));
     out.push(` ⌕ ${this.query ? this.query + "▏" : st.dim("Type to search…")}`);
     // Only this project is shown: say how many more there are elsewhere (plan §3.1).
@@ -113,12 +118,14 @@ export class PickerView implements View {
       const title = truncate(r.title ?? "(untitled)", cols - 6 - width(lab));
       out.push(`${selected ? st.cyan("❯ ") : "  "}${selected ? st.bold(title) : title}  ${coloredLabel(st, r.agent, r.env)}`);
       const facts = [ago(r.ended_at, this.ctx.now, true), r.branch, size(r.size), this.all ? displayPath(r.project ?? "", this.ctx.platform.home) : null, r.archived ? "archived" : null];
-      out.push("  " + st.dim(facts.filter(Boolean).join(" · ")));
+      // The id last, and always in view: `meme show`, `continue` and `forget` take it.
+      const id = ` · ${r.short}`;
+      out.push("  " + st.dim(truncate(facts.filter(Boolean).join(" · "), cols - 2 - width(id)) + id));
     });
     while (out.length < bottom) out.push("");
     out.length = bottom;
     if (hint) out.push(" " + st.dim(hint));
-    out.push(st.dim(`↑↓ select · Enter ${this.onPick ? "continue" : "open"} · Space preview · Ctrl+A ${this.all ? "this project" : "all projects"}${this.tabs.length > 1 ? " · Tab source" : ""} · Esc quit`));
+    out.push(st.dim(`↑↓ select · Enter ${this.pick?.verb ?? "open"} · Space preview · Ctrl+A ${this.all ? "this project" : "all projects"}${this.tabs.length > 1 ? " · Tab source" : ""} · Esc quit`));
     return out;
   }
 
@@ -146,11 +153,11 @@ export class PickerView implements View {
         return;
       case "enter":
         if (!current) return;
-        if (this.onPick) this.onPick(current);
+        if (this.pick) this.pick.onPick(current);
         else this.tui.push(new SessionView(this.tui, this.model(current), this.base()));
         return;
       case "space":
-        if (current) this.tui.push(new PreviewView(this.tui, this.model(current), this.base(), this.onPick && (() => this.onPick!(current))));
+        if (current) this.tui.push(new PreviewView(this.tui, this.model(current), this.base(), this.pick && { verb: this.pick.verb, run: () => this.pick!.onPick(current) }));
         return;
       case "tab":
       case "backtab":
@@ -200,8 +207,8 @@ export class PreviewView implements View {
     private readonly tui: Tui,
     private readonly m: ShowModel,
     private readonly base: Omit<ShowOptions, "width" | "wrap">,
-    /** In `meme continue`, Enter picks this session instead of opening it. */
-    private readonly onPick?: () => void,
+    /** In `meme continue` and `meme forget`, Enter picks this session instead of opening it. */
+    private readonly pick?: { verb: string; run: () => void },
   ) {}
 
   render(rows: number, cols: number): string[] {
@@ -221,7 +228,7 @@ export class PreviewView implements View {
     this.top = this.top === null ? max : Math.max(0, Math.min(this.top, max));
     const out = [...head, ...body.slice(this.top, this.top + room)];
     while (out.length < rows - 1) out.push("");
-    out.push(o.st.dim(`↑↓ scroll · Enter ${this.onPick ? "continue" : "open"} · Space/Esc back`));
+    out.push(o.st.dim(`↑↓ scroll · Enter ${this.pick?.verb ?? "open"} · Space/Esc back`));
     return out;
   }
 
@@ -235,7 +242,7 @@ export class PreviewView implements View {
     else if (k.name === "end") this.top = this.total;
     else if (k.name === "enter") {
       this.tui.pop();
-      if (this.onPick) this.onPick();
+      if (this.pick) this.pick.run();
       else this.tui.push(new SessionView(this.tui, this.m, this.base));
     } else if (k.name === "space" || k.name === "esc" || (k.name === "char" && k.ch === "q")) this.tui.pop();
   }
@@ -245,4 +252,16 @@ export async function runPicker(ctx: Context, out: Output, filter: ListFilter): 
   const tui = new Tui();
   await tui.run(new PickerView(tui, ctx, out, filter));
   return 0;
+}
+
+/** The list as a chooser: the session picked with Enter, or null after Esc. */
+export async function pickSession(ctx: Context, out: Output, filter: ListFilter, title: string, verb: string): Promise<SessionRow | null> {
+  const tui = new Tui();
+  let picked: SessionRow | null = null;
+  const onPick = (row: SessionRow) => {
+    picked = row;
+    tui.quit();
+  };
+  await tui.run(new PickerView(tui, ctx, out, filter, { title, verb, onPick }));
+  return picked;
 }

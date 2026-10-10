@@ -31,13 +31,31 @@ describe("choosing in a terminal (meme continue)", () => {
     const { store } = importInto(p);
     const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), now: Date.now() } as Context;
     const picked: SessionRow[] = [];
-    const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" }, (row) => picked.push(row));
+    const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" }, { title: "Continue which session?", verb: "continue", onPick: (row) => picked.push(row) });
     const screen = view.render(12, 80);
     expect(screen[0]).toContain("Continue which session?");
     // Nothing in other projects: no hint above the keys.
     expect(screen.some((l) => l.includes("in other projects"))).toBe(false);
     view.key({ name: "enter" });
     expect(picked.map((r) => r.id)).toEqual([s.id]);
+  });
+
+  test("each session's second line ends with its id, even when the line is cut", () => {
+    resetIds();
+    const home = tempDir();
+    const p = testPlatform(home);
+    const s = sampleSession({ cwd: "/work/demo", branch: "feature/a-branch-name-that-goes-on-and-on" });
+    s.write(projectsDir(home));
+    const { store } = importInto(p);
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), now: Date.now() } as Context;
+    const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" }, { title: "Delete which session?", verb: "choose", onPick() {} });
+    const wide = view.render(12, 120);
+    expect(wide[0]).toContain("Delete which session?");
+    expect(wide.find((l) => l.includes("feature/"))).toMatch(new RegExp(`^  .* · feature/a-branch-name-that-goes-on-and-on · \\S+ · ${s.id.slice(0, 8)}$`));
+    expect(wide.at(-1)).toStartWith("↑↓ select · Enter choose · Space preview");
+    const narrow = view.render(12, 40).find((l) => l.includes("feature/"))!;
+    expect(narrow).toEndWith(`… · ${s.id.slice(0, 8)}`);
+    expect(narrow.length).toBeLessThanOrEqual(40);
   });
 
   test("showing only this project, the list says how many sessions other projects have", () => {

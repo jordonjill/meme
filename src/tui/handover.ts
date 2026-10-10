@@ -50,6 +50,6 @@ export async function chooseHandover(
   };
 
   const pick = (s: SessionRow) => (agent ? done(s, agent) : tui.push(agentView(s)));
-  await tui.run(session ? agentView(session) : new PickerView(tui, ctx, out, filter, pick));
+  await tui.run(session ? agentView(session) : new PickerView(tui, ctx, out, filter, { title: "Continue which session?", verb: "continue", onPick: pick }));
   return result;
 }
