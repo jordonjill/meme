@@ -3,7 +3,7 @@ import type { Env } from "../platform/env";
 import { displayPath, samePath } from "../platform/paths";
 import type { SessionRow } from "../store/queries";
 import { coloredLabel, label, type Style } from "./labels";
-import { ago, padEnd, size, truncate, width } from "./text";
+import { ago, padEnd, plural, size, truncate, width } from "./text";
 
 export interface ListFilter {
   /** All projects instead of the current one. */
@@ -11,6 +11,8 @@ export interface ListFilter {
   project: string;
   agent?: Agent;
   env?: Env;
+  /** The session that is running meme right now: not listed (plan §3.1). */
+  exclude?: string | null;
 }
 
 /**
@@ -22,6 +24,7 @@ export function listed(rows: SessionRow[], f: ListFilter): SessionRow[] {
     (r) =>
       r.talked === 1 &&
       r.superseded === 0 &&
+      r.id !== f.exclude &&
       (f.all || (r.project !== null && samePath(r.project, f.project))) &&
       (!f.agent || r.agent === f.agent) &&
       (!f.env || r.env === f.env),
@@ -33,14 +36,23 @@ export interface Listing {
   filter: ListFilter;
   /** The current project has no sessions, so all projects are shown instead. */
   fellBack: boolean;
+  /** Sessions in other projects, when only the current project is shown (plan §3.1). */
+  others: number;
 }
 
 /** What `ls` lists: the current project, or all projects when it has nothing (plan §3.1). */
 export function listing(rows: SessionRow[], f: ListFilter): Listing {
   const mine = listed(rows, f);
-  if (mine.length || f.all) return { rows: mine, filter: f, fellBack: false };
+  if (f.all) return { rows: mine, filter: f, fellBack: false, others: 0 };
   const all = { ...f, all: true };
-  return { rows: listed(rows, all), filter: all, fellBack: true };
+  const everywhere = listed(rows, all);
+  if (mine.length) return { rows: mine, filter: f, fellBack: false, others: everywhere.length - mine.length };
+  return { rows: everywhere, filter: all, fellBack: true, others: 0 };
+}
+
+/** The line under a list of the current project's sessions, when other projects have some. */
+export function othersHint(others: number, how: string): string | null {
+  return others > 0 ? `+${plural(others, "session")} in other projects (${how})` : null;
 }
 
 export function fallbackNotice(project: string, home: string): string {
@@ -48,6 +60,8 @@ export function fallbackNotice(project: string, home: string): string {
 }
 
 export interface LsTextOptions {
+  /** Replaces the default last line. */
+  footer?: string;
   home: string;
   now: number;
   st: Style;
@@ -55,7 +69,7 @@ export interface LsTextOptions {
 }
 
 /** Plain-text list, for agents and pipes (plan §3.1). */
-export function lsText({ rows, filter, fellBack }: Listing, o: LsTextOptions): string {
+export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOptions): string {
   const where = filter.all ? "all projects" : displayPath(filter.project, o.home);
   if (rows.length === 0) return "No sessions found.\n";
   const cells = rows.map((r) => ({
@@ -81,10 +95,8 @@ export function lsText({ rows, filter, fellBack }: Listing, o: LsTextOptions): s
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
     out.push(line + truncate(c.title, Math.max(20, o.width - used)));
   }
-  out.push(
-    filter.all
-      ? "Run `meme show <id>` to view one."
-      : "Run `meme show <id>` to view one, or `meme ls -a` for all projects.",
-  );
+  const hint = othersHint(others, "use -a");
+  if (hint) out.push(hint);
+  out.push(o.footer ?? "Run `meme continue <id>` to continue one.");
   return out.join("\n") + "\n";
 }

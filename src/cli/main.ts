@@ -3,28 +3,37 @@ import pkg from "../../package.json";
 import { fileLogger } from "../platform/log";
 import { currentPlatform } from "../platform/paths";
 import { LookupError } from "../store/queries";
-import { UsageError } from "./args";
+import { CommandError, UsageError } from "./args";
+import { continueHelp, continueSession } from "./commands/continue";
+import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
 import { search, searchHelp } from "./commands/search";
 import { show, showHelp } from "./commands/show";
 import { status, statusHelp } from "./commands/status";
+import { uninstall, uninstallHelp } from "./commands/uninstall";
 
 const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help: string }> = {
   ls: { run: ls, help: lsHelp },
   show: { run: show, help: showHelp },
   search: { run: search, help: searchHelp },
+  continue: { run: continueSession, help: continueHelp },
   status: { run: status, help: statusHelp },
+  install: { run: install, help: installHelp },
+  uninstall: { run: uninstall, help: uninstallHelp },
 };
 
-const USAGE = `meme ${pkg.version}: read your coding-agent sessions in one place.
+const USAGE = `meme ${pkg.version}: your coding-agent sessions in one place, ready to continue in any agent.
 
 Usage: meme <command> [options]
 
 Commands:
-  ls       list sessions (current project; -a for all)
-  show     show a session, a turn per line
-  search   search past sessions, like rg
-  status   version, data location, session sources
+  ls          list sessions (current project; -a for all)
+  show        show a session, a turn per line
+  search      search past sessions, like rg
+  continue    hand a session over to a new agent session
+  status      version, data location, session sources
+  install     put the meme skill in place and mirror all sessions
+  uninstall   remove the meme skill and data
 
 Run \`meme <command> --help\` for a command's options.
 `;
@@ -52,7 +61,7 @@ export async function main(argv: string[]): Promise<number> {
       process.stderr.write(`meme ${command}: ${err.message}\nRun \`meme ${command} --help\` for usage.\n`);
       return 2;
     }
-    if (err instanceof LookupError || err instanceof RangeError) {
+    if (err instanceof LookupError || err instanceof RangeError || err instanceof CommandError) {
       process.stderr.write(`meme: ${err.message}\n`);
       return 1;
     }

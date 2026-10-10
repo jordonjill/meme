@@ -10,6 +10,7 @@ export const lsHelp = `Usage: meme ls [-a] [--agent claude|codex] [--env wsl|win
 
 List the sessions of the current project, newest first; all projects when the
 current one has none. A continued session shows up once, as its newest part.
+Run from inside an agent, the agent's own session is left out.
 
   -a, --all        all projects
   --agent <name>   only claude or codex sessions
@@ -51,6 +52,7 @@ export async function ls(argv: string[]): Promise<number> {
   const filter: ListFilter = { all: Boolean(values.all), agent: parseAgent(values.agent), env: parseEnv(values.env), project: "" };
   const ctx = createContext();
   filter.project = ctx.project;
+  filter.exclude = ctx.current;
   const out = output(Boolean(values.plain));
   if (out.interactive) return runPicker(ctx, out, filter);
   write(lsText(listing(allSessions(ctx.store.db), filter), { home: ctx.platform.home, now: ctx.now, st: out.st, width: out.width }));

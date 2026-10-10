@@ -3,7 +3,7 @@ import type { Context, Output } from "../cli/context";
 import type { Env } from "../platform/env";
 import { displayPath } from "../platform/paths";
 import { coloredLabel, label } from "../render/labels";
-import { fallbackNotice, listed, listing, type ListFilter } from "../render/ls";
+import { fallbackNotice, listed, listing, othersHint, type ListFilter } from "../render/ls";
 import { buildShow, endingLine, foldedTurn, headerLines, numberWidth, separatorLine, type ShowModel, type ShowOptions } from "../render/show";
 import { ago, size, truncate, width } from "../render/text";
 import { allSessions, type SessionRow } from "../store/queries";
@@ -49,11 +49,16 @@ export class PickerView implements View {
   /** Set when the current project has no sessions and all projects are shown instead. */
   private notice: string | null = null;
 
+  /**
+   * `onPick` turns the list into a chooser (`meme continue`): Enter picks the
+   * session instead of opening it.
+   */
   constructor(
     private readonly tui: Tui,
     private readonly ctx: Context,
     private readonly out: Output,
     private readonly filter: ListFilter,
+    private readonly onPick?: (row: SessionRow) => void,
   ) {
     this.rows = allSessions(ctx.store.db);
     const start = listing(this.rows, filter);
@@ -62,11 +67,11 @@ export class PickerView implements View {
     this.tabs = tabsFor(listed(this.rows, { ...filter, all: true }));
   }
 
-  private visible(): SessionRow[] {
+  private visible(all = this.all): SessionRow[] {
     const t = this.tabs[this.tab]!;
     const rows = listed(this.rows, {
       ...this.filter,
-      all: this.all,
+      all,
       env: t.env ?? this.filter.env,
       agent: t.agent ?? this.filter.agent,
     });
@@ -87,10 +92,13 @@ export class PickerView implements View {
     const list = this.visible();
     const where = this.all ? "all projects" : displayPath(this.filter.project, this.ctx.platform.home);
     const out = this.notice ? [st.yellow(` ${this.notice}`)] : [];
-    out.push(` ${st.bold("Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
+    out.push(` ${st.bold(this.onPick ? "Continue which session?" : "Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
     if (this.tabs.length > 1) out.push(" " + this.tabs.map((t, i) => (i === this.tab ? st.inverse(` ${t.name} `) : st.dim(` ${t.name} `))).join(" "));
     out.push(` ⌕ ${this.query ? this.query + "▏" : st.dim("Type to search…")}`);
-    const listRows = rows - out.length - 1;
+    // Only this project is shown: say how many more there are elsewhere (plan §3.1).
+    const hint = this.all ? null : othersHint(this.visible(true).length - list.length, "Ctrl+A");
+    const bottom = rows - 1 - (hint ? 1 : 0);
+    const listRows = bottom - out.length;
     const per = 2;
     const fit = Math.max(1, Math.floor(listRows / per));
     if (this.sel < this.top) this.top = this.sel;
@@ -107,9 +115,10 @@ export class PickerView implements View {
       const facts = [ago(r.ended_at, this.ctx.now, true), r.branch, size(r.size), this.all ? displayPath(r.project ?? "", this.ctx.platform.home) : null];
       out.push("  " + st.dim(facts.filter(Boolean).join(" · ")));
     });
-    while (out.length < rows - 1) out.push("");
-    out.length = rows - 1;
-    out.push(st.dim(`↑↓ select · Enter open · Space preview · Ctrl+A ${this.all ? "this project" : "all projects"}${this.tabs.length > 1 ? " · Tab source" : ""} · Esc quit`));
+    while (out.length < bottom) out.push("");
+    out.length = bottom;
+    if (hint) out.push(" " + st.dim(hint));
+    out.push(st.dim(`↑↓ select · Enter ${this.onPick ? "continue" : "open"} · Space preview · Ctrl+A ${this.all ? "this project" : "all projects"}${this.tabs.length > 1 ? " · Tab source" : ""} · Esc quit`));
     return out;
   }
 
@@ -136,10 +145,12 @@ export class PickerView implements View {
         this.sel = Math.max(0, list.length - 1);
         return;
       case "enter":
-        if (current) this.tui.push(new SessionView(this.tui, this.model(current), this.base()));
+        if (!current) return;
+        if (this.onPick) this.onPick(current);
+        else this.tui.push(new SessionView(this.tui, this.model(current), this.base()));
         return;
       case "space":
-        if (current) this.tui.push(new PreviewView(this.tui, this.model(current), this.base()));
+        if (current) this.tui.push(new PreviewView(this.tui, this.model(current), this.base(), this.onPick && (() => this.onPick!(current))));
         return;
       case "tab":
       case "backtab":
@@ -189,6 +200,8 @@ export class PreviewView implements View {
     private readonly tui: Tui,
     private readonly m: ShowModel,
     private readonly base: Omit<ShowOptions, "width" | "wrap">,
+    /** In `meme continue`, Enter picks this session instead of opening it. */
+    private readonly onPick?: () => void,
   ) {}
 
   render(rows: number, cols: number): string[] {
@@ -208,7 +221,7 @@ export class PreviewView implements View {
     this.top = this.top === null ? max : Math.max(0, Math.min(this.top, max));
     const out = [...head, ...body.slice(this.top, this.top + room)];
     while (out.length < rows - 1) out.push("");
-    out.push(o.st.dim("↑↓ scroll · Enter open · Space/Esc back"));
+    out.push(o.st.dim(`↑↓ scroll · Enter ${this.onPick ? "continue" : "open"} · Space/Esc back`));
     return out;
   }
 
@@ -222,7 +235,8 @@ export class PreviewView implements View {
     else if (k.name === "end") this.top = this.total;
     else if (k.name === "enter") {
       this.tui.pop();
-      this.tui.push(new SessionView(this.tui, this.m, this.base));
+      if (this.onPick) this.onPick();
+      else this.tui.push(new SessionView(this.tui, this.m, this.base));
     } else if (k.name === "space" || k.name === "esc" || (k.name === "char" && k.ch === "q")) this.tui.pop();
   }
 }

@@ -2,6 +2,9 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 
 export class UsageError extends Error {}
 
+/** An expected failure the user can act on: one line, exit code 1, nothing logged. */
+export class CommandError extends Error {}
+
 type Options = NonNullable<ParseArgsConfig["options"]>;
 
 /** `node:util` parseArgs, with its errors turned into usage errors (exit 2). */

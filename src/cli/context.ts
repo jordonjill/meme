@@ -1,4 +1,5 @@
 import { ADAPTERS } from "../adapters";
+import { pruneHandoffs } from "../handoff/file";
 import { projectResolver } from "../model/project";
 import { fileLogger, type Logger } from "../platform/log";
 import { currentPlatform, type Platform } from "../platform/paths";
@@ -13,6 +14,8 @@ export interface Context {
   imported: ImportResult | null;
   /** The project of the directory meme was started in. */
   project: string;
+  /** The agent session running meme, if any; `ls` and `continue` leave it out. */
+  current: string | null;
   now: number;
 }
 
@@ -28,7 +31,25 @@ export function createContext(): Context {
     // An import failure must not stop the command: use what the store has.
     log.error("import failed", err);
   }
-  return { platform, store, log, imported, project: projectResolver(platform)(process.cwd()) ?? process.cwd(), now: Date.now() };
+  const now = Date.now();
+  if (!store.readonly) pruneHandoffs(platform.dataDir, now);
+  return {
+    platform,
+    store,
+    log,
+    imported,
+    project: projectResolver(platform)(process.cwd()) ?? process.cwd(),
+    current: currentSession(platform.vars),
+    now,
+  };
+}
+
+/**
+ * The session of the agent that runs this meme. Claude Code sets
+ * CLAUDE_CODE_SESSION_ID for its tools; Codex is checked in step ③.
+ */
+export function currentSession(vars: Record<string, string | undefined>): string | null {
+  return vars.CLAUDE_CODE_SESSION_ID?.trim().toLowerCase() || null;
 }
 
 /** Running inside an agent's tool call rather than a person's terminal. */
