@@ -11,8 +11,8 @@ export interface ListFilter {
   project: string;
   agent?: Agent;
   env?: Env;
-  /** The session that is running meme right now: not listed (plan §3.1). */
-  exclude?: string | null;
+  /** The sessions running meme right now: not listed (plan §3.1). */
+  exclude?: Set<string>;
   /** Only these sessions (the matches of a `meme continue` target). */
   only?: Set<string>;
 }
@@ -26,7 +26,7 @@ export function listed(rows: SessionRow[], f: ListFilter): SessionRow[] {
     (r) =>
       r.talked === 1 &&
       r.superseded === 0 &&
-      r.id !== f.exclude &&
+      !f.exclude?.has(r.id) &&
       (!f.only || f.only.has(r.id)) &&
       (f.all || (r.project !== null && samePath(r.project, f.project))) &&
       (!f.agent || r.agent === f.agent) &&
@@ -84,6 +84,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     size: size(r.size),
     project: filter.all ? displayPath(r.project ?? "", o.home) : "",
     title: r.title ?? "(untitled)",
+    archived: r.archived === 1,
   }));
   const colW = (k: "label" | "ago" | "branch" | "size" | "project") => Math.max(...cells.map((c) => width(c[k])));
   const wLabel = colW("label");
@@ -96,7 +97,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     let line = `  ${c.id}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
     if (filter.all) line += padEnd(truncate(c.project, wProject), wProject) + "  ";
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
-    out.push(line + truncate(c.title, Math.max(20, o.width - used)));
+    out.push(line + truncate(c.title, Math.max(20, o.width - used - (c.archived ? 11 : 0))) + (c.archived ? o.st.dim(" (archived)") : ""));
   }
   const hint = othersHint(others, "use -a");
   if (hint) out.push(hint);
@@ -126,7 +127,7 @@ export function numberedText({ rows, filter, fellBack, others }: Listing, o: Num
     labelColored: coloredLabel(o.st, r.agent, r.env),
     ago: ago(r.ended_at, o.now),
     project: filter.all ? displayPath(r.project ?? "", o.home) : "",
-    title: truncate(r.title ?? "(untitled)", 48),
+    title: truncate(r.title ?? "(untitled)", 48) + (r.archived ? " (archived)" : ""),
     id: r.id.slice(0, 8),
   }));
   const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));

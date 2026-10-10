@@ -13,8 +13,8 @@ export interface Context {
   imported: ImportResult | null;
   /** The project of the directory meme was started in. */
   project: string;
-  /** The agent session running meme, if any; `ls` and `continue` leave it out. */
-  current: string | null;
+  /** The agent sessions running meme, if any; `ls` and `continue` leave them out. */
+  current: Set<string>;
   now: number;
 }
 
@@ -37,22 +37,25 @@ export function createContext(): Context {
     log,
     imported,
     project: projectResolver(platform)(process.cwd()) ?? process.cwd(),
-    current: currentSession(platform.vars),
+    current: currentSessions(platform.vars),
     now,
   };
 }
 
 /**
- * The session of the agent that runs this meme. Claude Code sets
- * CLAUDE_CODE_SESSION_ID for its tools; Codex is checked in step ③.
+ * The sessions of the agents that run this meme: Claude Code sets
+ * CLAUDE_CODE_SESSION_ID for its tools, Codex sets CODEX_THREAD_ID (sessions.md
+ * §7.1). Both can be set when one agent was started inside the other; both are
+ * running, so both are left out.
  */
-export function currentSession(vars: Record<string, string | undefined>): string | null {
-  return vars.CLAUDE_CODE_SESSION_ID?.trim().toLowerCase() || null;
+export function currentSessions(vars: Record<string, string | undefined>): Set<string> {
+  const ids = [vars.CLAUDE_CODE_SESSION_ID, vars.CODEX_THREAD_ID].map((v) => v?.trim().toLowerCase()).filter((v): v is string => Boolean(v));
+  return new Set(ids);
 }
 
 /** Running inside an agent's tool call rather than a person's terminal. */
 export function insideAgent(vars = process.env): boolean {
-  return vars.CLAUDECODE === "1" || Object.keys(vars).some((k) => k.startsWith("CODEX_SANDBOX"));
+  return vars.CLAUDECODE === "1" || Boolean(vars.CODEX_THREAD_ID) || Object.keys(vars).some((k) => k.startsWith("CODEX_SANDBOX"));
 }
 
 export interface Output {

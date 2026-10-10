@@ -1,10 +1,10 @@
 import type { Database } from "bun:sqlite";
-import { callsOf, contentOf, promptText, type Rec } from "../model/record";
+import { callsOf, contentOf, promptText, shellOutput, type Rec } from "../model/record";
 import { firstLine } from "../model/title";
-import { callSummary, oneLine } from "../model/tools";
-import { endingOf, groupTurns, kindOf, mayBeRunning, type Ending, type Turn } from "../model/turns";
+import { describeCall, oneLine, resultFailed, resultText } from "../model/tools";
+import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Ending, type Turn } from "../model/turns";
 import { displayPath } from "../platform/paths";
-import { predecessors, sessionRecords, uidsOf, type SessionRow } from "../store/queries";
+import { ancestors, sessionRecords, uidsOf, type Ancestor, type SessionRow } from "../store/queries";
 import { coloredLabel, type Style } from "./labels";
 import { ago, padStart, plural, size, span, trimmedLines, truncate, width, wrap } from "./text";
 
@@ -12,34 +12,39 @@ export interface ShowModel {
   session: SessionRow;
   records: Rec[];
   turns: Turn[];
-  /** Turn number → the session the turns before it came from (a continuation point). */
-  separators: Map<number, string>;
+  /** Turn number → the session the turns before it came from, and how (a continuation or fork point). */
+  separators: Map<number, Ancestor>;
   ending: Ending;
 }
 
 export function buildShow(db: Database, session: SessionRow): ShowModel {
   const records = sessionRecords(db, session.id);
   const { turns } = groupTurns(records);
-  return { session, records, turns, separators: continuationPoints(db, session.id, turns), ending: endingOf(records) };
+  return { session, records, turns, separators: continuationPoints(db, session, turns), ending: endingOf(records) };
 }
 
 /**
- * Where the chain changes hands. B continued from A starts with A's records; a
- * turn belongs to the oldest session that has its prompt.
+ * Where the chain changes hands. B continued from A (or forked from it) starts
+ * with A's records; a turn belongs to the oldest session that has its prompt.
  */
-function continuationPoints(db: Database, id: string, turns: Turn[]): Map<number, string> {
-  const out = new Map<number, string>();
-  const chain = predecessors(db, id);
+function continuationPoints(db: Database, session: SessionRow, turns: Turn[]): Map<number, Ancestor> {
+  const out = new Map<number, Ancestor>();
+  const chain = ancestors(db, session.id);
   if (chain.length === 0) return out;
-  const sets = chain.map((p) => ({ id: p, uids: uidsOf(db, p) }));
+  const sets = chain.map((p) => ({ ...p, uids: uidsOf(db, p.id) }));
+  const forkParent = chain.at(-1)?.link === "forked" ? chain.at(-1)! : null;
   const originOf = (t: Turn) => {
-    const uid = (t.prompt ?? t.records[0])?.uid;
-    return (uid && sets.find((s) => s.uids.has(uid))?.id) || id;
+    const rec = t.prompt ?? t.records[0];
+    const found = rec?.uid ? sets.find((s) => s.uids.has(rec.uid!)) : undefined;
+    if (found) return found;
+    // A fork keeps what it took from its parent even after the parent rolled that part back.
+    if (forkParent && session.fork_point !== null && rec && rec.seq < session.fork_point) return forkParent;
+    return null;
   };
-  let prev: string | null = null;
+  let prev: Ancestor | null | undefined;
   for (const t of turns) {
     const origin = originOf(t);
-    if (prev !== null && origin !== prev) out.set(t.n, prev);
+    if (prev && origin?.id !== prev.id) out.set(t.n, { id: prev.id, link: prev.link });
     prev = origin;
   }
   return out;
@@ -68,6 +73,7 @@ export function headerLines(m: ShowModel, o: ShowOptions): string[] {
     span(s.started_at, s.ended_at, new Date(o.now)),
     plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn"),
     size(s.size),
+    s.archived ? "archived" : null,
   ].filter(Boolean);
   return [title, o.st.dim(facts.join(" · "))];
 }
@@ -79,7 +85,8 @@ export function endingLine(m: ShowModel, o: ShowOptions): string {
     unfinished: "Last turn did not finish (it stopped at a tool call or without a reply)",
   };
   let line = text[m.ending];
-  if (mayBeRunning(m.session.mtime, o.now)) line += `; the file changed ${ago(new Date(m.session.mtime!).toISOString(), o.now, true)}, it may still be running`;
+  const active = lastActive(m.session.ended_at);
+  if (mayBeRunning(active, o.now)) line += `; it was active ${ago(new Date(active!).toISOString(), o.now, true)}, it may still be running`;
   return line;
 }
 
@@ -87,8 +94,8 @@ export function numberWidth(m: ShowModel): number {
   return String(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0).length;
 }
 
-export function separatorLine(fromId: string, o: ShowOptions): string {
-  return o.st.dim(`  ── continued from ${fromId.slice(0, 8)} ──`);
+export function separatorLine(from: Ancestor, o: ShowOptions): string {
+  return o.st.dim(`  ── ${from.link} from ${from.id.slice(0, 8)} ──`);
 }
 
 const RESULT_LINES = 3;
@@ -162,6 +169,9 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
       text.forEach((line, i) => {
         for (const [j, piece] of prose(line).entries()) out.push((i === 0 && j === 0 ? head : indent) + piece);
       });
+      // A Codex `!` command carries its output in the same record.
+      const output = shellOutput(contentOf(body) ?? "");
+      if (output !== null) push(o.st.dim("⎿ "), limited(resultText(output)), o.st.dim);
       continue;
     }
     if (kind === "injected") {
@@ -184,13 +194,13 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
     if (body.role === "assistant" && "tool_calls" in body) {
       for (const call of callsOf(body)) {
         const result = results.get(call.id);
-        const failed = result?.body.role === "tool" && result.body.ok === false;
-        const summary = callSummary(call);
-        const line = `${call.name}${summary ? "  " + summary : ""}`;
+        const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
+        const { name, summary } = describeCall(call);
+        const line = `${name}${summary ? "  " + summary : ""}`;
         out.push(indent + (failed ? o.st.red("✗ ") : o.st.green("⏺ ")) + (o.full ? line : truncate(line, room)));
         if (result) {
           shown.add(result);
-          const text = contentOf(result.body) ?? "";
+          const text = resultText(contentOf(result.body) ?? "");
           push(o.st.dim("⎿ "), limited(text), o.st.dim);
         }
       }

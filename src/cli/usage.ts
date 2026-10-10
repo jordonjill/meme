@@ -5,4 +5,6 @@ export const HOW_TO_CONTINUE = `How to continue a session:
   In Claude Code:  ! meme continue        see the numbered list
                    ! meme continue <n>    hand over number n (or: last, codex, win, an id,
                                           a word from the title); it sums up where things
-                                          stand and waits for your go-ahead`;
+                                          stand and waits for your go-ahead
+  In Codex:        the same two commands, then say "continue": Codex keeps the output
+                   of a ! command but does not pass it to the model by itself`;

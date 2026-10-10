@@ -10,9 +10,18 @@ export const CHAR_LIMIT = 25_000;
 export interface Limits {
   tokens: number;
   chars: number;
+  /** Also bytes of UTF-8, where the consumer counts those (Codex). */
+  bytes?: number;
 }
 
 export const LIMITS: Limits = { tokens: TOKEN_LIMIT, chars: CHAR_LIMIT };
+
+/**
+ * Inside Codex: it keeps 10,000 of its tokens of a command's output and counts a
+ * token as 4 bytes, so 40,000 bytes; 10% is left for the lines around the handoff
+ * (sessions.md §7.1).
+ */
+export const CODEX_BYTES = 36_000;
 
 const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
 
@@ -28,7 +37,9 @@ export function estimateTokens(s: string): number {
  * for mixed text, which only errs on the short side.
  */
 export function weight(s: string, limits: Limits = LIMITS): number {
-  return Math.max(s.length, Math.ceil((estimateTokens(s) * limits.chars) / limits.tokens));
+  const byTokens = Math.ceil((estimateTokens(s) * limits.chars) / limits.tokens);
+  const byBytes = limits.bytes ? Math.ceil((Buffer.byteLength(s, "utf8") * limits.chars) / limits.bytes) : 0;
+  return Math.max(s.length, byTokens, byBytes);
 }
 
 /** Cut text to about `max` tokens on a line or character boundary. */

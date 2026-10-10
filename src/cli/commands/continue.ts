@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { ADAPTERS, launchable } from "../../adapters";
+import { CODEX_BYTES, LIMITS } from "../../handoff/budget";
 import { buildHandoff } from "../../handoff/build";
 import { displayPath } from "../../platform/paths";
 import { runAttached } from "../../platform/spawn";
@@ -13,7 +14,7 @@ import { isListNumber, resolveTarget } from "../target";
 import { HOW_TO_CONTINUE } from "../usage";
 import { parseAgent } from "./ls";
 
-export const continueHelp = `Usage: meme continue [<target>] [-a] [--in claude] [--fresh] [--plain]
+export const continueHelp = `Usage: meme continue [<target>] [-a] [--in claude|codex] [--fresh] [--plain]
 
 Continue a session in a new agent session. The handoff is worked out from the
 session each time and printed; nothing is written, and nothing is summarized.
@@ -25,7 +26,7 @@ words that narrow it down: last, claude, codex, win, wsl, the start of a session
 id, or a word from the title. One match is handed over; several are listed.
 
   -a, --all      list the sessions of all projects, not only this one
-  --in claude    at a terminal, continue in Claude Code without asking
+  --in <agent>   at a terminal, continue in claude or codex without asking
   --fresh        only the user's messages: start over from the repository,
                  not from the previous agent's approach
   --plain        print instead of starting an agent, even in a terminal
@@ -36,9 +37,16 @@ const RECENT = 5;
 const RECENT_ALL = 10;
 const MATCHES = 20;
 
-/** The last line of a list printed into an agent session (plan §3.4): the agent must not pick. */
-function forTheUser(how: string): string {
-  return `This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! ${how}`;
+/**
+ * The last line of a list printed into an agent session (plan §3.4): the agent
+ * must not pick. In Claude Code the agent runs the user's choice itself, so the
+ * handoff lands folded in its tool output; Codex never sees `!` output on its own,
+ * so there the user types the command.
+ */
+function forTheUser(how: string, vars: Record<string, string | undefined>): string {
+  const claudeCode = (vars.CLAUDECODE === "1" || Boolean(vars.CLAUDE_CODE_SESSION_ID)) && !vars.CODEX_THREAD_ID;
+  const yourself = claudeCode ? ` When the user has chosen, run \`${how}\` yourself.` : "";
+  return `This list is for the user. Ask which one to continue and wait; do not pick one yourself.${yourself} The user can also type: ! ${how}`;
 }
 
 /** The newest session of a continuation chain holds all of it, so that is the one handed over. */
@@ -70,7 +78,7 @@ export async function continueSession(argv: string[]): Promise<number> {
     return 0;
   }
   const target = values.in === undefined ? undefined : parseAgent(values.in);
-  if (target && !ADAPTERS.some((a) => a.agent === target)) throw new UsageError(`--in ${values.in} is not supported yet; use --in claude`);
+  if (target && !ADAPTERS.some((a) => a.agent === target)) throw new UsageError(`--in ${values.in} is not supported`);
 
   // Two modes (plan §3.4): a person at a terminal gets an agent started for them;
   // an agent (or a pipe) gets text. Nothing is ever written.
@@ -108,7 +116,9 @@ export async function continueSession(argv: string[]): Promise<number> {
 
   if (!terminal) {
     if (picked) {
-      const handoff = buildHandoff({ session: picked, records: sessionRecords(db, picked.id), env: ctx.platform.env, now: ctx.now }, { fresh: Boolean(values.fresh) });
+      // Codex cuts command output at about 40,000 bytes; keep the handoff under that there.
+      const limits = ctx.platform.vars.CODEX_THREAD_ID ? { ...LIMITS, bytes: CODEX_BYTES } : LIMITS;
+      const handoff = buildHandoff({ session: picked, records: sessionRecords(db, picked.id), env: ctx.platform.env, now: ctx.now }, { fresh: Boolean(values.fresh), limits });
       write(handoff.text);
       return 0;
     }
@@ -119,12 +129,12 @@ export async function continueSession(argv: string[]): Promise<number> {
       write(numberedText(choices, {
         home: ctx.platform.home, now: ctx.now, st: out.st, width: out.width, numbered: false, allHint: "meme continue -a",
         heading: `Sessions matching "${positionals.join(" ")}" (newest first):`,
-        footer: forTheUser("meme continue <id>"),
+        footer: forTheUser("meme continue <id>", ctx.platform.vars),
       }));
     } else {
       write(numberedText(recent(), {
         home: ctx.platform.home, now: ctx.now, st: out.st, width: out.width, numbered: true, allHint: "meme continue -a",
-        footer: forTheUser(`meme continue${all} <number>`),
+        footer: forTheUser(`meme continue${all} <number>`, ctx.platform.vars),
       }));
     }
     return 0;
@@ -151,7 +161,11 @@ export async function continueSession(argv: string[]): Promise<number> {
   if (!dir || !existsSync(dir)) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
   const id8 = session.id.slice(0, 8);
   const command = `meme continue ${id8}${values.fresh ? " --fresh" : ""}`;
-  const message = `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`;
+  const message =
+    agent.adapter.agent === "codex"
+      ? // Codex's model sets how much command output it keeps; ask for enough (sessions.md §7.1).
+        `Continue an earlier session: run \`${command}\` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.`
+      : `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`;
   const { args } = agent.adapter.launch(message);
   write(`Continuing ${id8} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${displayPath(dir, ctx.platform.home)}\n`);
   ctx.store.db.close();

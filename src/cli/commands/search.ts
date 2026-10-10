@@ -1,6 +1,6 @@
 import { samePath } from "../../platform/paths";
 import { searchText } from "../../render/search";
-import { allSessions, predecessors, resolveSession } from "../../store/queries";
+import { allSessions, ancestors, resolveSession } from "../../store/queries";
 import { compile, groupByChain, PatternError, search as runSearch } from "../../store/search";
 import { intOption, parse, UsageError } from "../args";
 import { createContext, output, write } from "../context";
@@ -52,7 +52,7 @@ export async function search(argv: string[]): Promise<number> {
   let scope: string[] | null;
   if (values.session) {
     const s = resolveSession(db, values.session);
-    scope = [...predecessors(db, s.id), s.id];
+    scope = [...ancestors(db, s.id).map((a) => a.id), s.id];
   } else if (values.a) scope = null;
   else scope = rows.filter((r) => r.project !== null && samePath(r.project, ctx.project)).map((r) => r.id);
 

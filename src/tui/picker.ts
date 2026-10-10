@@ -112,7 +112,7 @@ export class PickerView implements View {
       const lab = label(r.agent, r.env);
       const title = truncate(r.title ?? "(untitled)", cols - 6 - width(lab));
       out.push(`${selected ? st.cyan("❯ ") : "  "}${selected ? st.bold(title) : title}  ${coloredLabel(st, r.agent, r.env)}`);
-      const facts = [ago(r.ended_at, this.ctx.now, true), r.branch, size(r.size), this.all ? displayPath(r.project ?? "", this.ctx.platform.home) : null];
+      const facts = [ago(r.ended_at, this.ctx.now, true), r.branch, size(r.size), this.all ? displayPath(r.project ?? "", this.ctx.platform.home) : null, r.archived ? "archived" : null];
       out.push("  " + st.dim(facts.filter(Boolean).join(" · ")));
     });
     while (out.length < bottom) out.push("");
