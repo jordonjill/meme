@@ -121,7 +121,8 @@ describe("ls", () => {
       [
         "Sessions in /work/demo (newest first):",
         `  bbbbbbbb  CC·Linux  1w ago  main  ${mine[0]!.size >= 1024 ? Math.round(mine[0]!.size / 1024) + "KB" : mine[0]!.size + "B"}  Status line setup`,
-        "Run `meme show <id>` to view one, or `meme ls -a` for all projects.",
+        "+1 session in other projects (use -a)",
+        "Run `meme continue <id>` to continue one.",
         "",
       ].join("\n"),
     );
@@ -135,7 +136,7 @@ describe("ls", () => {
     const text = lsText(l, { home: "/home/u", now: NOW, st: plain, width: 120 }).split("\n");
     expect(text[0]).toBe("No sessions in ~ — showing all projects");
     expect(text[1]).toMatch(/^ {2}bbbbbbbb {2}CC·Linux .* \/work\/demo +Status line setup$/);
-    expect(text[3]).toBe("Run `meme show <id>` to view one.");
+    expect(text[3]).toBe("Run `meme continue <id>` to continue one.");
     expect(lsText(listing([], { all: false, project: "/x" }), { home: "/home/u", now: NOW, st: plain, width: 100 })).toBe("No sessions found.\n");
   });
 
