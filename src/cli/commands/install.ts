@@ -68,8 +68,9 @@ export async function install(argv: string[]): Promise<number> {
     const c = counts(ctx.store.db);
     summary = `mirrored ${plural(c.sessions, "session")} into ${ctx.store.memory ? "memory (nothing here can be written)" : displayPath(ctx.store.file, home)}`;
   }
+  const lw = Math.max(0, ...table.map((r) => r[0].length));
   const w = Math.max(0, ...table.map((r) => r[1].length));
-  for (const [lab, dir, n] of table) lines.push(`  ${padEnd(lab, 8)} ${padEnd(dir, w)}  ${n}`);
+  for (const [lab, dir, n] of table) lines.push(`  ${padEnd(lab, lw)}  ${padEnd(dir, w)}  ${n}`);
   lines.push(`  ${summary}`);
 
   if (!findCommand("meme", platform.vars)) {

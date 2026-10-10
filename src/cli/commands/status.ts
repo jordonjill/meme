@@ -40,9 +40,10 @@ export async function status(argv: string[]): Promise<number> {
     "Sources:",
   ];
   const rows = sources(db);
+  const lw = Math.max(0, ...rows.map((r) => label(r.agent, r.env).length));
   const w = Math.max(0, ...rows.map((r) => displayPath(r.root, home).length));
   for (const r of rows) {
-    lines.push(`  ${padEnd(label(r.agent, r.env), 9)} ${padEnd(displayPath(r.root, home), w)}  ${r.reachable ? "readable" : "NOT READABLE (nothing deleted)"}  ${plural(r.sessions, "session")}`);
+    lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${r.reachable ? "readable" : "NOT READABLE (nothing deleted)"}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");
   write(lines.join("\n") + "\n");

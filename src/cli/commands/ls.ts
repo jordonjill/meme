@@ -17,8 +17,9 @@ Run from inside an agent, the agent's own session is left out.
   --env <name>     only sessions from wsl, win, mac or linux
   --plain          plain text, even in a terminal
 
-In a terminal: ↑↓ select, Enter open, Space preview, type to search,
-Ctrl+A all projects, Tab switch source, Esc quit.
+In a terminal: ↑↓ select, Enter open, Space preview, type to search titles,
+projects, branches and ids, ←→ filter by platform or agent, Tab switch between
+those two rows, Ctrl+A all projects, Esc quit.
 `;
 
 export function parseAgent(v: string | undefined): Agent | undefined {
