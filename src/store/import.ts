@@ -83,35 +83,50 @@ function importRoot(
     stored.set(row.path, row);
   }
 
-  const seen = new Set<string>();
+  // A session can have several files (a Codex rollback starts a new one): convert them together.
+  const groups = new Map<string, string[]>();
   for (const file of listed) {
-    const sessionId = adapter.sessionId(file);
-    if (!sessionId) continue;
-    seen.add(file);
-    result.scanned++;
-    const prev = stored.get(file);
-    let size: number;
-    let mtime: number;
-    try {
-      const st = statSync(file);
-      size = st.size;
-      mtime = st.mtimeMs;
-    } catch (err) {
+    const id = adapter.sessionId(file);
+    if (!id) continue;
+    (groups.get(id) ?? groups.set(id, []).get(id)!).push(file);
+  }
+  const filesOf = (id: string) => groups.get(id) ?? [];
+
+  const seen = new Set<string>();
+  for (const [sessionId, files] of groups) {
+    for (const f of files) seen.add(f);
+    result.scanned += files.length;
+    const states: FileState[] = [];
+    let unreadable = false;
+    for (const file of files) {
+      try {
+        const st = statSync(file);
+        states.push({ path: file, source: root.id, size: st.size, mtime: st.mtimeMs });
+      } catch (err) {
+        unreadable = true;
+        log.error(`stat failed, keeping the old mirror: ${file}`, err);
+      }
+    }
+    if (unreadable) {
       result.failed++;
-      log.error(`stat failed, keeping the old mirror: ${file}`, err);
       continue;
     }
     // Both size and mtime: Codex on Windows appends without updating mtime.
-    if (prev && prev.size === size && prev.mtime === mtime) continue;
+    const same = (s: FileState) => {
+      const prev = stored.get(s.path);
+      return prev !== undefined && prev.session === sessionId && prev.size === s.size && prev.mtime === s.mtime;
+    };
+    const storedOfSession = [...stored.values()].filter((f) => f.session === sessionId).length;
+    if (states.every(same) && storedOfSession === states.length) continue;
     let converted: Converted;
     try {
-      converted = adapter.convert(adapter.readText(file), { sessionId, root, project });
+      converted = adapter.convert(files, { sessionId, root, project, filesOf });
     } catch (err) {
       result.failed++;
-      log.error(`read failed, keeping the old mirror: ${file}`, err);
+      log.error(`read failed, keeping the old mirror: ${files.join(", ")}`, err);
       continue;
     }
-    writeSession(db, converted, { path: file, source: root.id, size, mtime });
+    writeSession(db, converted, states);
     touched.add(converted.session.id);
     if (converted.session.continuedIn) touched.add(converted.session.continuedIn);
     result.changed++;
@@ -119,6 +134,8 @@ function importRoot(
 
   for (const prev of stored.values()) {
     if (seen.has(prev.path)) continue;
+    // writeSession may already have dropped it while rewriting its session.
+    if (!db.query("SELECT 1 FROM files WHERE path = ?").get(prev.path)) continue;
     for (const id of deleteFile(db, prev.path)) touched.add(id);
     result.deleted++;
   }
@@ -147,7 +164,7 @@ const MAYBE_SECRET = /sk-|gh[pousr]_|github_pat_|AKIA|PRIVATE KEY|Bearer|:\/\/|p
  * Write one converted session in a single transaction, touching only records
  * whose hash changed (plan §4.6.1 step 5).
  */
-export function writeSession(db: Database, converted: Converted, file: FileState): void {
+export function writeSession(db: Database, converted: Converted, files: FileState[]): void {
   const s = converted.session;
   const rows = converted.records.map((rec, seq) => {
     const raw = JSON.stringify(rec.body);
@@ -159,11 +176,12 @@ export function writeSession(db: Database, converted: Converted, file: FileState
   });
 
   const upsertSession = db.prepare(
-    `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET agent = excluded.agent, env = excluded.env, project = excluded.project,
        title = excluded.title, branch = excluded.branch, started_at = excluded.started_at,
-       ended_at = excluded.ended_at, continued_in = excluded.continued_in`,
+       ended_at = excluded.ended_at, continued_in = excluded.continued_in, forked_from = excluded.forked_from,
+       fork_point = excluded.fork_point`,
   );
   const upsertFile = db.prepare(
     `INSERT INTO files (path, session, source, size, mtime) VALUES (?, ?, ?, ?, ?)
@@ -181,9 +199,14 @@ export function writeSession(db: Database, converted: Converted, file: FileState
   db.transaction(() => {
     upsertSession.run(
       s.id, s.agent, s.env, s.project, s.title === null ? null : redactText(s.title),
-      s.branch, s.startedAt, s.endedAt, s.continuedIn,
+      s.branch, s.startedAt, s.endedAt, s.continuedIn, s.forkedFrom, s.forkPoint,
     );
-    upsertFile.run(file.path, s.id, file.source, file.size, file.mtime);
+    for (const f of files) upsertFile.run(f.path, s.id, f.source, f.size, f.mtime);
+    // Files of this session that are gone (an archived file moved, an old rollback file removed).
+    const keep = new Set(files.map((f) => f.path));
+    for (const { path } of db.query<{ path: string }, [string]>("SELECT path FROM files WHERE session = ?").all(s.id)) {
+      if (!keep.has(path)) db.run("DELETE FROM files WHERE path = ?", [path]);
+    }
     const existing = new Map<number, string>();
     for (const r of db.query<{ seq: number; hash: string }, [string]>("SELECT seq, hash FROM records WHERE session = ?").all(s.id)) {
       existing.set(r.seq, r.hash);

@@ -32,8 +32,8 @@ export async function status(argv: string[]): Promise<number> {
   const lines = [
     `meme ${pkg.version}`,
     `Environment:  ${ctx.platform.env}`,
-    `Data:         ${memory ? "in memory (no database file could be written)" : displayPath(file, home) + dbSize}`,
-    `Mode:         ${readonly ? "read-only mode: sessions are not imported, the data may be out of date" : "read-write"}`,
+    `Data:         ${displayPath(file, home)}${dbSize}${memory ? (dbSize ? ", read into memory" : " cannot be written; working in memory") : ""}`,
+    `Mode:         ${readonly ? "read-only mode: nothing is written; sessions are imported into memory for this run" : "read-write"}`,
     `Mirror:       ${plural(c.sessions, "session")}, ${plural(c.records, "record")}`,
     `Last import:  ${last ? `${when(last, new Date(ctx.now))} (${ago(last, ctx.now)})` : "never"}` +
       (ctx.imported ? `; this run checked ${plural(ctx.imported.scanned, "file")} in ${Math.round(ctx.imported.ms)} ms` : ""),

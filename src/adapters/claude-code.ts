@@ -73,8 +73,9 @@ export const claudeCode: Adapter = {
 
   readText: readJsonl,
 
-  convert(text: string, ctx: ConvertContext): Converted {
-    return convertClaude(text, ctx);
+  convert(files: string[], ctx: ConvertContext): Converted {
+    // Claude Code keeps one file per session.
+    return convertClaude(readJsonl(files[0]!), ctx);
   },
 };
 
@@ -167,6 +168,8 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
       startedAt,
       endedAt,
       continuedIn,
+      forkedFrom: null,
+      forkPoint: null,
     },
     records,
   };

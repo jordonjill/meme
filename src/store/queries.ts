@@ -13,6 +13,10 @@ export interface SessionRow {
   started_at: string | null;
   ended_at: string | null;
   continued_in: string | null;
+  forked_from: string | null;
+  fork_point: number | null;
+  /** Codex moved its file to archived_sessions/: listed, marked "archived". */
+  archived: number;
   /** Sum of the original files' sizes. */
   size: number;
   /** Latest mtime of the original files, in ms. */
@@ -30,7 +34,8 @@ SELECT s.*,
   (SELECT MAX(mtime) FROM files f WHERE f.session = s.id) AS mtime,
   COALESCE((SELECT turn FROM records r WHERE r.session = s.id ORDER BY seq DESC LIMIT 1), 0) AS turns,
   EXISTS (SELECT 1 FROM records r WHERE r.session = s.id AND r.role = 'assistant') AS talked,
-  EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded
+  EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded,
+  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND instr(f.path, 'archived_sessions') > 0) AS archived
 FROM sessions s`;
 
 /** All sessions, newest first. */
@@ -86,6 +91,35 @@ export function sessionRecords(db: Database, session: string): Rec[] {
       ts: r.ts,
       body: JSON.parse(r.body) as Body,
     }));
+}
+
+export interface Ancestor {
+  id: string;
+  /** How the part after it came from it: a continuation (Claude Code) or a fork (Codex). */
+  link: "continued" | "forked";
+}
+
+/**
+ * Where this session's earlier records came from, oldest first: sessions it
+ * continued, and the session it was forked from (and where that one came from).
+ */
+export function ancestors(db: Database, session: string): Ancestor[] {
+  const out: Ancestor[] = [];
+  const seen = new Set([session]);
+  let current = session;
+  for (;;) {
+    const prev = db.query<{ id: string }, [string]>("SELECT id FROM sessions WHERE continued_in = ? ORDER BY ended_at DESC LIMIT 1").get(current);
+    let next: Ancestor | null = prev ? { id: prev.id, link: "continued" } : null;
+    if (!next) {
+      const fork = db.query<{ forked_from: string | null }, [string]>("SELECT forked_from FROM sessions WHERE id = ?").get(current);
+      if (fork?.forked_from && db.query("SELECT 1 FROM sessions WHERE id = ?").get(fork.forked_from)) next = { id: fork.forked_from, link: "forked" };
+    }
+    if (!next || seen.has(next.id)) break;
+    seen.add(next.id);
+    out.unshift(next);
+    current = next.id;
+  }
+  return out;
 }
 
 /** Sessions continued into this one, oldest first: A → B → this. */

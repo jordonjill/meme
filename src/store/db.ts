@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { errorCode, removeFile } from "../platform/fs";
 
@@ -8,7 +8,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * mismatch deletes the database and rebuilds it from the original sessions
  * (plan §4.4); there are no migrations.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -22,7 +22,9 @@ CREATE TABLE sessions (
   branch       TEXT,
   started_at   TEXT,
   ended_at     TEXT,
-  continued_in TEXT
+  continued_in TEXT,
+  forked_from  TEXT,
+  fork_point   INTEGER
 );
 CREATE TABLE files (
   path    TEXT PRIMARY KEY,
@@ -50,14 +52,18 @@ CREATE INDEX records_uid ON records(uid);
 CREATE INDEX sessions_project ON sessions(project, ended_at);
 CREATE INDEX files_session ON files(session);
 CREATE INDEX sessions_continued ON sessions(continued_in);
+CREATE INDEX sessions_forked ON sessions(forked_from);
 `;
 
 export interface Store {
   db: Database;
   file: string;
-  /** Read-only mode (plan §4.6.8): no import, no writes. */
+  /** Read-only mode (plan §4.6.8): nothing is written to disk. */
   readonly: boolean;
-  /** Read-only without a database file: everything was imported into memory. */
+  /**
+   * Working in memory: a copy of the database file, or a fresh database when
+   * there is none. The import still runs, into memory only.
+   */
   memory: boolean;
 }
 
@@ -88,10 +94,15 @@ export function openStore(dataDir: string): Store {
   } catch (err) {
     if (!isReadOnlyError(err)) throw err;
   }
+  // Read-only (a sandbox): copy the database into memory and import into the copy,
+  // so commands see current sessions without writing anything.
   if (existsSync(file)) {
     try {
-      const db = new Database(file, { readonly: true });
-      if (schemaVersion(db) === SCHEMA_VERSION) return { db, file, readonly: true, memory: false };
+      const db = Database.deserialize(readFileSync(file));
+      if (schemaVersion(db) === SCHEMA_VERSION) {
+        configure(db);
+        return { db, file, readonly: true, memory: true };
+      }
       db.close();
     } catch {}
   }

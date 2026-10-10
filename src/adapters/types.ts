@@ -23,6 +23,10 @@ export interface SessionFields {
   startedAt: string | null;
   endedAt: string | null;
   continuedIn: string | null;
+  /** The session this one was forked from (Codex); its records before the fork point are copied in. */
+  forkedFrom: string | null;
+  /** Index of this fork's first own record; the ones before it came from `forkedFrom`. */
+  forkPoint: number | null;
 }
 
 /** One record before redaction: the trajectory record plus meme's outer fields. */
@@ -43,6 +47,8 @@ export interface Converted {
 
 export interface ConvertContext {
   sessionId: string;
+  /** Files of another session under the same root, for a fork's parent. */
+  filesOf: (sessionId: string) => string[];
   root: SourceRoot;
   /** Start directory → project (plan §4.6.9). */
   project: (cwd: string | null) => string | null;
@@ -57,7 +63,8 @@ export interface Adapter {
   sessionId(path: string): string | null;
   /** The file's text without a half-written last line. */
   readText(path: string): string;
-  convert(text: string, ctx: ConvertContext): Converted;
+  /** One session from all its files (Codex can have several after a rollback). */
+  convert(files: string[], ctx: ConvertContext): Converted;
   /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
   home(platform: Platform): string;
   /**
