@@ -58,6 +58,12 @@ export interface Adapter {
   /** The file's text without a half-written last line. */
   readText(path: string): string;
   convert(text: string, ctx: ConvertContext): Converted;
+  /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
+  home(platform: Platform): string;
+  /** Where the agent looks for user skills; meme puts its skill in `<dir>/meme/`. */
+  skillDir(platform: Platform): string;
+  /** The command that starts the agent with a first message (plan §2.3). */
+  launch(firstMessage: string): { cmd: string; args: string[] };
 }
 
 export function sourceId(agent: Agent, env: Env, path: string): string {

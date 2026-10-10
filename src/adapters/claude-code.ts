@@ -26,9 +26,20 @@ function isDir(p: string): boolean {
 export const claudeCode: Adapter = {
   agent: AGENT,
 
+  home(platform: Platform): string {
+    return platform.vars.CLAUDE_CONFIG_DIR || path.join(platform.home, ".claude");
+  },
+
+  skillDir(platform: Platform): string {
+    return path.join(this.home(platform), "skills");
+  },
+
+  launch(firstMessage: string) {
+    return { cmd: "claude", args: [firstMessage] };
+  },
+
   roots(platform: Platform): SourceRoot[] {
-    const configDir = platform.vars.CLAUDE_CONFIG_DIR || path.join(platform.home, ".claude");
-    const local = path.join(configDir, "projects");
+    const local = path.join(this.home(platform), "projects");
     const roots: SourceRoot[] = [{ id: sourceId(AGENT, platform.env, local), agent: AGENT, env: platform.env, path: local }];
     if (platform.env === "wsl" && platform.windowsUsersDir) {
       let users: string[] = [];
