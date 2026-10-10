@@ -26,6 +26,38 @@ export interface SessionRow {
   talked: number;
   /** `continued_in` points to a session that is still there: hidden behind it in `ls`. */
   superseded: number;
+  /** The start of the id that names this session alone, as meme shows it (see `shortest`). */
+  short: string;
+}
+
+/**
+ * The shortest start of an id that no other id shares: 8 characters, more when
+ * another session's id starts the same way. Codex ids are uuid v7, whose first
+ * characters are the time, so sessions made within a minute of each other (a
+ * fork and its parent, say) share their first 8. `near` are the ids next to it
+ * in sorted order, which share the longest start with it.
+ */
+export function shortest(id: string, near: (string | null)[]): string {
+  let n = 8;
+  for (const other of near) {
+    if (!other) continue;
+    let k = 0;
+    while (k < id.length && id[k] === other[k]) k++;
+    n = Math.max(n, k + 1);
+  }
+  return id.slice(0, n);
+}
+
+/** `shortest` for an id that is not at hand as a SessionRow. */
+export function shortId(db: Database, id: string): string {
+  const near = db.query<{ id: string | null }, [string]>("SELECT MAX(id) AS id FROM sessions WHERE id < ?1 UNION ALL SELECT MIN(id) FROM sessions WHERE id > ?1").all(id);
+  return shortest(id, near.map((r) => r.id));
+}
+
+type Loaded = Omit<SessionRow, "short"> & { prev_id: string | null; next_id: string | null };
+
+function withShort({ prev_id, next_id, ...row }: Loaded): SessionRow {
+  return { ...row, short: shortest(row.id, [prev_id, next_id]) };
 }
 
 const SESSION_SELECT = `
@@ -35,16 +67,19 @@ SELECT s.*,
   COALESCE((SELECT turn FROM records r WHERE r.session = s.id ORDER BY seq DESC LIMIT 1), 0) AS turns,
   EXISTS (SELECT 1 FROM records r WHERE r.session = s.id AND r.role = 'assistant') AS talked,
   EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded,
-  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND instr(f.path, 'archived_sessions') > 0) AS archived
+  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND instr(f.path, 'archived_sessions') > 0) AS archived,
+  (SELECT MAX(p.id) FROM sessions p WHERE p.id < s.id) AS prev_id,
+  (SELECT MIN(n.id) FROM sessions n WHERE n.id > s.id) AS next_id
 FROM sessions s`;
 
 /** All sessions, newest first. */
 export function allSessions(db: Database): SessionRow[] {
-  return db.query<SessionRow, []>(`${SESSION_SELECT} ORDER BY s.ended_at DESC, s.id`).all();
+  return db.query<Loaded, []>(`${SESSION_SELECT} ORDER BY s.ended_at DESC, s.id`).all().map(withShort);
 }
 
 export function getSession(db: Database, id: string): SessionRow | null {
-  return db.query<SessionRow, [string]>(`${SESSION_SELECT} WHERE s.id = ?`).get(id);
+  const row = db.query<Loaded, [string]>(`${SESSION_SELECT} WHERE s.id = ?`).get(id);
+  return row ? withShort(row) : null;
 }
 
 export class LookupError extends Error {}
@@ -59,7 +94,7 @@ export function resolveSession(db: Database, ref: string): SessionRow {
     .map((r) => r.id);
   if (ids.length === 0) throw new LookupError(`no session matches ${ref}`);
   if (ids.length > 1) {
-    throw new LookupError(`${ref} matches ${ids.length > 5 ? "more than 5" : ids.length} sessions: ${ids.slice(0, 5).map((id) => id.slice(0, 12)).join(", ")}`);
+    throw new LookupError(`${ref} matches ${ids.length > 5 ? "more than 5" : ids.length} sessions: ${ids.slice(0, 5).map((id) => shortId(db, id)).join(", ")}`);
   }
   return getSession(db, ids[0]!)!;
 }
@@ -95,6 +130,7 @@ export function sessionRecords(db: Database, session: string): Rec[] {
 
 export interface Ancestor {
   id: string;
+  short: string;
   /** How the part after it came from it: a continuation (Claude Code) or a fork (Codex). */
   link: "continued" | "forked";
 }
@@ -109,10 +145,10 @@ export function ancestors(db: Database, session: string): Ancestor[] {
   let current = session;
   for (;;) {
     const prev = db.query<{ id: string }, [string]>("SELECT id FROM sessions WHERE continued_in = ? ORDER BY ended_at DESC LIMIT 1").get(current);
-    let next: Ancestor | null = prev ? { id: prev.id, link: "continued" } : null;
+    let next: Ancestor | null = prev ? { id: prev.id, short: shortId(db, prev.id), link: "continued" } : null;
     if (!next) {
       const fork = db.query<{ forked_from: string | null }, [string]>("SELECT forked_from FROM sessions WHERE id = ?").get(current);
-      if (fork?.forked_from && db.query("SELECT 1 FROM sessions WHERE id = ?").get(fork.forked_from)) next = { id: fork.forked_from, link: "forked" };
+      if (fork?.forked_from && db.query("SELECT 1 FROM sessions WHERE id = ?").get(fork.forked_from)) next = { id: fork.forked_from, short: shortId(db, fork.forked_from), link: "forked" };
     }
     if (!next || seen.has(next.id)) break;
     seen.add(next.id);

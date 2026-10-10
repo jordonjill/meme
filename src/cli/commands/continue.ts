@@ -60,7 +60,7 @@ function chainHead(ctx: Context, picked: SessionRow): SessionRow {
     cur = next;
   }
   if (cur.id !== picked.id) {
-    process.stderr.write(`meme: ${picked.id.slice(0, 8)} was continued in ${cur.id.slice(0, 8)}; handing over ${cur.id.slice(0, 8)}, which includes it\n`);
+    process.stderr.write(`meme: ${picked.short} was continued in ${cur.short}; handing over ${cur.short}, which includes it\n`);
   }
   return cur;
 }
@@ -159,15 +159,15 @@ export async function continueSession(argv: string[]): Promise<number> {
 
   const dir = session.project;
   if (!dir || !existsSync(dir)) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
-  const id8 = session.id.slice(0, 8);
-  const command = `meme continue ${id8}${values.fresh ? " --fresh" : ""}`;
+  const sid = session.short;
+  const command = `meme continue ${sid}${values.fresh ? " --fresh" : ""}`;
   const message =
     agent.adapter.agent === "codex"
       ? // Codex's model sets how much command output it keeps; ask for enough (sessions.md §7.1).
         `Continue an earlier session: run \`${command}\` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.`
       : `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`;
   const { args } = agent.adapter.launch(message);
-  write(`Continuing ${id8} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${displayPath(dir, ctx.platform.home)}\n`);
+  write(`Continuing ${sid} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${displayPath(dir, ctx.platform.home)}\n`);
   ctx.store.db.close();
   return await runAttached([agent.exe, ...args], dir);
 }

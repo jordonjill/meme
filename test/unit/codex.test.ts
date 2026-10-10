@@ -82,13 +82,13 @@ describe("codex adapter", () => {
 
   test("a fork: the parent's records up to the fork point, then its own; named after its own first message", () => {
     const w = codexWorld();
-    const parent = new CodexSession({ id: "c0dec0de-0000-4000-8000-000000000004" });
+    const parent = new CodexSession({ id: "019dc1a2-5b2c-7e01-9a3f-1c2d3e4f5a6b" });
     parent.user("parent turn one");
     parent.assistant("parent answer one");
     const cut = parent.lines.length;
     parent.user("parent turn two, after the fork");
     parent.assistant("parent answer two");
-    const fork = new CodexSession({ id: "c0dec0de-0000-4000-8000-000000000005", forkOf: { parent, cutLine: cut }, start: "2026-10-10T06:55:48.000Z" });
+    const fork = new CodexSession({ id: "019dc1a2-7d10-7c44-8b1e-2f3a4b5c6d7e", forkOf: { parent, cutLine: cut }, start: "2026-10-10T06:55:48.000Z" });
     fork.user("fork turn");
     fork.assistant("fork answer");
     parent.write(w.codexHome);
@@ -104,7 +104,9 @@ describe("codex adapter", () => {
       ["fork answer", false],
     ]);
     const out = showText(buildShow(w.store.db, row), showOpts, "none");
-    expect(out).toContain("parent answer one\n  ── forked from c0dec0de ──\n  2 ❯ fork turn\n");
+    // Made within a minute of each other, the two ids share their first 8 characters.
+    expect(out).toContain("parent answer one\n  ── forked from 019dc1a2-5 ──\n  2 ❯ fork turn\n");
+    expect(out).toContain("Run `meme show 019dc1a2-7 <turn>` to expand a turn");
     // Both are listed: a fork is a branch, not a continuation.
     expect(allSessions(w.store.db).filter((r) => r.superseded === 0).length).toBe(2);
   });

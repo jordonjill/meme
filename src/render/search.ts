@@ -78,8 +78,8 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
     const firstTurn = g.turnInHead.get(first);
     out.push(
       firstTurn === null || firstTurn === undefined
-        ? `  → meme show ${first.session.slice(0, 8)} ${first.turn}`
-        : `  → meme show ${s.id.slice(0, 8)} ${firstTurn}`,
+        ? `  → meme show ${g.shorts.get(first.session)} ${first.turn}`
+        : `  → meme show ${s.short} ${firstTurn}`,
     );
   }
   return out.join("\n") + "\n";

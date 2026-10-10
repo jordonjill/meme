@@ -45,10 +45,10 @@ function startDir(records: Rec[], session: SessionRow): string | null {
   return cwd ?? session.project;
 }
 
-function messageText(t: Turn, id8: string): string {
+function messageText(t: Turn, sid: string): string {
   const raw = promptText(contentOf(t.prompt!.body) ?? "").trim();
   if (raw.length <= MESSAGE_CHARS) return raw;
-  return `${raw.slice(0, MESSAGE_CHARS)}… (cut: ${raw.length.toLocaleString("en-US")} characters in all; \`meme show ${id8} ${t.n}\` has the rest)`;
+  return `${raw.slice(0, MESSAGE_CHARS)}… (cut: ${raw.length.toLocaleString("en-US")} characters in all; \`meme show ${sid} ${t.n}\` has the rest)`;
 }
 
 function renderMessage(n: number, text: string): string {
@@ -75,7 +75,7 @@ function stepLines(t: Turn): string[] {
   return out;
 }
 
-function lastTurnLines(t: Turn, id8: string, aiCap: number): string[] {
+function lastTurnLines(t: Turn, sid: string, aiCap: number): string[] {
   const facts = [plural(t.steps, "step"), plural(t.commands, "command")];
   if (t.edited.length) facts.push(`edited ${t.edited.join(", ")}`);
   if (t.failed) facts.push(`${t.failed} failed`);
@@ -84,10 +84,10 @@ function lastTurnLines(t: Turn, id8: string, aiCap: number): string[] {
     .filter((r) => r.body.role === "assistant" && !("tool_calls" in r.body) && (contentOf(r.body) ?? "").trim())
     .map((r) => contentOf(r.body)!.trim())
     .join("\n\n");
-  const out = [`### Turn ${t.n}`, `User: ${t.prompt ? messageText(t, id8) : "(no message)"}`, `Steps: ${facts.join(" · ")}`];
+  const out = [`### Turn ${t.n}`, `User: ${t.prompt ? messageText(t, sid) : "(no message)"}`, `Steps: ${facts.join(" · ")}`];
   if (said) {
     const { text, cut } = cutToTokens(said, aiCap);
-    out.push("AI said:", quote(text) + (cut ? `\n> … (cut; \`meme show ${id8} ${t.n}\` has the rest)` : ""));
+    out.push("AI said:", quote(text) + (cut ? `\n> … (cut; \`meme show ${sid} ${t.n}\` has the rest)` : ""));
   } else out.push("AI said: (nothing)");
   const steps = stepLines(t);
   if (steps.length) out.push("Each step:", ...steps);
@@ -138,7 +138,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const { session: s, records } = input;
   const limits = opts.limits ?? LIMITS;
   const size = (s: string) => weight(s, limits);
-  const id8 = s.id.slice(0, 8);
+  const sid = s.short;
   const { turns } = groupTurns(records);
   const ending = endingOf(records);
   const lastN = turns.length ? turns[turns.length - 1]!.n : 0;
@@ -147,7 +147,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const localDir = dir && input.env === "wsl" && isWindowsPath(dir) ? winToWsl(dir) : dir;
   const facts = [
     label(s.agent, s.env),
-    `session ${id8}`,
+    `session ${sid}`,
     dir ? `dir ${localDir}${localDir !== dir ? ` (${dir})` : ""}` : null,
     s.branch ? `branch ${s.branch}` : null,
     span(s.started_at, s.ended_at, new Date(input.now)),
@@ -164,7 +164,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   }
 
   const prompts = turns.filter((t) => t.prompt);
-  const messages = prompts.map((t) => renderMessage(t.n, messageText(t, id8)));
+  const messages = prompts.map((t) => renderMessage(t.n, messageText(t, sid)));
 
   // The sections after the user's messages, cut down only if they alone break the budget.
   const substantive = turns.filter((t) => t.records.some((r) => r.body.role === "assistant"));
@@ -173,13 +173,13 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const tailFor = (aiCap: number): string[] => {
     if (opts.fresh) return [];
     const out = ["", `## Last ${last.length === 1 ? "turn" : `${last.length} turns`}`];
-    for (const t of last) out.push("", ...lastTurnLines(t, id8, aiCap));
+    for (const t of last) out.push("", ...lastTurnLines(t, sid, aiCap));
     out.push("", "## Edited files", ...editedFiles(turns));
     if (verification) out.push("", "## Last verification", ...verification.lines);
     return out;
   };
   // Slack for what is only known at the end: the counts in the preamble and the "left out" note.
-  const reserve = size([...head, ...preamble(id8, opts, 0, 0, null, null)].join("\n")) + Math.ceil(limits.chars * 0.03);
+  const reserve = size([...head, ...preamble(sid, opts, 0, 0, null, null)].join("\n")) + Math.ceil(limits.chars * 0.03);
   const firstLast = size([messages[0] ?? "", messages[messages.length - 1] ?? ""].join("\n"));
   let tail = tailFor(Infinity);
   for (const cap of [4000, 2000, 1000, 500, 200]) {
@@ -197,7 +197,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     if (!skipped.length) return;
     const a = prompts[skipped[0]!]!.n;
     const b = prompts[skipped[skipped.length - 1]!]!.n;
-    body.push(`… ${plural(skipped.length, "message")} left out (turns ${a === b ? a : `${a}–${b}`}); find them with \`meme search <text> --session ${id8}\` or \`meme show ${id8}\``);
+    body.push(`… ${plural(skipped.length, "message")} left out (turns ${a === b ? a : `${a}–${b}`}); find them with \`meme search <text> --session ${sid}\` or \`meme show ${sid}\``);
     skipped = [];
   };
   messages.forEach((m, i) => {
@@ -210,11 +210,11 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   if (!messages.length) body.push("(none)");
 
   const lastRange = last.length ? (last.length === 1 ? `turn (${last[0]!.n})` : `${last.length} turns (${last[0]!.n}–${last[last.length - 1]!.n})`) : null;
-  const text = [...head, "", ...preamble(id8, opts, keep.size, messages.length, lastRange, verification?.turn ?? null), "", ...body, ...tail].join("\n") + "\n";
+  const text = [...head, "", ...preamble(sid, opts, keep.size, messages.length, lastRange, verification?.turn ?? null), "", ...body, ...tail].join("\n") + "\n";
   return { text, tokens: estimateTokens(text) };
 }
 
-function preamble(id8: string, opts: HandoffOptions, kept: number, total: number, lastRange: string | null, verifiedIn: number | null): string[] {
+function preamble(sid: string, opts: HandoffOptions, kept: number, total: number, lastRange: string | null, verifiedIn: number | null): string[] {
   const included = [kept === total ? `all ${plural(total, "user message")}` : `${kept} of ${plural(total, "user message")} (the first, the last and the most recent)`];
   if (!opts.fresh) {
     if (lastRange) included.push(`the last ${lastRange} step by step`);
@@ -229,6 +229,6 @@ function preamble(id8: string, opts: HandoffOptions, kept: number, total: number
     // There is no skill to say what to do with a handoff, so it says so itself (plan §3.4).
     "Before you change anything, tell the user in two or three sentences what was being done, where it stopped and what you would do next, then wait for their go-ahead.",
     `Included: ${included.join("; ")}.`,
-    `For anything else: \`meme show ${id8} <turn>\` · \`meme search <text> --session ${id8}\``,
+    `For anything else: \`meme show ${sid} <turn>\` · \`meme search <text> --session ${sid}\``,
   ];
 }

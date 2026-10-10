@@ -3,7 +3,7 @@ import { makeStyle } from "../../src/render/labels";
 import { listed, listing, lsText } from "../../src/render/ls";
 import { searchText } from "../../src/render/search";
 import { buildShow, showText, type ShowOptions } from "../../src/render/show";
-import { allSessions, getSession, resolveSession, LookupError } from "../../src/store/queries";
+import { allSessions, getSession, resolveSession, shortest, LookupError } from "../../src/store/queries";
 import { compile, groupByChain, PatternError, search } from "../../src/store/search";
 import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
 import { importInto, projectsDir, tempDir, testPlatform } from "../helpers";
@@ -145,6 +145,13 @@ describe("ls", () => {
     expect(resolveSession(store.db, "BBBB").id).toBe(b.id);
     expect(() => resolveSession(store.db, "dddd")).toThrow(LookupError);
     expect(() => resolveSession(store.db, "not-hex!")).toThrow(LookupError);
+  });
+
+  test("a short id is 8 characters, more when another id starts the same way", () => {
+    expect(shortest("019dc1a2-5b2c-7e01-9a3f-1c2d3e4f5a6b", [null, "1111aaaa-0000-4000-8000-000000000001"])).toBe("019dc1a2");
+    // uuid v7 made within a minute: the '-' is shared, so the first difference comes after it.
+    expect(shortest("019dc1a2-5b2c-7e01-9a3f-1c2d3e4f5a6b", ["019dc1a2-5a00-7000-8000-000000000000", "019dc1a2-7d10-7c44-8b1e-2f3a4b5c6d7e"])).toBe("019dc1a2-5b");
+    expect(shortest("abc", ["abd"])).toBe("abc");
   });
 });
 

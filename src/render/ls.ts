@@ -76,7 +76,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
   const where = filter.all ? "all projects" : displayPath(filter.project, o.home);
   if (rows.length === 0) return "No sessions found.\n";
   const cells = rows.map((r) => ({
-    id: r.id.slice(0, 8),
+    id: r.short,
     label: label(r.agent, r.env),
     labelColored: coloredLabel(o.st, r.agent, r.env),
     ago: ago(r.ended_at, o.now),
@@ -86,7 +86,8 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     title: r.title ?? "(untitled)",
     archived: r.archived === 1,
   }));
-  const colW = (k: "label" | "ago" | "branch" | "size" | "project") => Math.max(...cells.map((c) => width(c[k])));
+  const colW = (k: "id" | "label" | "ago" | "branch" | "size" | "project") => Math.max(...cells.map((c) => width(c[k])));
+  const wId = colW("id");
   const wLabel = colW("label");
   const wAgo = colW("ago");
   const wBranch = colW("branch");
@@ -94,7 +95,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
   const wProject = Math.min(colW("project"), 40);
   const out = [fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`];
   for (const c of cells) {
-    let line = `  ${c.id}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
+    let line = `  ${padEnd(c.id, wId)}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
     if (filter.all) line += padEnd(truncate(c.project, wProject), wProject) + "  ";
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
     out.push(line + truncate(c.title, Math.max(20, o.width - used - (c.archived ? 11 : 0))) + (c.archived ? o.st.dim(" (archived)") : ""));
@@ -128,7 +129,7 @@ export function numberedText({ rows, filter, fellBack, others }: Listing, o: Num
     ago: ago(r.ended_at, o.now),
     project: filter.all ? displayPath(r.project ?? "", o.home) : "",
     title: truncate(r.title ?? "(untitled)", 48) + (r.archived ? " (archived)" : ""),
-    id: r.id.slice(0, 8),
+    id: r.short,
   }));
   const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));
   const [wN, wLabel, wAgo, wTitle] = [colW("n"), colW("label"), colW("ago"), colW("title")];

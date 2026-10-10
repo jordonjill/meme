@@ -110,6 +110,8 @@ export interface HitGroup {
   hits: Hit[];
   /** Turn to open with `meme show <head> <turn>`, per hit. */
   turnInHead: Map<Hit, number | null>;
+  /** Short ids of the sessions the hits are in. */
+  shorts: Map<string, string>;
 }
 
 /**
@@ -133,10 +135,11 @@ export function groupByChain(db: Database, hits: Hit[], sessions: Map<string, Se
     const head = headOf(hit.session);
     let g = groups.get(head);
     if (!g) {
-      g = { head: sessions.get(head)!, hits: [], turnInHead: new Map() };
+      g = { head: sessions.get(head)!, hits: [], turnInHead: new Map(), shorts: new Map() };
       groups.set(head, g);
     }
     g.hits.push(hit);
+    g.shorts.set(hit.session, sessions.get(hit.session)?.short ?? hit.session);
     if (hit.session === head) g.turnInHead.set(hit, hit.turn);
     else g.turnInHead.set(hit, hit.uid ? (turnByUid.get(head, hit.uid)?.turn ?? null) : null);
   }

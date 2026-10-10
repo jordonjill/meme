@@ -4,7 +4,7 @@ import { firstLine } from "../model/title";
 import { describeCall, oneLine, resultFailed, resultText } from "../model/tools";
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Ending, type Turn } from "../model/turns";
 import { displayPath } from "../platform/paths";
-import { ancestors, sessionRecords, uidsOf, type Ancestor, type SessionRow } from "../store/queries";
+import { ancestors, sessionRecords, shortId, uidsOf, type Ancestor, type SessionRow } from "../store/queries";
 import { coloredLabel, type Style } from "./labels";
 import { ago, padStart, plural, size, span, trimmedLines, truncate, width, wrap } from "./text";
 
@@ -14,13 +14,16 @@ export interface ShowModel {
   turns: Turn[];
   /** Turn number → the session the turns before it came from, and how (a continuation or fork point). */
   separators: Map<number, Ancestor>;
+  /** The short id of the session this one was continued in, if any. */
+  continuedIn: string | null;
   ending: Ending;
 }
 
 export function buildShow(db: Database, session: SessionRow): ShowModel {
   const records = sessionRecords(db, session.id);
   const { turns } = groupTurns(records);
-  return { session, records, turns, separators: continuationPoints(db, session, turns), ending: endingOf(records) };
+  const continuedIn = session.continued_in ? shortId(db, session.continued_in) : null;
+  return { session, records, turns, separators: continuationPoints(db, session, turns), continuedIn, ending: endingOf(records) };
 }
 
 /**
@@ -44,7 +47,7 @@ function continuationPoints(db: Database, session: SessionRow, turns: Turn[]): M
   let prev: Ancestor | null | undefined;
   for (const t of turns) {
     const origin = originOf(t);
-    if (prev && origin?.id !== prev.id) out.set(t.n, { id: prev.id, link: prev.link });
+    if (prev && origin?.id !== prev.id) out.set(t.n, { id: prev.id, short: prev.short, link: prev.link });
     prev = origin;
   }
   return out;
@@ -95,7 +98,7 @@ export function numberWidth(m: ShowModel): number {
 }
 
 export function separatorLine(from: Ancestor, o: ShowOptions): string {
-  return o.st.dim(`  ── ${from.link} from ${from.id.slice(0, 8)} ──`);
+  return o.st.dim(`  ── ${from.link} from ${from.short} ──`);
 }
 
 const RESULT_LINES = 3;
@@ -225,10 +228,10 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
 export function showText(m: ShowModel, o: ShowOptions, expand: "none" | "all" | number): string {
   const out = headerLines(m, o);
   const numW = numberWidth(m);
-  const id8 = m.session.id.slice(0, 8);
+  const id = m.session.short;
   if (typeof expand === "number") {
     const t = m.turns.find((x) => x.n === expand);
-    if (!t) throw new RangeError(`session ${id8} has ${plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn")}; there is no turn ${expand}`);
+    if (!t) throw new RangeError(`session ${id} has ${plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn")}; there is no turn ${expand}`);
     out.push(...expandedTurn(t, numW, o));
     return out.join("\n") + "\n";
   }
@@ -238,10 +241,10 @@ export function showText(m: ShowModel, o: ShowOptions, expand: "none" | "all" | 
     out.push(...(expand === "all" ? expandedTurn(t, numW, o) : foldedTurn(t, numW, o)));
   }
   if (m.turns.length === 0) out.push(o.st.dim("  (no conversation)"));
-  if (m.session.continued_in) out.push(o.st.dim(`  ── continued in ${m.session.continued_in.slice(0, 8)}: run \`meme show ${m.session.continued_in.slice(0, 8)}\` ──`));
+  if (m.continuedIn) out.push(o.st.dim(`  ── continued in ${m.continuedIn}: run \`meme show ${m.continuedIn}\` ──`));
   out.push(o.st.dim(endingLine(m, o) + "."));
   if (expand === "none" && m.turns.length) {
-    out.push(`Run \`meme show ${id8} <turn>\` to expand a turn, or \`meme show ${id8} --full\` for everything.`);
+    out.push(`Run \`meme show ${id} <turn>\` to expand a turn, or \`meme show ${id} --full\` for everything.`);
   }
   return out.join("\n") + "\n";
 }

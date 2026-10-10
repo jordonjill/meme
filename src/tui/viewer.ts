@@ -84,7 +84,7 @@ export class SessionView implements View {
     });
     if (this.m.turns.length === 0) lines.push(o.st.dim("  (no conversation)"));
     lines.push("");
-    if (this.m.session.continued_in) lines.push(o.st.dim(`  ── continued in ${this.m.session.continued_in.slice(0, 8)} ──`));
+    if (this.m.continuedIn) lines.push(o.st.dim(`  ── continued in ${this.m.continuedIn} ──`));
     lines.push(o.st.dim("  " + endingLine(this.m, o)));
     return { lines, spans };
   }
