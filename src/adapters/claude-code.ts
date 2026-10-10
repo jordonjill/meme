@@ -7,7 +7,7 @@ import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
 import { parseLines, readJsonl } from "./read";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type SourceRoot } from "./types";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type SourceRoot } from "./types";
 
 const AGENT = "claude-code" as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,6 +28,26 @@ export const claudeCode: Adapter = {
 
   home(platform: Platform): string {
     return platform.vars.CLAUDE_CONFIG_DIR || path.join(platform.home, ".claude");
+  },
+
+  /**
+   * Claude Code has no delete command; a session lives in 4 places under its home
+   * (release.md §4). Folders go first and the main file last.
+   */
+  forgetPlan(target: ForgetTarget): ForgetPlan {
+    const steps: ForgetStep[] = [];
+    for (const file of target.files) {
+      const projectDir = path.dirname(file);
+      const home = path.dirname(path.dirname(projectDir));
+      const dirs: [string, string][] = [
+        [path.join(projectDir, target.id), "subagents and large tool output"],
+        [path.join(home, "file-history", target.id), "backups of files before Claude Code edited them"],
+        [path.join(home, "session-env", target.id), "the session's environment"],
+      ];
+      for (const [dir, what] of dirs) if (isDir(dir)) steps.push({ kind: "remove", path: dir, dir: true, what });
+      steps.push({ kind: "remove", path: file, dir: false, what: "the session" });
+    }
+    return { steps, gone: target.files, notes: [] };
   },
 
   launch(firstMessage: string) {

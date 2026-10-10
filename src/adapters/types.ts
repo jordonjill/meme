@@ -54,6 +54,28 @@ export interface ConvertContext {
   project: (cwd: string | null) => string | null;
 }
 
+/** One thing `meme forget` does to remove a session from the agent (plan §3.5). */
+export type ForgetStep =
+  | { kind: "remove"; path: string; dir: boolean; what: string }
+  | { kind: "run"; cmd: string[]; what: string };
+
+export interface ForgetPlan {
+  /** In order; the session's main file comes last, so a failure leaves the session whole. */
+  steps: ForgetStep[];
+  /** Files that must be gone afterwards for the deletion to count. */
+  gone: string[];
+  /** Said before asking, e.g. what the agent keeps. */
+  notes: string[];
+  /** Why meme cannot delete it here, and what the user can do instead. */
+  blocked?: string;
+}
+
+export interface ForgetTarget {
+  id: string;
+  env: Env;
+  files: string[];
+}
+
 export interface Adapter {
   agent: Agent;
   /** Session source directories; in WSL also the Windows ones under /mnt/c. */
@@ -67,6 +89,8 @@ export interface Adapter {
   convert(files: string[], ctx: ConvertContext): Converted;
   /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
   home(platform: Platform): string;
+  /** How to delete a session from the agent itself (plan §3.5). */
+  forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
   /**
    * The command that starts the agent with a first message (plan §2.3). The message
    * asks it to run `meme continue <id>` itself, so the agent should be allowed to

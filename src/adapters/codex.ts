@@ -6,10 +6,11 @@ import { userKind, type UserKind } from "../model/injected";
 import type { Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
-import type { Platform } from "../platform/paths";
+import { displayPath, type Platform } from "../platform/paths";
 import { BOUNDS } from "./claude-code";
 import { dropPartialLine } from "./read";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type SourceRoot } from "./types";
+import { commandLine, findCommand } from "../platform/spawn";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type SourceRoot } from "./types";
 
 const AGENT = "codex" as const;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -206,6 +207,16 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
   };
 }
 
+/** Older Codex versions have no `delete`, and without a terminal it needs `--force`. */
+function codexCanDelete(exe: string): boolean {
+  try {
+    const p = Bun.spawnSync(commandLine(exe, ["delete", "--help"]), { stdout: "pipe", stderr: "pipe" });
+    return p.exitCode === 0 && p.stdout.toString().includes("--force");
+  } catch {
+    return false;
+  }
+}
+
 function walk(dir: string, out: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
@@ -219,6 +230,27 @@ export const codex: Adapter = {
 
   home(platform: Platform): string {
     return platform.vars.CODEX_HOME || path.join(platform.home, ".codex");
+  },
+
+  /**
+   * Codex deletes its own sessions: `codex delete --force <uuid>` removes the
+   * files and its database rows (sessions.md §7.1). meme never touches them itself,
+   * and only deletes sessions of the environment it runs in.
+   */
+  forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan {
+    const instead = `delete it in Codex with /delete, or with \`codex delete ${target.id}\``;
+    if (target.env !== platform.env) {
+      return { steps: [], gone: [], notes: [], blocked: `this Codex session is on the ${target.env === "win" ? "Windows" : target.env} side; ${instead} there. meme's copy follows on its own.` };
+    }
+    const exe = findCommand("codex", platform.vars);
+    if (!exe || !codexCanDelete(exe)) {
+      return { steps: [], gone: [], notes: [], blocked: `\`codex delete\` is not available here; ${instead}. meme's copy follows on its own.` };
+    }
+    return {
+      steps: [{ kind: "run", cmd: [exe, "delete", "--force", target.id], what: "Codex removes the session's files and its database rows" }],
+      gone: target.files,
+      notes: [`Codex keeps what you typed in its own input history (${displayPath(path.join(this.home(platform), "history.jsonl"), platform.home)}).`],
+    };
   },
 
   launch(firstMessage: string) {
