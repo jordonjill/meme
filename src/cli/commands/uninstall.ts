@@ -1,7 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { ADAPTERS } from "../../adapters";
-import { removeSkill, skillFile, skillState } from "../../install/skill";
 import { removeDir } from "../../platform/fs";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { size } from "../../render/text";
@@ -10,9 +8,9 @@ import { write } from "../context";
 
 export const uninstallHelp = `Usage: meme uninstall [--yes]
 
-Remove the meme skills and the ~/.meme folder (the mirror, handoff files and
-logs). Your original sessions are not touched. Asks you to type yes first;
---yes skips the question.
+Remove the ~/.meme folder: the mirror of your sessions and the logs.
+Your original sessions are not touched. Asks you to type yes first; --yes
+skips the question.
 `;
 
 function folderSize(dir: string): number {
@@ -42,31 +40,20 @@ export async function uninstall(argv: string[]): Promise<number> {
   const platform = currentPlatform();
   const home = platform.home;
 
-  const skills: string[] = [];
-  const kept: string[] = [];
-  for (const adapter of ADAPTERS) {
-    const dir = adapter.skillDir(platform);
-    const state = skillState(dir);
-    if (state === "current" || state === "outdated") skills.push(dir);
-    else if (state === "foreign") kept.push(path.join(dir, "meme"));
-  }
   const data = existsSync(platform.dataDir) ? platform.dataDir : null;
 
   const lines: string[] = [];
   const program = programFile();
   const programNote = program ? `To remove meme itself, delete ${program}.` : "meme is running from its sources; there is no program file to delete.";
-  if (!skills.length && !data) {
-    lines.push("Nothing to remove: no meme skill and no meme data folder.");
-    for (const k of kept) lines.push(`Left alone: ${displayPath(k, home)} (not put there by meme)`);
+  if (!data) {
+    lines.push(`Nothing to remove: there is no ${displayPath(platform.dataDir, home)}.`);
     lines.push(programNote);
     write(lines.join("\n") + "\n");
     return 0;
   }
 
   lines.push("This removes:");
-  for (const dir of skills) lines.push(`  ${displayPath(skillFile(dir), home)}   the meme skill`);
-  if (data) lines.push(`  ${displayPath(data, home)}   the mirror, handoff files and logs (${size(folderSize(data))})`);
-  for (const k of kept) lines.push(`Left alone: ${displayPath(k, home)} (not put there by meme)`);
+  lines.push(`  ${displayPath(data, home)}   the mirror and the logs (${size(folderSize(data))})`);
   lines.push("Your original sessions are not touched.");
   write(lines.join("\n") + "\n");
 
@@ -81,8 +68,7 @@ export async function uninstall(argv: string[]): Promise<number> {
       return 1;
     }
   }
-  for (const dir of skills) removeSkill(dir);
-  if (data) removeDir(data);
+  removeDir(data);
   write(`Removed. ${programNote}\n`);
   return 0;
 }

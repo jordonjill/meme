@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import pkg from "../../../package.json";
 import { ADAPTERS } from "../../adapters";
-import { placeSkill, skillFile, skillState } from "../../install/skill";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { agentName, label } from "../../render/labels";
@@ -10,13 +9,13 @@ import { padEnd, plural } from "../../render/text";
 import { counts, sources } from "../../store/queries";
 import { parse, UsageError } from "../args";
 import { createContext, write } from "../context";
+import { HOW_TO_CONTINUE } from "../usage";
 
 export const installHelp = `Usage: meme install [--dry-run]
 
-Set meme up on this machine: put the meme skill where the agents look for it,
-and mirror all sessions once. Safe to run again; run it after upgrading meme.
-It never changes CLAUDE.md, AGENTS.md, settings or hooks, and it skips a skill
-folder named meme that meme did not create.
+Set meme up on this machine: find the agents and their sessions, and mirror
+all sessions once. Safe to run again. It changes nothing outside ~/.meme: no
+skills, no CLAUDE.md or AGENTS.md, no settings, no hooks.
 
   --dry-run   show what would happen, change nothing
 `;
@@ -39,24 +38,10 @@ export async function install(argv: string[]): Promise<number> {
   const lines = [`meme ${pkg.version}${dry ? " (dry run: nothing is changed)" : ""}`, "", "Agents"];
 
   for (const adapter of ADAPTERS) {
-    const name = padEnd(agentName(adapter.agent), 12);
-    const agentHome = adapter.home(platform);
-    if (!agentPresent(platform, agentHome, adapter.launch("").cmd)) {
-      lines.push(`  ${name} not found; no skill placed`);
-      continue;
-    }
-    const dir = adapter.skillDir(platform);
-    const file = displayPath(skillFile(dir), home);
-    const state = skillState(dir);
-    if (state === "foreign") {
-      lines.push(`  ${name} skipped: ${displayPath(path.join(dir, "meme"), home)} exists and was not put there by meme`);
-    } else if (state === "current") {
-      lines.push(`  ${name} skill up to date: ${file}`);
-    } else {
-      if (!dry) placeSkill(dir);
-      const verb = state === "missing" ? (dry ? "would add" : "added") : dry ? "would update" : "updated";
-      lines.push(`  ${name} skill ${verb}: ${file}`);
-    }
+    const command = adapter.launch("").cmd;
+    const exe = findCommand(command, platform.vars);
+    const state = exe ? `found: ${displayPath(exe, home)}` : agentPresent(platform, adapter.home(platform), command) ? `sessions found, but \`${command}\` is not on PATH` : "not found";
+    lines.push(`  ${padEnd(agentName(adapter.agent), 12)} ${state}`);
   }
 
   lines.push("", "Sessions");
@@ -88,16 +73,9 @@ export async function install(argv: string[]): Promise<number> {
   lines.push(`  ${summary}`);
 
   if (!findCommand("meme", platform.vars)) {
-    lines.push("", `Note: \`meme\` is not on your PATH. The skill runs \`meme\`, so add the folder that holds it to PATH.`);
+    lines.push("", "Note: `meme` is not on your PATH yet; add the folder that holds it, so `! meme continue` works inside Claude Code.");
   }
-  lines.push(
-    "",
-    "Try it",
-    "  In an agent, just ask: \"continue the session from yesterday\" (in Claude Code, /meme works too)",
-    "  meme continue           pick a session and continue it in an agent",
-    "  meme ls                 sessions of this project",
-    "  meme search <text>      search past sessions",
-  );
+  lines.push("", HOW_TO_CONTINUE);
   write(lines.join("\n") + "\n");
   return 0;
 }

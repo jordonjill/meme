@@ -32,8 +32,8 @@ Commands:
   search      search past sessions, like rg
   continue    hand a session over to a new agent session
   status      version, data location, session sources
-  install     put the meme skill in place and mirror all sessions
-  uninstall   remove the meme skill and data
+  install     mirror all sessions once and show how to use meme
+  uninstall   remove meme's data
 
 Run \`meme <command> --help\` for a command's options.
 `;
