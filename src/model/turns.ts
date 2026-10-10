@@ -97,5 +97,8 @@ export function endingOf(records: Rec[]): Ending {
 const RUNNING_WINDOW_MS = 5 * 60_000;
 
 export function mayBeRunning(mtimeMs: number | null, now = Date.now()): boolean {
-  return mtimeMs !== null && now - mtimeMs < RUNNING_WINDOW_MS;
+  if (mtimeMs === null) return false;
+  // A little in the future is clock skew (Windows files seen from WSL); far in the future is not "now".
+  const age = now - mtimeMs;
+  return age < RUNNING_WINDOW_MS && age > -RUNNING_WINDOW_MS;
 }
