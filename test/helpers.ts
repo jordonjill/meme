@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach } from "bun:test";
-import { claudeCode } from "../src/adapters/claude-code";
+import { claudeCode, convertClaude } from "../src/adapters/claude-code";
 import type { SourceRoot } from "../src/adapters/types";
 import { projectResolver } from "../src/model/project";
 import { nullLogger } from "../src/platform/log";
@@ -37,7 +37,7 @@ export function localRoot(p: Platform): SourceRoot {
 }
 
 export function convert(text: string, id: string, p: Platform = testPlatform("/nohome")) {
-  return claudeCode.convert(text, { sessionId: id, root: localRoot(p), project: projectResolver(p) });
+  return convertClaude(text, { sessionId: id, root: localRoot(p), project: projectResolver(p), filesOf: () => [] });
 }
 
 export function importInto(p: Platform, store: Store = openStore(p.dataDir)) {

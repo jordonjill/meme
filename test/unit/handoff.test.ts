@@ -83,13 +83,13 @@ describe("handoff (plan §4.6.6)", () => {
 
   test("an interrupted last turn, and a session that may still be running", () => {
     resetIds();
-    const s = new ClaudeSession({ start: "2026-10-08T11:58:00.000Z" });
+    const s = new ClaudeSession({ start: new Date(Date.now() - 60_000).toISOString() });
     s.user("run the migration");
     s.call("Bash", { command: "./migrate.sh" });
     s.interrupt(true);
     const text = handoffOf([s], s.id, { now: Date.now() });
     expect(text.split("\n")[1]).toEndWith("last turn: interrupted");
-    expect(text).toContain("Warning: the session's file changed");
+    expect(text).toContain("Warning: the session was active");
     expect(text).toContain("- Bash(./migrate.sh) → (no result)\n- ⏹ Interrupted by the user");
   });
 

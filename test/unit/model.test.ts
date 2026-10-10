@@ -4,7 +4,7 @@ import path from "node:path";
 import { findProject, projectResolver } from "../../src/model/project";
 import { userKind } from "../../src/model/injected";
 import type { Rec } from "../../src/model/record";
-import { callSummary, editedFile, parseArgs } from "../../src/model/tools";
+import { callSummary, codeModeCommands, commandOf, describeCall, editedFiles, parseArgs, patchFiles, resultFailed, resultText } from "../../src/model/tools";
 import { assignTurns, endingOf, groupTurns, mayBeRunning } from "../../src/model/turns";
 import { tempDir, testPlatform } from "../helpers";
 
@@ -86,8 +86,8 @@ describe("tools", () => {
     expect(callSummary({ id: "1", name: "X", args: { n: 1 } })).toBe('{"n":1}');
   });
   test("edited files come from editing tools only", () => {
-    expect(editedFile({ id: "1", name: "Write", args: { file_path: "/x" } })).toBe("/x");
-    expect(editedFile({ id: "1", name: "Bash", args: { command: "sed -i x /y" } })).toBeNull();
+    expect(editedFiles({ id: "1", name: "Write", args: { file_path: "/x" } })).toEqual(["/x"]);
+    expect(editedFiles({ id: "1", name: "Bash", args: { command: "sed -i x /y" } })).toEqual([]);
     expect(parseArgs("not json")).toEqual({ value: "not json" });
   });
 });

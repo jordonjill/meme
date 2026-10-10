@@ -65,6 +65,19 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     expect(nine.out).toStartWith("meme: there is no number 9 in the list. Pick from the list instead:\n");
   });
 
+  test("in Claude Code the agent is told to run the user's choice itself; elsewhere only the user runs it", () => {
+    const w = world();
+    mkdirSync(demoDir(w), { recursive: true });
+    const last = (env: Record<string, string>) => run(w, ["continue"], { cwd: demoDir(w), env }).out.trimEnd().split("\n").at(-1);
+    expect(last({ CLAUDECODE: "1" })).toBe(
+      "This list is for the user. Ask which one to continue and wait; do not pick one yourself. When the user has chosen, run `meme continue <number>` yourself. The user can also type: ! meme continue <number>",
+    );
+    const plainLine = "This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue <number>";
+    expect(last({ CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-000000000001" })).toBe(plainLine);
+    // Codex started inside Claude Code: the inner agent is Codex.
+    expect(last({ CLAUDECODE: "1", CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-000000000001" })).toBe(plainLine);
+  });
+
   test("the session that runs meme is not listed, by continue or by ls", () => {
     const w = world();
     mkdirSync(demoDir(w), { recursive: true });

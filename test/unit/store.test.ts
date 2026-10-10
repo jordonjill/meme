@@ -183,7 +183,7 @@ describe("store files and modes", () => {
     expect(counts(again.store.db).sessions).toBe(1);
   });
 
-  test.skipIf(isRoot || process.platform === "win32")("read-only data directory: open the existing database read-only (plan §4.6.8)", () => {
+  test.skipIf(isRoot || process.platform === "win32")("read-only data directory: work on an in-memory copy, write nothing (plan §4.6.8)", () => {
     const { p, projects } = setup();
     sampleSession().write(projects);
     importInto(p).store.db.close();
@@ -191,12 +191,16 @@ describe("store files and modes", () => {
     chmodSync(path.join(p.dataDir, "meme.sqlite"), 0o444);
     chmodSync(p.dataDir, 0o555);
     try {
+      const file = path.join(p.dataDir, "meme.sqlite");
+      const before = statSync(file);
       const store = openStore(p.dataDir);
-      expect(store.readonly).toBe(true);
-      expect(store.memory).toBe(false);
+      expect([store.readonly, store.memory]).toEqual([true, true]);
+      // The new session is imported into the in-memory copy; the file is not touched.
       const { result } = importInto(p, store);
-      expect(result.changed).toBe(0);
-      expect(counts(store.db).sessions).toBe(1);
+      expect(result.changed).toBe(1);
+      expect(counts(store.db).sessions).toBe(2);
+      const after = statSync(file);
+      expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
     } finally {
       chmodSync(p.dataDir, 0o755);
     }

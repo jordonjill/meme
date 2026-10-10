@@ -29,7 +29,7 @@ describe("choosing in a terminal (meme continue)", () => {
     const s = sampleSession({ cwd: "/work/demo" });
     s.write(projectsDir(home));
     const { store } = importInto(p);
-    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: null, now: Date.now() } as Context;
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), now: Date.now() } as Context;
     const picked: SessionRow[] = [];
     const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" }, (row) => picked.push(row));
     const screen = view.render(12, 80);
@@ -48,7 +48,7 @@ describe("choosing in a terminal (meme continue)", () => {
     sampleSession({ id: "99999999-0000-4000-8000-000000000001", cwd: "/work/other" }).write(projectsDir(home));
     sampleSession({ id: "99999999-0000-4000-8000-000000000002", cwd: "/work/third" }).write(projectsDir(home));
     const { store } = importInto(p);
-    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: null, now: Date.now() } as Context;
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), now: Date.now() } as Context;
     const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" });
     const screen = view.render(14, 80);
     expect(screen[12]).toBe(" +2 sessions in other projects (Ctrl+A)");
