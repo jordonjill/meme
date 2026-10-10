@@ -30,12 +30,9 @@ export const claudeCode: Adapter = {
     return platform.vars.CLAUDE_CONFIG_DIR || path.join(platform.home, ".claude");
   },
 
-  skillDir(platform: Platform): string {
-    return path.join(this.home(platform), "skills");
-  },
-
   launch(firstMessage: string) {
-    return { cmd: "claude", args: [firstMessage] };
+    // The message goes first: --allowedTools takes a list and would swallow it.
+    return { cmd: "claude", args: [firstMessage, "--allowedTools", "Bash(meme:*)"] };
   },
 
   roots(platform: Platform): SourceRoot[] {

@@ -60,9 +60,11 @@ export interface Adapter {
   convert(text: string, ctx: ConvertContext): Converted;
   /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
   home(platform: Platform): string;
-  /** Where the agent looks for user skills; meme puts its skill in `<dir>/meme/`. */
-  skillDir(platform: Platform): string;
-  /** The command that starts the agent with a first message (plan §2.3). */
+  /**
+   * The command that starts the agent with a first message (plan §2.3). The message
+   * asks it to run `meme continue <id>` itself, so the agent should be allowed to
+   * run meme without asking.
+   */
   launch(firstMessage: string): { cmd: string; args: string[] };
 }
 
