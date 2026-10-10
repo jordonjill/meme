@@ -49,7 +49,7 @@ describe.skipIf(process.platform === "win32")("meme forget: Claude Code", () => 
     run(w, ["ls"]);
     const r = run(w, ["forget", "1111", "--yes"]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("meme forget deletes these sessions for good:");
+    expect(r.out).toContain("meme forget will permanently delete this session:");
     expect(r.out).toMatch(/\n {4}~\/\.claude\/file-history\/11111111-0000-4000-8000-000000000001\/ +backups of files before Claude Code edited them\n/);
     expect(r.out).toMatch(/\n {4}~\/\.claude\/session-env\/11111111-0000-4000-8000-000000000001\/ +the session's environment\n/);
     expect(r.out).toContain("✓ 11111111 deleted");
@@ -174,12 +174,24 @@ describe.skipIf(process.platform === "win32")("meme forget: Codex", () => {
     expect(existsSync(file)).toBe(true);
   });
 
-  test("a Codex session from the Windows side is left to Codex there", () => {
+  test("a Codex session from the Windows side is deleted by the Windows codex, run from WSL", () => {
     const w = world();
-    sampleCodex({ id, cwd: "C:\\Users\\me\\work\\demo-app" }).write(path.join(w.users, "me", ".codex"));
-    const r = run(w, ["forget", "c0dec0de", "--yes"], { env: { PATH: `${fakeCodex(w)}:${MINIMAL_PATH}` } });
-    expect(r.out).toContain("cannot be deleted from here: this Codex session is on the Windows side; delete it in Codex with /delete, or with `codex delete c0dec0de-0000-4000-8000-0000000000cc` there.");
+    const file = sampleCodex({ id, cwd: "C:\\Users\\me\\work\\demo-app" }).write(path.join(w.users, "me", ".codex"));
+    // Only WSL's own codex: nothing to delete it with on the Windows side.
+    const none = run(w, ["forget", "c0dec0de", "--yes"], { env: { PATH: `${fakeCodex(w)}:${MINIMAL_PATH}` } });
+    expect(none.out).toContain("cannot be deleted from here: this Codex session is on the Windows side, and Codex is not installed there (or not on the PATH WSL sees); delete it in Codex with /delete, or with `codex delete c0dec0de-0000-4000-8000-0000000000cc` there.");
     expect(existsSync(path.join(w.home, "codex-calls.log"))).toBe(false);
+    // A Windows codex on the PATH WSL sees (a stand-in named codex.exe), run in a Windows directory.
+    const bin = path.join(w.home, "win-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, "codex.exe"), readFileSync(path.join(fakeCodex(w), "codex"), "utf8").replace("#!/bin/sh", `#!/bin/sh\npwd >> "${w.home}/codex-cwd.log"`).replace('"$HOME/.codex"', `"${w.users}"`));
+    chmodSync(path.join(bin, "codex.exe"), 0o755);
+    const r = run(w, ["forget", "c0dec0de", "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}`, HOME: w.home } });
+    expect(r.out).toContain(`    runs: codex delete --force ${id} on the Windows side\n`);
+    expect(r.out).toContain(`Codex keeps what you typed in its own input history (${path.join(w.users, "me", ".codex", "history.jsonl")}).`);
+    expect(r.out).toContain("✓ c0dec0de deleted");
+    expect(existsSync(file)).toBe(false);
+    expect(readFileSync(path.join(w.home, "codex-cwd.log"), "utf8").trim().split("\n")).toEqual([w.users, w.users]);
   });
 
   test("Codex keeps a parent while its fork exists: blocked alone, fork first when both are named", () => {
@@ -197,7 +209,7 @@ describe.skipIf(process.platform === "win32")("meme forget: Codex", () => {
     fork.write(path.join(w.home, ".codex"));
     const env = { PATH: `${fakeCodex(w)}:${MINIMAL_PATH}` };
     // Each is shown, and named, by as much of its id as tells it apart.
-    expect(run(w, ["ls"], { cwd: demoDir(w) }).out).toMatch(/\n {2}019dc1a2-7 {2}Codex·WSL .* fork turn\n {2}019dc1a2-5 {2}Codex·WSL .* parent turn\n {2}11111111 {4}CC·WSL /);
+    expect(run(w, ["ls"], { cwd: demoDir(w) }).out).toMatch(/\n {2}019dc1a2-7 {2}Codex·WSL .* fork turn\n {2}019dc1a2-5 {2}Codex·WSL .* parent turn\n {2}11111111 {4}Claude·WSL /);
     const alone = run(w, ["forget", "019dc1a2-5", "--yes"], { env });
     expect(alone.code).toBe(1);
     expect(alone.out).toContain('cannot be deleted from here: Codex does not delete a session while a fork reads its history from it: 019dc1a2-7 "fork turn". Name the fork too (`meme forget 019dc1a2-5 019dc1a2-7`; it is deleted first), or delete it first.');

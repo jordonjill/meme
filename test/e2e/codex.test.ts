@@ -31,7 +31,7 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     withCodex(w);
     const r = run(w, ["ls"], { cwd: demoDir(w) });
     expect(r.out).toMatch(/c0dec0de {2}Codex·WSL .* codex lab\n/);
-    expect(r.out).toMatch(/11111111 {2}CC·WSL /);
+    expect(r.out).toMatch(/11111111 {2}Claude·WSL /);
     expect(run(w, ["ls", "--agent", "codex"], { cwd: demoDir(w) }).out).not.toContain("11111111");
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { displayPath, pathKey, samePath, winToWsl } from "../../src/platform/paths";
-import { ago, size, span, truncate, visible, width, wrap } from "../../src/render/text";
+import { ago, shortPath, size, span, truncate, visible, width, wrap } from "../../src/render/text";
 import { parseKeys } from "../../src/tui/keys";
 import { clip } from "../../src/tui/screen";
 
@@ -70,3 +70,18 @@ describe("keys", () => {
     expect(parseKeys("\x1b[1;5A\x1b[200~")).toEqual([{ name: "up" }]);
   });
 });
+
+describe("shortPath", () => {
+  test("keeps the start and the last folders, losing the middle", () => {
+    const win = "~\\AppData\\Roaming\\Cindy\\owners\\8abfb6a6ce34715bea84\\bots\\cindy\\default-workspace";
+    expect(shortPath(win, 40)).toBe("~\\AppData\\…\\bots\\cindy\\default-workspace");
+    expect(shortPath("/home/jihd/work/private/docs/meme/design/notes", 30)).toBe("/home/…/docs/meme/design/notes");
+    expect(shortPath("/home/jihd/work/private/docs/meme/design/notes", 36)).toBe("/home/jihd/…/docs/meme/design/notes");
+    expect(shortPath("~/work/meme", 40)).toBe("~/work/meme");
+    expect(width(shortPath(win, 40))).toBeLessThanOrEqual(40);
+  });
+  test("a last folder too long for the room is cut at its end", () => {
+    expect(shortPath("~/work/a-folder-name-that-is-far-too-long-to-fit", 20)).toBe("~/…/a-folder-name-t…");
+  });
+});
+

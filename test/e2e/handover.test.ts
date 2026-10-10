@@ -44,7 +44,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     expect(r.code).toBe(0);
     const lines = r.out.split("\n");
     expect(lines[0]).toBe("Sessions in ~/work/demo (newest first):");
-    expect(lines[1]).toMatch(/^ {2}1 {2}CC·WSL {2}\S+ ago {2}Status line setup {2}11111111$/);
+    expect(lines[1]).toMatch(/^ {2}1 {2}Claude·WSL {2}\S+ ago {2}Status line setup {2}11111111$/);
     expect(r.out).toEndWith("+1 session in other projects (meme continue -a)\nThis list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue <number>\n");
     const all = run(w, ["continue", "-a"], { cwd: demoDir(w) });
     expect(all.out).toStartWith("Sessions in all projects (newest first):\n");
@@ -105,7 +105,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     const many = run(w, ["continue", "claude"], { cwd: demoDir(w) });
     expect(many.out).toStartWith('Sessions matching "claude" (newest first):\n');
     // Matches are named by id: a number would be counted against the plain list.
-    expect(many.out.split("\n")[1]).toMatch(/^ {2}CC·WSL /);
+    expect(many.out.split("\n")[1]).toMatch(/^ {2}Claude·WSL /);
     expect(many.out).toEndWith("This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue <id>\n");
     const none = run(w, ["continue", "codex"], { cwd: demoDir(w) });
     expect(none.out).toStartWith('meme: no session matches "codex". Pick from the list instead:\nSessions in ~/work/demo');
@@ -115,7 +115,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     const w = world();
     const r = run(w, ["continue", "1111"]);
     expect(r.code).toBe(0);
-    expect(r.out).toStartWith("# Handoff: Status line setup\nSource: CC·WSL · session 11111111 · ");
+    expect(r.out).toStartWith("# Handoff: Status line setup\nSource: Claude·WSL · session 11111111 · ");
     expect(r.out).toContain("Before you change anything, tell the user in two or three sentences");
     expect(existsSync(path.join(w.home, ".meme", "handoffs"))).toBe(false);
   });
@@ -227,7 +227,7 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     const r = run(w, ["install"], { env: { PATH: `${claude}:${MINIMAL_PATH}` } });
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/\n {2}Claude Code {2}found: .*fake-bin\/claude\n/);
-    expect(r.out).toMatch(/CC·WSL +~\/\.claude\/projects +1 session/);
+    expect(r.out).toMatch(/Claude·WSL +~\/\.claude\/projects +1 session/);
     expect(r.out).toContain("mirrored 2 sessions into ~/.meme/meme.sqlite");
     expect(r.out).toContain("In a terminal:   meme continue");
     expect(r.out).toContain("In Claude Code:  ! meme continue");
@@ -240,7 +240,7 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     const w = world();
     const r = run(w, ["install", "--dry-run"]);
     expect(r.out).toContain("(dry run: nothing is changed)");
-    expect(r.out).toMatch(/CC·Win +.*mnt-c-Users\/me\/\.claude\/projects +1 session file/);
+    expect(r.out).toMatch(/Claude·Win +.*mnt-c-Users\/me\/\.claude\/projects +1 session file/);
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
   });
 

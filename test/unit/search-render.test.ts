@@ -87,7 +87,7 @@ describe("search (plan §4.6.5)", () => {
       [
         "3 matches in 1 session (+1 in tool calls, +2 in tool output; use --all)",
         "",
-        "Status line setup  [CC·Linux]  10-01  3 matches",
+        "Status line setup  [Claude·Linux]  10-01  3 matches",
         "  turn   2  You:  状态栏现在显示哪些内容？接力",
         "  turn   5  You:  接力 in the new session",
         "  turn   5  AI:   Found two files about 接力.",
@@ -120,7 +120,7 @@ describe("ls", () => {
     expect(text).toBe(
       [
         "Sessions in /work/demo (newest first):",
-        `  bbbbbbbb  CC·Linux  1w ago  main  ${mine[0]!.size >= 1024 ? Math.round(mine[0]!.size / 1024) + "KB" : mine[0]!.size + "B"}  Status line setup`,
+        `  bbbbbbbb  Claude·Linux  1w ago  main  ${mine[0]!.size >= 1024 ? Math.round(mine[0]!.size / 1024) + "KB" : mine[0]!.size + "B"}  Status line setup`,
         "+1 session in other projects (use -a)",
         "Run `meme continue <id>` to continue one.",
         "",
@@ -135,7 +135,7 @@ describe("ls", () => {
     expect([l.fellBack, l.filter.all, l.rows.map((r) => r.id)]).toEqual([true, true, [b.id, c.id]]);
     const text = lsText(l, { home: "/home/u", now: NOW, st: plain, width: 120 }).split("\n");
     expect(text[0]).toBe("No sessions in ~ — showing all projects");
-    expect(text[1]).toMatch(/^ {2}bbbbbbbb {2}CC·Linux .* \/work\/demo +Status line setup$/);
+    expect(text[1]).toMatch(/^ {2}bbbbbbbb {2}Claude·Linux .* \/work\/demo +Status line setup$/);
     expect(text[3]).toBe("Run `meme continue <id>` to continue one.");
     expect(lsText(listing([], { all: false, project: "/x" }), { home: "/home/u", now: NOW, st: plain, width: 100 })).toBe("No sessions found.\n");
   });
@@ -162,7 +162,7 @@ describe("show", () => {
     const { store, b } = world();
     const out = showText(buildShow(store.db, getSession(store.db, b.id)!), opts(), "none");
     expect(out.split("\n").slice(0, 21)).toEqual([
-      "Status line setup  [CC·Linux]",
+      "Status line setup  [Claude·Linux]",
       expect.stringMatching(/^\/work\/demo · main · 09-30 09:08 → 10-01 10:0\d · 5 turns · \d+KB$/),
       "  1 ❯ /statusline",
       "      ▸ 1 step · 1 command",
