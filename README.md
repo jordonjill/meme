@@ -23,9 +23,12 @@ and meme on Windows also sees the sessions in your running WSL distributions.
 - **Read and search.** `meme show` folds each turn into one line and expands the
   ones you pick; `meme search` works like `rg` over what you and the AI said.
 - **Continue anywhere.** `meme continue` starts Claude Code or Codex in the
-  session's project and lets it fetch the handoff: your messages, the last turns,
-  the files that were edited and the last test or build run. No LLM summary is
-  made; nothing is written to disk.
+  session's project and lets it fetch the handoff: your messages, each with a line
+  on what the AI did, the last turns step by step, the files that were edited, the
+  recent commands and the last test or build run. A session that was itself
+  handed over brings the messages of the sessions before it, and one the agent
+  compacted brings the agent's own summary. meme makes no LLM summary and writes
+  nothing to disk.
 - **Forget.** `meme forget` deletes a session for good, from the agent and from
   meme, after showing exactly what will go.
 
@@ -90,9 +93,11 @@ over from the repository, not from the previous agent's approach), `--plain`
 prints the handoff instead of starting an agent.
 
 The handoff stays under 25,000 characters (about 15,000 tokens), and under
-36,000 bytes inside Codex, so it fits in one command output; when a session is
-longer, messages from the middle are left out and named, and `meme show` or
-`meme search --session` finds them.
+36,000 bytes inside Codex, so it fits in one command output. When a session is
+longer, the one-line notes go first (oldest first), then the agent's compaction
+summary, then the AI's words in the last turns, and last of all messages from
+the middle. The handoff says what it left out, and `meme show` or
+`meme search --session` finds it.
 
 ## Commands
 
