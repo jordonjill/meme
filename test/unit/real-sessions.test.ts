@@ -1,11 +1,14 @@
 /**
- * Opt-in check on the machine's own Claude Code sessions: MEME_REAL_SESSIONS=1 bun test.
+ * Opt-in check on the machine's own sessions: MEME_REAL_SESSIONS=1 bun test.
  * Reads them in place and prints counts only. Run it before upgrading trajectory
- * (plan §4.6.2, §7): every record must carry a native id found in its source file.
+ * (plan §4.6.2, §7): every record must carry a native id found in its source file;
+ * and after an agent upgrade: every record type must be in the agent's profile.
  */
 import { expect, test } from "bun:test";
 import { normalizeToCanonical } from "@letta-ai/trajectory";
+import { ADAPTERS } from "../../src/adapters";
 import { claudeCode, BOUNDS } from "../../src/adapters/claude-code";
+import { projectResolver } from "../../src/model/project";
 import { parseLines } from "../../src/adapters/read";
 import { currentPlatform } from "../../src/platform/paths";
 
@@ -40,4 +43,34 @@ test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every Claude Code r
   }
   console.log(`real sessions: ${files} files, ${records} records, all ids native`);
   expect(files).toBeGreaterThan(0);
+});
+
+test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every record type is in its agent's profile (arch.md §6.1)", () => {
+  const p = currentPlatform();
+  let sessions = 0;
+  const unknown: string[] = [];
+  for (const adapter of ADAPTERS) {
+    for (const root of adapter.roots(p)) {
+      let listed: string[] = [];
+      try {
+        listed = adapter.listFiles(root);
+      } catch {
+        continue;
+      }
+      const groups = new Map<string, string[]>();
+      for (const f of listed) {
+        const id = adapter.sessionId(f);
+        if (id) (groups.get(id) ?? groups.set(id, []).get(id)!).push(f);
+      }
+      for (const [id, files] of groups) {
+        sessions++;
+        const c = adapter.convert(files, { sessionId: id, root, project: projectResolver(p), filesOf: (x) => groups.get(x) ?? [] });
+        // Types and counts only, never content.
+        for (const u of c.unknown) unknown.push(`${adapter.agent} ${u.version ?? "?"} ${u.type} ×${u.count}`);
+      }
+    }
+  }
+  console.log(`real sessions: ${sessions} sessions, ${unknown.length} unknown record types${unknown.length ? ":\n  " + unknown.join("\n  ") : ""}`);
+  expect(sessions).toBeGreaterThan(0);
+  expect(unknown).toEqual([]);
 });
