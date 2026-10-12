@@ -12,6 +12,8 @@ const COMMAND_CHARS = 120;
 
 const READS = new Set([
   "ls", "cat", "head", "tail", "pwd", "echo", "grep", "rg", "find", "wc", "cd",
+  // Filters that only print what comes through a pipe.
+  "cut", "sort", "uniq", "tr", "nl", "column", "jq",
   // PowerShell
   "Get-Content", "Get-ChildItem", "Get-Location", "Select-String",
 ]);
@@ -45,20 +47,46 @@ export function segments(command: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
-function words(segment: string): string[] {
-  return segment.replace(/^\(+/, "").split(/\s+/).filter(Boolean);
+/** A heredoc's body is data, not commands: `cat > f <<'EOF' … EOF` reads as `cat > f <<EOF`. */
+function withoutHeredocs(command: string): string {
+  return command.replace(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, "<<$2$3");
+}
+
+interface Part {
+  /** The segment as written. */
+  text: string;
+  /** Its words, from the command it runs: no leading `VAR=x`, sudo, time or env. */
+  words: string[];
+}
+
+/** The commands a shell line runs, one per segment. */
+export function parts(command: string): Part[] {
+  return segments(withoutHeredocs(command)).map((text) => {
+    const words = text.replace(/^\(+/, "").split(/\s+/).filter(Boolean);
+    while (words.length && (/^\w+=/.test(words[0]!) || ["sudo", "time", "command", "env"].includes(words[0]!))) words.shift();
+    return { text, words };
+  });
+}
+
+/** A command's name without its folder: `~/tools/bun/bin/bun` is `bun`. */
+const nameOf = (p: Part) => (p.words[0] ?? "").split(/[\\/]/).pop()!;
+
+/** One of the commands a shell line runs starts like `re`: `cd x && bun test`, not `cat > notes.md <<EOF … bun test …`. */
+export function runs(command: string, re: RegExp): boolean {
+  return parts(command).some((p) => re.exec([nameOf(p), ...p.words.slice(1)].join(" "))?.index === 0);
 }
 
 /** Only reads, or is meme itself: nothing a new agent needs to know was run. */
 export function onlyReads(command: string): boolean {
-  return segments(command).every((seg) => {
+  return parts(command).every((p) => {
     // Writing a file with `>` is not reading, whatever the command.
-    const bare = seg.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "").replace(/\d*>&\d+|&?\d*>>?\s*\/dev\/null/g, "");
+    const bare = p.text.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "").replace(/\d*>&\d+|&?\d*>>?\s*\/dev\/null/g, "");
     if (bare.includes(">")) return false;
-    const ws = words(seg);
-    while (ws.length && (/^\w+=/.test(ws[0]!) || ["sudo", "time", "command", "env"].includes(ws[0]!))) ws.shift();
-    const name = (ws[0] ?? "").split(/[\\/]/).pop()!;
+    const ws = p.words;
+    const name = nameOf(p);
     if (/^meme(?:\.exe|-[\w-]+)?$/.test(name)) return true;
+    // sed edits files only with -i (also -i.bak, -Ei, --in-place).
+    if (name === "sed") return !ws.slice(1).some((w) => /^-[A-Za-z]*i/.test(w) || w.startsWith("--in-place"));
     if (name === "git") {
       const rest = ws.slice(1);
       while (rest.length && rest[0]!.startsWith("-")) rest.splice(0, ["-C", "-c"].includes(rest[0]!) ? 2 : 1);

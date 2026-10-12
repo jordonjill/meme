@@ -13,7 +13,7 @@ import { ago, numberList, plural, span, trimmedLines, truncate, turnsText, when 
 import type { SessionRow } from "../store/queries";
 import { cutToTokens, estimateTokens, fitSizes, LIMITS, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
-import { recentCommands } from "./commands";
+import { recentCommands, runs } from "./commands";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
 const MESSAGE_CHARS = 1500;
@@ -26,6 +26,15 @@ const SUMMARY_TOKENS = 3000;
 const SUMMARY_CUT_TOKENS = 1000;
 /** The AI's words in the last turns, cut step by step when the handoff is too long. */
 const AI_CAPS = [4000, 2000, 1000, 500, 200];
+/** Step lines of each last turn, when the handoff is too long: the first two and the newest ones are kept. */
+const STEP_CAPS = [40, 20, 10, 6];
+const FIRST_STEPS = 2;
+/** Edited files listed, when it is still too long: the ones edited last are kept. */
+const FILE_CAPS = [30, 10];
+/** Edited files named on a last turn's "Steps:" line. */
+const NAMED_FILES = 5;
+/** A line of the last verification's output. */
+const OUTPUT_LINE = 200;
 /** Tests, builds, type checks and linters: what "last verification" looks for. */
 const VERIFY =
   /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|lint|typecheck|check)\b|bun\s+test|deno\s+(?:test|check|lint)|npx\s+(?:vitest|jest|tsc|eslint)|vitest|jest|pytest|python3?\s+-m\s+(?:pytest|unittest)|go\s+(?:test|build|vet)|cargo\s+(?:test|build|check|clippy)|make(?:\s+(?:test|check|build))?\b|mvn\s+(?:test|verify|package)|gradlew?\s+(?:test|build|check)|dotnet\s+(?:test|build)|tsc\b|eslint|ruff|mypy)/;
@@ -87,11 +96,31 @@ function renderMessage(n: number, text: string): string {
   return [`${n}. ${first}`, ...rest.map((l) => (l ? "   " + l : ""))].join("\n");
 }
 
+/**
+ * Markdown as plain text, for a reply squeezed into one line: no code fences,
+ * headings, bold, table rules or pipes (a row's cells joined by commas), and a
+ * link as its text.
+ */
+export function plainMarkdown(md: string): string {
+  const out: string[] = [];
+  for (let line of md.split("\n")) {
+    // Fence lines, and table and horizontal rules.
+    if (/^\s*(?:```|~~~)/.test(line) || /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) || /^\s*(?:\*\s*){3,}$/.test(line)) continue;
+    line = line.replace(/^\s{0,3}#{1,6}\s+/, "").replace(/^\s*>\s?/, "");
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      line = line.trim().slice(1, -1).split("|").map((c) => c.trim()).filter(Boolean).join(", ");
+    }
+    out.push(line.replace(/\*\*|__/g, "").replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, "$1"));
+  }
+  return out.join("\n");
+}
+
 /** What the AI did in an earlier turn, on one line (A2): the facts of `meme show`'s fold and its final reply. */
 function arrowLine(t: Turn): string {
   const facts = stepFacts(t);
   if (t.compactions.length) facts.push("context compacted");
-  if (t.final) facts.push(`AI: ${clip(oneLine(t.final), ARROW_CHARS)}`);
+  const reply = t.final ? oneLine(plainMarkdown(t.final)) || oneLine(t.final) : "";
+  if (reply) facts.push(`AI: ${clip(reply, ARROW_CHARS)}`);
   else if (!t.interrupted) facts.push("no reply");
   return `   ↳ ${facts.join(" · ")}`;
 }
@@ -116,9 +145,10 @@ function stepLines(t: Turn): string[] {
   return out;
 }
 
-function lastTurnLines(t: Turn, sid: string, aiCap: number): { lines: string[]; cut: boolean } {
+function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number): { lines: string[]; cut: boolean; stepsLeftOut: number } {
   const facts = [plural(t.steps, "step"), plural(t.commands, "command")];
-  if (t.edited.length) facts.push(`edited ${t.edited.join(", ")}`);
+  // Named when there are a few; "Edited files" below lists them all.
+  if (t.edited.length) facts.push(t.edited.length <= NAMED_FILES ? `edited ${t.edited.join(", ")}` : `edited ${plural(t.edited.length, "file")}`);
   if (t.failed) facts.push(`${t.failed} failed`);
   if (t.interrupted) facts.push("interrupted");
   if (t.compactions.length) facts.push("context compacted");
@@ -133,12 +163,17 @@ function lastTurnLines(t: Turn, sid: string, aiCap: number): { lines: string[]; 
     cut = c.cut;
     out.push("AI said:", quote(c.text) + (c.cut ? `\n> … (cut; \`meme show ${sid} ${t.n}\` has the rest)` : ""));
   } else out.push("AI said: (nothing)");
-  const steps = stepLines(t);
+  let steps = stepLines(t);
+  const stepsLeftOut = Math.max(0, steps.length - stepCap);
+  if (stepsLeftOut) {
+    const note = `- … ${plural(stepsLeftOut, "step")} left out; \`meme show ${sid} ${t.n}\` has every step`;
+    steps = [...steps.slice(0, FIRST_STEPS), note, ...steps.slice(steps.length - (stepCap - FIRST_STEPS))];
+  }
   if (steps.length) out.push("Each step:", ...steps);
-  return { lines: out, cut };
+  return { lines: out, cut, stepsLeftOut };
 }
 
-function editedFiles(turns: Turn[]): string[] {
+function editedFiles(turns: Turn[], cap: number): { lines: string[]; left: number } {
   const files = new Map<string, Set<number>>();
   for (const t of turns) {
     for (const rec of t.records) {
@@ -147,10 +182,18 @@ function editedFiles(turns: Turn[]): string[] {
       }
     }
   }
-  const out = [...files].map(([f, ns]) => `- ${f} (${turnsText([...ns])})`);
+  let listed = [...files];
+  if (listed.length > cap) {
+    // The ones edited last, in their order.
+    const last = (ns: Set<number>) => Math.max(...ns);
+    const kept = new Set(listed.map(([f, ns]) => [f, last(ns)] as const).sort((a, b) => b[1] - a[1]).slice(0, cap).map(([f]) => f));
+    listed = listed.filter(([f]) => kept.has(f));
+  }
+  const out = listed.map(([f, ns]) => `- ${f} (${turnsText([...ns])})`);
+  if (files.size > listed.length) out.push(`- … ${plural(files.size - listed.length, "more file")}, edited earlier`);
   if (!out.length) out.push("No files were changed with the editing tools.");
   out.push("Files changed by commands (sed, cp, scripts) are not listed here; the last turns above show every step.");
-  return out;
+  return { lines: out, left: files.size - listed.length };
 }
 
 function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | null {
@@ -159,15 +202,22 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
     const calls = t.records.flatMap((r) => callsOf(r.body)).reverse();
     for (const call of calls) {
       const command = commandOf(call);
-      if (!command || !VERIFY.test(command)) continue;
+      if (!command || !runs(command, VERIFY)) continue;
       const result = resultFor(t, call);
       const raw = result ? (contentOf(result.body) ?? "") : "";
       const output = resultText(raw);
       const code = exitCodeOf(raw);
       const exit = code === null ? undefined : String(code);
-      const failed = result?.body.role === "tool" && resultFailed(result.body.ok, raw);
-      const status = !result ? "no result" : failed ? `failed${exit ? ` (exit code ${exit})` : ""}` : "passed";
-      const tail = trimmedLines(output).slice(-OUTPUT_TAIL);
+      const tool = result?.body.role === "tool" ? result.body : null;
+      // Passed only when the record says so: Codex's code mode reports a finished script even when the test inside failed.
+      const status = !tool
+        ? "no result"
+        : resultFailed(tool.ok, raw)
+          ? `failed${exit ? ` (exit code ${exit})` : ""}`
+          : tool.ok === true || code === 0
+            ? "passed"
+            : "finished (no exit code)";
+      const tail = trimmedLines(output).slice(-OUTPUT_TAIL).map((l) => clip(l, OUTPUT_LINE));
       return {
         turn: t.n,
         lines: [`Turn ${t.n}: \`${truncate(oneLine(command), 200)}\` → ${status}`, ...(tail.length ? ["```text", ...tail, "```"] : [])],
@@ -323,24 +373,37 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
 
   const verification = opts.fresh ? null : lastVerification(turns);
   const commands = opts.fresh ? { lines: [], older: 0 } : recentCommands(turns, new Set(last.map((t) => t.n)));
-  const tailFor = (aiCap: number): { lines: string[]; cut: number[] } => {
-    if (opts.fresh) return { lines: [], cut: [] };
+  interface Tail {
+    lines: string[];
+    /** Turns whose AI words were cut. */
+    cut: number[];
+    /** Turns whose step lines were cut, and how many. */
+    steps: { n: number; left: number }[];
+    /** Edited files not listed. */
+    files: number;
+  }
+  const tailFor = (aiCap: number, stepCap: number, fileCap: number): Tail => {
+    if (opts.fresh) return { lines: [], cut: [], steps: [], files: 0 };
     const out = ["", `## Last ${last.length === 1 ? "turn" : `${last.length} turns`}`];
     const cut: number[] = [];
+    const steps: Tail["steps"] = [];
     for (const t of last) {
-      const r = lastTurnLines(t, sid, aiCap);
+      const r = lastTurnLines(t, sid, aiCap, stepCap);
       out.push("", ...r.lines);
       if (r.cut) cut.push(t.n);
+      if (r.stepsLeftOut) steps.push({ n: t.n, left: r.stepsLeftOut });
     }
-    out.push("", "## Edited files", ...editedFiles(turns));
+    const edited = editedFiles(turns, fileCap);
+    out.push("", "## Edited files", ...edited.lines);
     if (commands.lines.length) out.push("", "## Recent commands (newest last)", ...commands.lines);
     if (verification) out.push("", "## Last verification", ...verification.lines);
-    return { lines: out, cut };
+    return { lines: out, cut, steps, files: edited.left };
   };
 
   // Budget (handoff.md §7.3): the preamble is never cut. Over the limit, drop in
   // turn: the `↳` lines, oldest first; the compaction summary, first down to 1,000
-  // tokens; the AI's words in the last turns; user messages in the middle.
+  // tokens; the middle of the step lists in the last turns; the AI's words in the
+  // last turns; the edited files edited earliest; user messages in the middle.
   // Characters, tokens and bytes are added up separately, each against its own limit.
   const line = (t: string) => measure(t + "\n");
   // 1% for rounding, and room for a "… left out" note in each section.
@@ -355,7 +418,10 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const messagesTotal = plus(...msgCost);
   let summaryCap = summary ? SUMMARY_TOKENS : 0;
   const summarySize = () => (summary && summaryCap ? line([...summaryLines(summaryCap).lines, ""].join("\n")) : ZERO);
-  let tail = tailFor(Infinity);
+  let aiCap = Infinity;
+  let stepCap = Infinity;
+  let fileCap = Infinity;
+  let tail = tailFor(aiCap, stepCap, fileCap);
   let tailSize = line(tail.lines.join("\n"));
   let arrows = plus(...arrowCost);
   let summaryCost = summarySize();
@@ -374,12 +440,24 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
       summaryCost = ZERO;
     }
   }
-  let aiCap = Infinity;
+  const retail = () => {
+    tail = tailFor(aiCap, stepCap, fileCap);
+    tailSize = line(tail.lines.join("\n"));
+  };
+  for (const cap of STEP_CAPS) {
+    if (!over()) break;
+    stepCap = cap;
+    retail();
+  }
   for (const cap of AI_CAPS) {
     if (!over()) break;
     aiCap = cap;
-    tail = tailFor(cap);
-    tailSize = line(tail.lines.join("\n"));
+    retail();
+  }
+  for (const cap of FILE_CAPS) {
+    if (!over()) break;
+    fileCap = cap;
+    retail();
   }
   const room = plus(fixed(), summaryCost);
   const keep = fitSizes(
@@ -472,7 +550,12 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     }
     if (chain.upstream.length) leftOut.push("what the AI did in the earlier sessions");
     if (last.some((t) => t.steps)) leftOut.push("tool output beyond the first line");
+    if (tail.steps.length) {
+      const n = tail.steps.reduce((a, x) => a + x.left, 0);
+      leftOut.push(`${plural(n, "step")} in the middle of ${turnsText(tail.steps.map((x) => x.n))}`);
+    }
     if (tail.cut.length) leftOut.push(`part of the AI's replies in ${turnsText(tail.cut)}`);
+    if (tail.files) leftOut.push(`${plural(tail.files, "file")} edited earliest (\`meme show ${sid}\`)`);
     if (summary && (!summaryCap || summaryCut)) {
       leftOut.push(`${summaryCap ? "the rest of " : ""}the source agent's compaction summary (\`meme show ${sid} ${summary.rec.turn} --all --full\`)`);
     }
@@ -481,7 +564,8 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   if (chain.current.length) leftOut.push(`the messages of ${chain.current.map((c) => `session ${c}`).join(" and ")}, which you are in`);
 
   const text = [...head, "", ...preamble(sid, opts, included, leftOut), "", ...body, ...tail.lines].join("\n") + "\n";
-  const trimmed = keptArrowTurns.length < arrowTurns.length || (summary !== null && summaryCap < SUMMARY_TOKENS) || aiCap !== Infinity || keep.size < items.length;
+  const trimmed =
+    keptArrowTurns.length < arrowTurns.length || (summary !== null && summaryCap < SUMMARY_TOKENS) || tail.steps.length > 0 || tail.cut.length > 0 || tail.files > 0 || keep.size < items.length;
   return { text, tokens: estimateTokens(text), trimmed };
 }
 
@@ -502,7 +586,9 @@ const WORST_LEFT_OUT = [
   "AI replies and steps before turn 9999, except one line each from turn 9999 on",
   "what the AI did in the earlier sessions",
   "tool output beyond the first line",
+  "9,999 steps in the middle of turns 9999 and 9999",
   "part of the AI's replies in turns 9999 and 9999",
+  "9,999 files edited earliest (`meme show 0123456789ab`)",
   "the rest of the source agent's compaction summary (`meme show 0123456789ab 9999 --all --full`)",
   "9,999 older commands",
   "the messages of session 0123456789ab, which you are in",
