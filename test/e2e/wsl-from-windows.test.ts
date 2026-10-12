@@ -6,7 +6,7 @@
  * and bash.
  */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { sampleCodex } from "../fixtures/gen-codex";
@@ -222,6 +222,21 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect([r.code, r.err]).toEqual([1, "meme: 11111111 is open in Claude Code (Windows, process 6000). Close it there first. Nothing deleted.\n"]);
     writeFileSync(listed, "4 7000");
     expect(run(w, ["forget", "1111"], { env: winEnv }).err).not.toContain("is open");
+  });
+
+  test("forget refuses a WSL Codex session whose lock is held there: \\\\wsl.localhost\\<distro>\\proc\\locks has the lock file's inode (plan §6 ⑧.4)", () => {
+    const { w, ubuntu, env } = wslWorld();
+    const lock = path.join(ubuntu, "home", "u", ".codex", "thread-writer-locks", `${CODEX_ID}.lock`);
+    mkdirSync(path.dirname(lock), { recursive: true });
+    writeFileSync(lock, "");
+    const locks = (inode: number) => `1: POSIX  ADVISORY  WRITE 812 08:30:4242 0 EOF\n10: FLOCK  ADVISORY  WRITE 104933 08:30:${inode} 0 EOF\n10: -> FLOCK  ADVISORY  WRITE 2 08:30:${inode} 0 EOF\n`;
+    mkdirSync(path.join(ubuntu, "proc"), { recursive: true });
+    writeFileSync(path.join(ubuntu, "proc", "locks"), locks(statSync(lock).ino));
+    const r = run(w, ["forget", "c0de", "--yes"], { env });
+    expect([r.code, r.err]).toEqual([1, "meme: c0dec0de is open in Codex (WSL: Ubuntu, process 104933). Close it there first. Nothing deleted.\n"]);
+    // Nobody holds it any more: Codex was killed.
+    writeFileSync(path.join(ubuntu, "proc", "locks"), locks(statSync(lock).ino + 1));
+    expect(run(w, ["forget", "c0de"], { env }).err).not.toContain("is open");
   });
 
   test("forget refuses a WSL session open in Claude Code there: its process is read through \\\\wsl.localhost\\<distro>\\proc (plan §6 ⑧.3)", () => {

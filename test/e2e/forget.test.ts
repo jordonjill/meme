@@ -83,17 +83,33 @@ describe.skipIf(process.platform === "win32")("meme forget: Claude Code", () => 
     expect(run(w, ["forget", "--yes"]).code).toBe(2);
   });
 
-  test("a session active a minute ago needs a second confirmation, so --yes is not enough", () => {
+  test("a session active a minute ago, where meme cannot tell whether it is open: refused, also with --yes and in a terminal (plan §6 ⑧.4)", () => {
     const w = world();
     const live = new ClaudeSession({ id: "99999999-0000-4000-8000-000000000009", cwd: demoDir(w), start: new Date(Date.now() - 60_000).toISOString() });
     live.user("still working");
     live.assistant("on it");
     live.write(path.join(claudeHome(w), "projects"));
+    // No ~/.claude/sessions: an older Claude Code, which does not list its open sessions.
     const r = run(w, ["forget", "9999", "--yes"]);
-    expect(r.code).toBe(1);
-    expect(r.out).toContain("Warning: 99999999 was active");
-    expect(r.err).toContain("may still be running, which needs a second confirmation");
+    expect([r.code, r.out]).toEqual([1, ""]);
+    expect(r.err).toMatch(/^meme: 99999999 was active (a minute|\d+ seconds) ago and may still be open in Claude Code\. Close it there first, or delete it in a few minutes\. Nothing deleted\.\n$/);
+    if (SCRIPT) expect(runInTerminal(w, ["forget", "9999"], "y\n").out).toContain("may still be open in Claude Code");
     expect(run(w, ["ls", "-a"]).out).toContain("99999999");
+    // A day old: deleted as usual.
+    expect(run(w, ["forget", "1111", "--yes"]).code).toBe(0);
+  });
+
+  test("with Claude Code's list of open sessions there, a session not in it is closed: deleted right after it was written", () => {
+    const w = world();
+    const live = new ClaudeSession({ id: "99999999-0000-4000-8000-000000000009", cwd: demoDir(w), start: new Date(Date.now() - 60_000).toISOString() });
+    live.user("done, and quit");
+    live.assistant("bye");
+    live.write(path.join(claudeHome(w), "projects"));
+    mkdirSync(path.join(claudeHome(w), "sessions"));
+    const r = run(w, ["forget", "9999", "--yes"]);
+    expect([r.code, r.err]).toEqual([0, ""]);
+    expect(r.out).not.toContain("Warning");
+    expect(r.out).toContain("✓ 99999999 deleted");
   });
 });
 
@@ -303,5 +319,49 @@ describe.skipIf(process.platform !== "linux")("meme forget: sessions open in an 
     expect([r.code, r.err]).toEqual([1, "meme: 22222222 is open in Claude Code (Windows, process 4343). Close it there first. Nothing deleted.\n"]);
     writeFileSync(listed, "4 5000");
     expect(run(w, ["forget", "2222"], { env }).err).not.toContain("is open");
+  });
+});
+
+describe.skipIf(process.platform !== "linux" || !Bun.which("flock"))("meme forget: Codex sessions open or not (plan §6 ⑧.4)", () => {
+  const id = "c0dec0de-0000-4000-8000-0000000000cd";
+  /** A Codex session written a minute ago, and the stand-in codex that deletes it. */
+  function recentCodex(w: World) {
+    mkdirSync(demoDir(w), { recursive: true });
+    sampleCodex({ id, cwd: demoDir(w), start: new Date(Date.now() - 60_000).toISOString() }).write(path.join(w.home, ".codex"));
+    return { PATH: `${fakeCodex(w)}:${MINIMAL_PATH}` };
+  }
+  const lockFile = (w: World) => path.join(w.home, ".codex", "thread-writer-locks", `${id}.lock`);
+
+  test("its lock held by a running process (flock): refused, with that process", async () => {
+    const w = world();
+    const env = recentCodex(w);
+    mkdirSync(path.dirname(lockFile(w)), { recursive: true });
+    writeFileSync(lockFile(w), "");
+    const holder = Bun.spawn(["flock", lockFile(w), "sleep", "60"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+    try {
+      for (let i = 0; i < 50 && !readFileSync("/proc/locks", "utf8").includes(` ${holder.pid} `); i++) await Bun.sleep(20);
+      const r = run(w, ["forget", "c0de", "--yes"], { env });
+      expect([r.code, r.err]).toEqual([1, `meme: c0dec0de is open in Codex (WSL, process ${holder.pid}). Close it there first. Nothing deleted.\n`]);
+    } finally {
+      holder.kill();
+    }
+  });
+
+  test("its lock left behind by a killed Codex, nobody holding it: closed, deleted", () => {
+    const w = world();
+    const env = recentCodex(w);
+    mkdirSync(path.dirname(lockFile(w)), { recursive: true });
+    writeFileSync(lockFile(w), "");
+    const r = run(w, ["forget", "c0de", "--yes"], { env });
+    expect([r.code, r.err]).toEqual([0, ""]);
+    expect(r.out).toContain("✓ c0dec0de deleted");
+  });
+
+  test("no lock for it while Codex keeps locks: closed; no lock folder at all (an older Codex): refused while recent", () => {
+    const w = world();
+    const env = recentCodex(w);
+    expect(run(w, ["forget", "c0de", "--yes"], { env }).err).toContain("c0dec0de was active");
+    mkdirSync(path.dirname(lockFile(w)), { recursive: true });
+    expect(run(w, ["forget", "c0de", "--yes"], { env }).code).toBe(0);
   });
 });
