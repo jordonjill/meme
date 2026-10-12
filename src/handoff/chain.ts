@@ -6,6 +6,7 @@
  * out from the records each time.
  */
 import { callsOf, contentOf, promptText, shellOutput, type Rec } from "../model/record";
+import { PROFILES } from "../adapters/profiles";
 import { LONG_OUTPUTS } from "../model/formats";
 import { commandOf, resultText } from "../model/tools";
 import { groupTurns, kindOf } from "../model/turns";
@@ -37,8 +38,8 @@ const HEADER = /^# Handoff: [^\n]*\r?\nSource: [^\n]*?\bsession ([0-9a-f]{4,36})
 const PULL = /^\s*(?:\S*[\\/])?meme(?:\.exe)?\s+continue(?:\s+[^\s|&;<>`$()]+)*\s*$/;
 /** 2026-10-10, development only: the first message attached a handoff file named after the session. */
 const HANDOFF_FILE = /^@\S*?[\\/]\.meme[\\/]handoffs[\\/]([0-9a-f]{8})-\d{8}-\d{4}\.md$/;
-/** The first message meme starts an agent with (plan §2.3). */
-const LAUNCH = /^Continue an earlier session: run `meme continue /;
+/** The first message meme starts an agent with (plan §2.3, the agents' profiles), up to the command. */
+const LAUNCHES = PROFILES.map((p) => p.firstMessage("\u0000").split("\u0000")[0]! + "meme continue ");
 const MAX_DEPTH = 8;
 
 /**
@@ -47,7 +48,7 @@ const MAX_DEPTH = 8;
  */
 export function isMemeCommand(prompt: string): boolean {
   const t = prompt.trim();
-  return /^!\s*(?:\S*[\\/])?meme(?:\.exe)?(?:\s|$)/.test(t) || LAUNCH.test(t) || HANDOFF_FILE.test(t) || /^\/meme(?:\s|$)/.test(t);
+  return /^!\s*(?:\S*[\\/])?meme(?:\.exe)?(?:\s|$)/.test(t) || LAUNCHES.some((l) => t.startsWith(l)) || HANDOFF_FILE.test(t) || /^\/meme(?:\s|$)/.test(t);
 }
 
 /** The user's messages in a session, without meme's own commands. */
