@@ -63,11 +63,13 @@ export const claudeCodeProfile: Profile = {
   inside: (v) => v.CLAUDECODE === "1" || Boolean(v.CLAUDE_CODE_SESSION_ID),
   sessionVar: "CLAUDE_CODE_SESSION_ID",
   nesting: 0,
-  // It keeps 30,000 characters of a command's output, for `!` and its Bash tool alike;
-  // 25,000 leaves room for the lines around the handoff.
-  outputLimit: { chars: 25_000 },
+  // An output over about 30,000 bytes, of `!` and its Bash tool alike, is saved to a
+  // file and the model sees its first 2KB (2.1.280–2.1.296, plan §6 ⑤); 27,000 leaves
+  // room for the lines around the handoff.
+  outputLimit: { bytes: 27_000 },
   bangReachesModel: true,
-  firstMessage: (command) => `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`,
+  // As written: a pipe or another command around it hides the handoff from the relay chain (plan §6 ⑧.3).
+  firstMessage: (command) => `Continue an earlier session: run \`${command}\` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.`,
   howToContinue: [
     "! meme continue        see the numbered list",
     "! meme continue <n>    hand over number n (or: last, codex, win, an id,",

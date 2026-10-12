@@ -102,7 +102,7 @@ export const codexProfile: Profile = {
   // A `!` command's output stays in the conversation but reaches the model only with the next message.
   bangReachesModel: false,
   // Its model sets how much command output it keeps; ask for enough (sessions.md §7.1).
-  firstMessage: (command) => `Continue an earlier session: run \`${command}\` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.`,
+  firstMessage: (command) => `Continue an earlier session: run \`${command}\` exactly as written, with no pipe or other command around it (its output can be up to 10,000 tokens; allow that much), and follow the instructions at the top of its output.`,
   howToContinue: [
     'the same two commands, then say "continue": Codex keeps the output',
     "of a ! command but does not pass it to the model by itself",
