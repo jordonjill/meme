@@ -130,9 +130,9 @@ over from the repository, not from the previous agent's approach), `--plain`
 prints the handoff instead of starting an agent.
 
 The handoff stays under 15,000 tokens and under what the agent keeps of a
-command's output, so it arrives whole: 25,000 characters in Claude Code, 36,000
-bytes in Codex, and both when meme cannot tell which agent will read it (a pipe,
-`--plain`). When a session is longer, the one-line notes go first (oldest first), then the agent's compaction
+command's output, so it arrives whole: 27,000 bytes in Claude Code (a longer
+output is saved to a file there), 36,000 bytes in Codex, and the tighter of the
+two when meme cannot tell which agent will read it (a pipe, `--plain`). When a session is longer, the one-line notes go first (oldest first), then the agent's compaction
 summary, then the AI's words in the last turns, and last of all messages from
 the middle. The handoff says what it left out, and `meme show` or
 `meme search --session` finds it.
@@ -176,8 +176,9 @@ matches too, it says how many (`-a` lists them).
 ### Forget
 
 `meme forget` lists every file it will delete and asks `[y/N]`; Enter alone
-deletes nothing. It refuses the session that is running it and asks once more for
-a session active in the last few minutes.
+deletes nothing. It refuses the session that is running it and a session open in
+Claude Code (which lists the sessions it has open), and asks once more for a
+session active in the last few minutes.
 
 - **Claude Code**: the session file and its folders (subagents and large tool
   output, `file-history`, `session-env`).
