@@ -1,9 +1,11 @@
 import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { zstdDecompressSync } from "node:zlib";
+import { summaryText } from "../model/compaction";
 import { userKind, type UserKind } from "../model/injected";
-import type { Body } from "../model/record";
+import { contentOf, type Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import { displayPath, wslToWin, type Platform } from "../platform/paths";
@@ -139,25 +141,105 @@ function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | u
   }
   const text = (cut === undefined ? file.buf : file.buf.subarray(0, cut)).toString("utf8");
   const group = file.meta.id?.toLowerCase();
-  for (const c of canonical(text, group, Boolean(base) && cut === undefined)) {
+  const ownRecord = (group ?? ctx.sessionId) === top;
+  // Ids are per file position; a rollback's later file gets its own prefix so they never collide.
+  const uidOf = (id: string) => (file.tag ? `${file.tag}:${id}` : id);
+  const records = canonical(text, group, Boolean(base) && cut === undefined);
+  const mine: ChainRecord[] = [];
+  for (const c of records) {
     const body = JSON.parse(c.record_json) as Body;
     const kind = body.role === "user" ? userKind(body.content) : null;
-    out.push({
+    mine.push({
       kind,
-      own: (group ?? ctx.sessionId) === top,
+      own: ownRecord,
       rec: {
-        // Ids are per file position; a rollback's later file gets its own prefix so they never collide.
-        uid: c.record_type === "meta" ? null : file.tag ? `${file.tag}:${c.stable_source_record_id}` : c.stable_source_record_id,
+        uid: c.record_type === "meta" ? null : uidOf(c.stable_source_record_id),
         part: c.component_index,
         turn: 0,
-        injected: kind === "injected",
+        injected: kind === "injected" ? "harness" : null,
         role: body.role,
         ts: "timestamp" in body ? body.timestamp : null,
         body,
       },
     });
   }
+  markCompactions(text, records, mine, records[0]?.source_group_id ?? group ?? ctx.sessionId, uidOf, ownRecord);
+  out.push(...mine);
   return out;
+}
+
+interface Compacted {
+  offset: number;
+  ts: string | null;
+  /** The summary without Codex's prefix; empty when it cannot be read (server-side, encrypted). */
+  summary: string;
+}
+
+/** Where Codex compacted its context: its `compacted` items, which trajectory leaves out. */
+function compactions(text: string): Compacted[] {
+  if (!text.includes('"type":"compacted"')) return [];
+  const out: Compacted[] = [];
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    if (line.includes('"type":"compacted"')) {
+      try {
+        const o = JSON.parse(line);
+        if (o?.type === "compacted") {
+          const message = typeof o.payload?.message === "string" ? o.payload.message : "";
+          out.push({ offset, ts: typeof o.timestamp === "string" ? o.timestamp : null, summary: summaryText(message) });
+        }
+      } catch {}
+    }
+    offset += Buffer.byteLength(line, "utf8") + 1;
+  }
+  return out;
+}
+
+/** trajectory's id for a Codex line: its byte offset in the file (kind `location`). */
+const locationId = (group: string, offset: number) => createHash("sha256").update(`${group}|byte|${offset}`, "utf8").digest("hex");
+
+/**
+ * Compactions (handoff.md §7.8): Codex also writes the summary as an ordinary AI
+ * message right before the `compacted` item. That message is marked as the
+ * summary, so it never counts as something the AI said. Without one, a record
+ * for the compaction is added in its place, holding the summary if it is readable.
+ */
+function markCompactions(text: string, canon: CanonicalRecord[], recs: ChainRecord[], group: string, uidOf: (id: string) => string, own: boolean): void {
+  const found = compactions(text);
+  if (!found.length) return;
+  const offsetOf = new Map<string, number>();
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    if (line.trim()) offsetOf.set(locationId(group, offset), offset);
+    offset += Buffer.byteLength(line, "utf8") + 1;
+  }
+  const offsets = canon.map((c) => offsetOf.get(c.stable_source_record_id) ?? -1);
+  // From the last one, so inserting a record does not move the ones still to do.
+  for (const c of [...found].reverse()) {
+    let at = offsets.length;
+    while (at > 0 && offsets[at - 1]! > c.offset) at--;
+    let matched = false;
+    for (let i = at - 1; i >= 0 && c.summary; i--) {
+      const r = recs[i]!;
+      if (r.kind === "prompt") break;
+      if (r.rec.role !== "assistant" || "tool_calls" in r.rec.body) continue;
+      const said = contentOf(r.rec.body)?.trim() ?? "";
+      if (said && (said === c.summary || c.summary.includes(said))) {
+        r.rec.injected = "compact_summary";
+        matched = true;
+      }
+      break;
+    }
+    if (matched) continue;
+    const body: Body = { role: "system", content: c.summary, timestamp: c.ts ?? "" };
+    const rec: ChainRecord = {
+      kind: null,
+      own,
+      rec: { uid: uidOf(locationId(group, c.offset)), part: 0, turn: 0, injected: c.summary ? "compact_summary" : "compaction", role: "system", ts: c.ts, body },
+    };
+    recs.splice(at, 0, rec);
+    offsets.splice(at, 0, c.offset);
+  }
 }
 
 /**

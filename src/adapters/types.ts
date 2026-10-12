@@ -1,3 +1,4 @@
+import type { Injected } from "../model/injected";
 import type { Body } from "../model/record";
 import type { Env } from "../platform/env";
 import type { Platform } from "../platform/paths";
@@ -37,7 +38,7 @@ export interface ConvertedRecord {
   uid: string | null;
   part: number;
   turn: number;
-  injected: boolean;
+  injected: Injected | null;
   role: string;
   ts: string | null;
   body: Body;

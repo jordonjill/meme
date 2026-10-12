@@ -1,8 +1,8 @@
 import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { userKind, type UserKind } from "../model/injected";
-import type { Body } from "../model/record";
+import { injectedWhy, userKind, type UserKind } from "../model/injected";
+import { contentOf, type Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
@@ -151,13 +151,26 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     if (!command) continue;
     const ts = str(l.obj.timestamp);
     const body: Body = { role: "user", content: command, timestamp: ts ?? "" };
-    commands.push({ line: l.index, rec: { uid: str(l.obj.uuid), part: 0, turn: 0, injected: false, role: "user", ts, body } });
+    commands.push({ line: l.index, rec: { uid: str(l.obj.uuid), part: 0, turn: 0, injected: null, role: "user", ts, body } });
   }
 
-  const merged: { rec: ConvertedRecord; kind: UserKind | null }[] = [];
+  const merged: { rec: ConvertedRecord; kind: UserKind | null; restored?: boolean }[] = [];
   let next = 0;
   const flushCommands = (beforeLine: number) => {
-    while (next < commands.length && commands[next]!.line < beforeLine) merged.push({ rec: commands[next++]!.rec, kind: "prompt" });
+    while (next < commands.length && commands[next]!.line < beforeLine) {
+      const rec = commands[next++]!.rec;
+      if (!repeatsTypedCommand(rec)) merged.push({ rec, kind: "prompt", restored: true });
+    }
+  };
+  // `/compact` is written twice: as typed before compacting, and as a command line
+  // after the summary. Nothing the AI did comes between them; it is one turn.
+  const repeatsTypedCommand = (rec: ConvertedRecord): boolean => {
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const m = merged[i]!;
+      if (m.kind === "prompt") return !m.restored && contentOf(m.rec.body)?.trim() === contentOf(rec.body);
+      if (m.rec.role === "assistant" || m.rec.role === "tool") return false;
+    }
+    return false;
   };
   for (const c of canonical(text, ctx.sessionId)) {
     const body = JSON.parse(c.record_json) as Body;
@@ -170,7 +183,7 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
         uid: c.record_type === "meta" ? null : c.stable_source_record_id,
         part: c.component_index,
         turn: 0,
-        injected: kind === "injected",
+        injected: kind === "injected" ? injectedWhy(raw?.obj) : null,
         role: body.role,
         ts: "timestamp" in body ? body.timestamp : null,
         body,

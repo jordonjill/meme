@@ -1,4 +1,5 @@
 import type { NormalizedRecord } from "@letta-ai/trajectory";
+import type { Injected } from "./injected";
 import { callText, parseArgs } from "./tools";
 
 /** The inner layer: one trajectory record, verbatim (after redaction). */
@@ -10,7 +11,8 @@ export interface Rec {
   uid: string | null;
   part: number;
   turn: number;
-  injected: boolean;
+  /** Not said by the user or the AI, and why; null for the conversation itself. */
+  injected: Injected | null;
   copied: boolean;
   role: string;
   ts: string | null;
