@@ -2,9 +2,9 @@
  * Whether a process is still running, as far as meme can tell from where it runs
  * (plan §6 ⑧.3): a Linux process through /proc, also a WSL one from Windows
  * through \\wsl.localhost; a Windows one through tasklist.exe; a macOS one by its
- * pid. null when meme cannot tell.
+ * pid. And which process holds a file locked (§6 ⑧.4), on Linux. null when meme cannot tell.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { errorCode } from "./fs";
 import { mountRoot, type Platform } from "./paths";
@@ -86,4 +86,35 @@ export function processRunning(platform: Platform, where: ProcessPlace, pid: num
   }
   if (platform.env === "mac") return viaPid(pid);
   return viaProc(`/proc/${pid}/stat`, started);
+}
+
+/**
+ * The process holding an flock on `file`, from /proc/locks: on Linux and WSL, and
+ * from Windows for a file in WSL (\\wsl.localhost serves the same inodes; readlink
+ * of /proc/<pid>/fd does not work there). Only the inode is compared: the device
+ * numbers are not to be had from Windows, and a match on another file system errs
+ * on the side of "open". false when nothing holds it; null when meme cannot tell.
+ */
+export function lockHolder(platform: Platform, where: ProcessPlace, file: string): number | false | null {
+  let locks: string;
+  if (where.kind === "wsl") locks = toHost(where.place.root, "/proc/locks");
+  else if (where.kind === "here" && (platform.env === "linux" || platform.env === "wsl")) locks = "/proc/locks";
+  else return null;
+  let inode: string;
+  let text: string;
+  try {
+    inode = String(statSync(file).ino);
+  } catch (err) {
+    return errorCode(err) === "ENOENT" ? false : null;
+  }
+  try {
+    text = readFileSync(locks, "utf8");
+  } catch {
+    return null;
+  }
+  // "10: FLOCK  ADVISORY  WRITE 104933 08:30:156768 0 EOF"; waiting ones have "->" after the number.
+  for (const m of text.matchAll(/^\d+:\s+FLOCK\s+\S+\s+\S+\s+(\d+)\s+[0-9a-f]+:[0-9a-f]+:(\d+)\s/gm)) {
+    if (m[2] === inode) return Number(m[1]);
+  }
+  return false;
 }
