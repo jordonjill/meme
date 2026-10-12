@@ -1,12 +1,13 @@
 import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { injectedWhy, userKind, type UserKind } from "../model/injected";
+import { userKind, type Injected, type UserKind } from "../model/injected";
 import { contentOf, type Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
 import { toHost } from "../platform/wsl";
+import { claudeCodeProfile } from "./claude-code.profile";
 import { parseLines, readJsonl } from "./read";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type SourceRoot } from "./types";
 
@@ -28,7 +29,7 @@ export const claudeCode: Adapter = {
   agent: AGENT,
 
   home(platform: Platform): string {
-    return platform.vars.CLAUDE_CONFIG_DIR || path.join(platform.home, ".claude");
+    return platform.vars[claudeCodeProfile.homeVar] || path.join(platform.home, claudeCodeProfile.homeDir);
   },
 
   /**
@@ -53,7 +54,7 @@ export const claudeCode: Adapter = {
 
   launch(firstMessage: string) {
     // The message goes first: --allowedTools takes a list and would swallow it.
-    return { cmd: "claude", args: [firstMessage, "--allowedTools", "Bash(meme:*)"] };
+    return { cmd: claudeCodeProfile.command, args: [firstMessage, "--allowedTools", "Bash(meme:*)"] };
   },
 
   roots(platform: Platform): SourceRoot[] {
@@ -176,14 +177,16 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     const body = JSON.parse(c.record_json) as Body;
     const raw = c.source_identity_kind === "native" ? byUuid.get(c.stable_source_record_id) : undefined;
     if (raw) flushCommands(raw.index);
-    const kind = body.role === "user" ? userKind(body.content, raw?.obj) : null;
+    // Lines it flags as its own: expanded commands and reminders (isMeta), compaction summaries.
+    const flagged: Injected | null = raw?.obj.isCompactSummary === true ? "compact_summary" : raw?.obj.isMeta === true ? "harness" : null;
+    const kind = body.role === "user" ? (flagged ? "injected" : userKind(body.content)) : null;
     merged.push({
       kind,
       rec: {
         uid: c.record_type === "meta" ? null : c.stable_source_record_id,
         part: c.component_index,
         turn: 0,
-        injected: kind === "injected" ? injectedWhy(raw?.obj) : null,
+        injected: kind === "injected" ? (flagged ?? "harness") : null,
         role: body.role,
         ts: "timestamp" in body ? body.timestamp : null,
         body,

@@ -10,6 +10,7 @@ import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import { displayPath, wslToWin, type Platform } from "../platform/paths";
 import { BOUNDS } from "./claude-code";
+import { codexProfile } from "./codex.profile";
 import { dropPartialLine } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
 import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
@@ -362,7 +363,7 @@ export const codex: Adapter = {
   agent: AGENT,
 
   home(platform: Platform): string {
-    return platform.vars.CODEX_HOME || path.join(platform.home, ".codex");
+    return platform.vars[codexProfile.homeVar] || path.join(platform.home, codexProfile.homeDir);
   },
 
   /**
@@ -386,7 +387,7 @@ export const codex: Adapter = {
   },
 
   launch(firstMessage: string) {
-    return { cmd: "codex", args: [firstMessage] };
+    return { cmd: codexProfile.command, args: [firstMessage] };
   },
 
   /** `~/.codex` (sessions/ and archived_sessions/ together, so archiving is a move, not a delete); in WSL also the Windows one. */
