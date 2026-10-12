@@ -298,3 +298,15 @@ export function unknownIn(db: Database, session: string, kind: Unread = "unknown
 export function failureOf(db: Database, session: string): string | null {
   return db.query<{ error: string }, [string]>("SELECT error FROM failures WHERE session = ? ORDER BY path LIMIT 1").get(session)?.error ?? null;
 }
+
+/** The directory the session started in, as it wrote it (its meta record); the project when there is none. */
+export function startDirOf(db: Database, session: SessionRow): string | null {
+  const row = db.query<{ body: string }, [string]>("SELECT body FROM records WHERE session = ? AND role = 'meta' ORDER BY seq LIMIT 1").get(session.id);
+  if (row) {
+    try {
+      const cwd = (JSON.parse(row.body) as { cwd?: unknown }).cwd;
+      if (typeof cwd === "string" && cwd) return cwd;
+    } catch {}
+  }
+  return session.project;
+}
