@@ -251,6 +251,8 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     if (obj.isSidechain === true || dropped.has(index) || claudeCodeProfile.expectedDrop(obj)) continue;
     unread.add(key, null, lineVersion);
   }
+  // Every conversation line carries the directory; without it the project would be guessed wrong (plan §6 ⑧, task 0).
+  if (cwd === null && parsed.some(({ obj }) => claudeCodeProfile.conversation.includes(typeKey(obj.type, obj.subtype)))) unread.add("start directory", null, lineVersion);
   const prompts = merged.filter((m) => m.kind === "prompt").map((m) => (m.rec.body as { content: string }).content);
 
   return {

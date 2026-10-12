@@ -195,7 +195,7 @@ function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | u
       },
     });
   }
-  markCompactions(text, records, mine, trajectoryGroup, uidOf, ownRecord);
+  markCompactions(text, records, mine, trajectoryGroup, uidOf, ownRecord, ownRecord ? unread : null, file.meta.cli_version ?? null);
   out.push(...mine);
   return out;
 }
@@ -203,8 +203,10 @@ function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | u
 interface Compacted {
   offset: number;
   ts: string | null;
-  /** The summary without Codex's prefix; empty when it cannot be read (server-side, encrypted). */
+  /** The summary without Codex's prefix; empty when it cannot be read. */
   summary: string;
+  /** It carries an encrypted summary (server-side compaction): unreadable by design, not a format meme lost. */
+  encrypted: boolean;
 }
 
 /** Where Codex compacted its context: its `compacted` items, which trajectory leaves out. */
@@ -218,7 +220,8 @@ function compactions(text: string): Compacted[] {
         const o = JSON.parse(line);
         if (o?.type === "compacted") {
           const message = typeof o.payload?.message === "string" ? o.payload.message : "";
-          out.push({ offset, ts: typeof o.timestamp === "string" ? o.timestamp : null, summary: summaryText(message) });
+          const encrypted = JSON.stringify(o.payload ?? {}).includes('"encrypted_content"');
+          out.push({ offset, ts: typeof o.timestamp === "string" ? o.timestamp : null, summary: summaryText(message), encrypted });
         }
       } catch {}
     }
@@ -236,7 +239,7 @@ const locationId = (group: string, offset: number) => createHash("sha256").updat
  * summary, so it never counts as something the AI said. Without one, a record
  * for the compaction is added in its place, holding the summary if it is readable.
  */
-function markCompactions(text: string, canon: CanonicalRecord[], recs: ChainRecord[], group: string, uidOf: (id: string) => string, own: boolean): void {
+function markCompactions(text: string, canon: CanonicalRecord[], recs: ChainRecord[], group: string, uidOf: (id: string) => string, own: boolean, unread: TypeCounter | null, version: string | null): void {
   const found = compactions(text);
   if (!found.length) return;
   const offsetOf = new Map<string, number>();
@@ -263,6 +266,8 @@ function markCompactions(text: string, canon: CanonicalRecord[], recs: ChainReco
       break;
     }
     if (matched) continue;
+    // No readable summary and nothing encrypted: written in a way meme does not know (plan §6 ⑧, task 0).
+    if (!c.summary && !c.encrypted) unread?.add("compacted", null, version);
     const body: Body = { role: "system", content: c.summary, timestamp: c.ts ?? "" };
     const rec: ChainRecord = {
       kind: null,
@@ -361,6 +366,8 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
   const prompts = records.filter((r) => r.kind === "prompt" && r.own).map((r) => (r.rec.body as { content: string }).content);
   const first = own[0]!;
   const times = out.map((r) => r.ts).filter((t): t is string => Boolean(t));
+  // session_meta names the directory; without it the project would be guessed wrong (plan §6 ⑧, task 0).
+  if (!first.meta.cwd && !active.meta.cwd) unread.add("start directory", null, first.meta.cli_version ?? null);
   return {
     session: {
       id: ctx.sessionId,
