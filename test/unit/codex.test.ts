@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { codex } from "../../src/adapters/codex";
 import { currentSessions } from "../../src/cli/context";
-import { CODEX_BYTES, LIMITS, weight } from "../../src/handoff/budget";
+import { LIMITS, limitsIn, weight } from "../../src/handoff/budget";
+import { codexProfile } from "../../src/adapters/codex.profile";
 import { contentOf } from "../../src/model/record";
-import { codeModeCommands, commandOf, describeCall, editedFiles, patchFiles, resultFailed, resultText } from "../../src/model/tools";
+import { commandOf, describeCall, editedFiles, resultFailed, resultText } from "../../src/model/tools";
+import { codeModeCommands, patchFiles } from "../../src/adapters/codex.profile";
 import { makeStyle } from "../../src/render/labels";
 import { buildShow, showText } from "../../src/render/show";
 import { nullLogger } from "../../src/platform/log";
@@ -190,6 +192,7 @@ describe("running inside Codex", () => {
   test("the byte cap weighs Chinese text by its UTF-8 size", () => {
     const zh = "接".repeat(1000); // 3,000 bytes
     expect(weight(zh, LIMITS)).toBe(Math.ceil((1000 * 25_000) / 15_000));
-    expect(weight(zh, { ...LIMITS, bytes: CODEX_BYTES })).toBe(Math.ceil((3000 * 25_000) / CODEX_BYTES));
+    expect(limitsIn(codexProfile).bytes).toBe(36_000);
+    expect(weight(zh, limitsIn(codexProfile))).toBe(Math.ceil((3000 * 25_000) / 36_000));
   });
 });

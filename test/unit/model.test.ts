@@ -4,15 +4,13 @@ import path from "node:path";
 import { findProject, projectResolver } from "../../src/model/project";
 import { userKind } from "../../src/model/injected";
 import type { Rec } from "../../src/model/record";
-import { callSummary, codeModeCommands, commandOf, describeCall, editedFiles, parseArgs, patchFiles, resultFailed, resultText } from "../../src/model/tools";
+import { callSummary, commandOf, describeCall, editedFiles, parseArgs, resultFailed, resultText } from "../../src/model/tools";
+import { codeModeCommands, patchFiles } from "../../src/adapters/codex.profile";
 import { assignTurns, endingOf, groupTurns, mayBeRunning } from "../../src/model/turns";
 import { tempDir, testPlatform } from "../helpers";
 
 describe("userKind (plan §4.6.3)", () => {
-  test("isMeta and isCompactSummary are injected", () => {
-    expect(userKind("anything", { isMeta: true })).toBe("injected");
-    expect(userKind("This session is being continued…", { isCompactSummary: true })).toBe("injected");
-  });
+  // Lines flagged isMeta or isCompactSummary are injected by the Claude Code adapter (adapter.test.ts, compaction.test.ts).
   test("a message that is only system reminders is injected", () => {
     expect(userKind("<system-reminder>a</system-reminder>\n<system-reminder>b</system-reminder>")).toBe("injected");
     expect(userKind("question <system-reminder>a</system-reminder>")).toBe("prompt");
