@@ -54,7 +54,7 @@ export async function chooseHandover(
       ` ${st.bold(s.title ?? "(untitled)")}  [${coloredLabel(st, s.agent, s.env)}]`,
       ` ${st.dim(facts.join(" · "))}`,
       "",
-      st.dim(` meme starts the agent ${inWsl ? `in WSL (${inWsl.distro}), ` : ""}in the session's project; its first message asks it to run \`meme continue\` for this session.`),
+      st.dim(` meme starts the agent ${inWsl ? `in WSL (${inWsl.distro}), ` : ""}in the directory the session started in; its first message asks it to run \`meme continue\` for this session.`),
     ];
     const def = Math.max(0, agents.findIndex((a) => a.adapter.agent === s.agent));
     const choices = agents.map((a) => ({ label: agentName(a.adapter.agent), note: a.wsl ? `${a.exe} (WSL: ${a.wsl.distro})` : a.exe }));

@@ -142,14 +142,15 @@ describe("the list's filter rows (plan §3.1)", () => {
 
   test("text that does not fit is wrapped, not cut: the agent screen's explanation, styles carried over", () => {
     const st = makeStyle(true);
-    const head = [" " + st.dim("meme starts the agent in WSL (Ubuntu), in the session's project; its first message asks it to run `meme continue` for this session.")];
+    const head = [" " + st.dim("meme starts the agent in WSL (Ubuntu), in the directory the session started in; its first message asks it to run `meme continue` for this session.")];
     const view = new ChoiceView(new Tui(), st, head, [{ label: "Claude Code" }], 0, () => {});
     const screen = view.render(12, 40).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "|"));
-    expect(screen.slice(0, 5)).toEqual([
+    expect(screen.slice(0, 6)).toEqual([
       " |meme starts the agent in WSL",
-      "| (Ubuntu), in the session's project;",
-      "| its first message asks it to run",
-      "| `meme continue` for this session.|",
+      "| (Ubuntu), in the directory the",
+      "| session started in; its first message",
+      "| asks it to run `meme continue` for",
+      "| this session.|",
       "",
     ]);
   });
