@@ -42,6 +42,8 @@ export interface Pick {
   /** What Enter does, in the keys line. */
   verb: string;
   onPick: (row: SessionRow) => void;
+  /** Said in place of when a session was last active, e.g. "open now". */
+  note?: (row: SessionRow) => string | null;
 }
 
 /**
@@ -201,7 +203,7 @@ export class PickerView implements View {
       lines.push(`${selected ? st.cyan("❯ ") : "  "}${selected ? st.bold(title) : title}${gap}${coloredLabel(st, r.agent, r.env)}`);
       // Facts on the left; the id on the right under the label (`meme show`, `continue`
       // and `forget` take it). Across projects the project comes last, losing its middle.
-      const facts = [ago(r.ended_at, this.ctx.now), r.branch, size(r.size), marks(r, this.ctx.now).replace(/^ \((.*)\)$/, "$1") || null].filter(Boolean).join(" · ");
+      const facts = [this.pick?.note?.(r) ?? ago(r.ended_at, this.ctx.now), r.branch, size(r.size), marks(r, this.ctx.now).replace(/^ \((.*)\)$/, "$1") || null].filter(Boolean).join(" · ");
       const room = cols - 5 - width(r.short) - width(facts) - 3;
       const project = this.all ? ` · ${shortPath(displayPath(r.project ?? "", this.ctx.platform.home), Math.max(12, Math.min(PATH_COLS, room)))}` : "";
       const left = truncate(facts + project, Math.max(10, cols - 5 - width(r.short)));
@@ -361,13 +363,13 @@ export async function runPicker(ctx: Context, out: Output, filter: ListFilter): 
 }
 
 /** The list as a chooser: the session picked with Enter, or null after Esc. */
-export async function pickSession(ctx: Context, out: Output, filter: ListFilter, title: string, verb: string): Promise<SessionRow | null> {
+export async function pickSession(ctx: Context, out: Output, filter: ListFilter, title: string, verb: string, note?: Pick["note"]): Promise<SessionRow | null> {
   const tui = new Tui();
   let picked: SessionRow | null = null;
   const onPick = (row: SessionRow) => {
     picked = row;
     tui.quit();
   };
-  await tui.run(new PickerView(tui, ctx, out, filter, { title, verb, onPick }));
+  await tui.run(new PickerView(tui, ctx, out, filter, { title, verb, onPick, note }));
   return picked;
 }
