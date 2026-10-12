@@ -4,7 +4,7 @@ import { displayPath } from "../../platform/paths";
 import { agentName, label } from "../../render/labels";
 import { ago, padEnd, plural, size, when } from "../../render/text";
 import { getMeta } from "../../store/db";
-import { counts, failures, sources, unknownTypes } from "../../store/queries";
+import { counts, failures, sources, unknownTypes, unreadByVersion } from "../../store/queries";
 import { parse, UsageError } from "../args";
 import { createContext, write } from "../context";
 
@@ -58,9 +58,10 @@ export async function status(argv: string[]): Promise<number> {
     lines.push(`  ${padEnd(label(f.agent, f.env), lw)}  ${padEnd(f.short, 8)}  ${padEnd(displayPath(f.path, home), fw)}  ${f.error} (${extra})`);
   }
   const unknown = unknownTypes(db);
-  if (!unknown.length) lines.push("Record types: all known");
+  const unread = unreadByVersion(db, "unread");
+  if (!unknown.length && !unread.length) lines.push("Record types: all known and read");
   else {
-    lines.push("Record types: some that meme doesn't know (a new agent version?):");
+    lines.push("Record types: some meme doesn't know or can't read (a new agent version?):");
     const groups = new Map<string, typeof unknown>();
     for (const u of unknown) {
       const k = `${agentName(u.agent)} ${u.version || "(version unknown)"}`;
@@ -68,6 +69,10 @@ export async function status(argv: string[]): Promise<number> {
     }
     for (const [who, list] of groups) {
       lines.push(`  ${who} writes record types meme doesn't know: ${list.map((u) => `${u.type} (${plural(u.sessions, "session")})`).join(", ")}`);
+    }
+    // The second layer (plan §6 ⑦.1): types meme knows, lines that became nothing.
+    for (const u of unread) {
+      lines.push(`  ${agentName(u.agent)} ${u.version || "(version unknown)"}: ${plural(u.lines, "record")} of known types meme couldn't read (${u.types.split(",").join(", ")}; ${plural(u.sessions, "session")})`);
     }
   }
   write(lines.join("\n") + "\n");

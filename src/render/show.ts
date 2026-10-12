@@ -28,9 +28,13 @@ export function readNotes(db: Database, session: SessionRow, now: number): strin
   if (session.unreadable && session.readable_until) {
     notes.push(`meme can't read this session's file any more (${failureOf(db, session.id) ?? "unknown error"}): this is the session as of ${when(session.readable_until, new Date(now))}; what came after is missing. See \`meme status\`.`);
   }
-  const unknown = unknownIn(db, session.id);
+  const unknown = unknownIn(db, session.id, "unknown");
   const n = unknown.reduce((a, u) => a + u.count, 0);
   if (n) notes.push(`${plural(n, "record")} meme couldn't read (${unknown.map((u) => u.type).join(", ")}); see \`meme status\`.`);
+  // The second layer: lines of types meme knows that became nothing (plan §6 ⑦.1).
+  const unread = unknownIn(db, session.id, "unread");
+  const m = unread.reduce((a, u) => a + u.count, 0);
+  if (m) notes.push(`${plural(m, "record")} of known types meme couldn't read (${unread.map((u) => u.type).join(", ")}); see \`meme status\`.`);
   return notes;
 }
 
