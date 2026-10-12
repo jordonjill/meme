@@ -41,13 +41,13 @@ export const claudeCode: Adapter = {
    * the file when it quits (2.1.296: `sessionId`, `pid`, and `procStart`, which on
    * Linux is field 22 of /proc/<pid>/stat). A killed one leaves its file behind.
    */
-  openSessions(root: SourceRoot): OpenEntry[] {
+  openSessions(root: SourceRoot): OpenEntry[] | null {
     const dir = path.join(this.homeOf(root), "sessions");
     let names: string[];
     try {
       names = readdirSync(dir);
     } catch {
-      return [];
+      return null;
     }
     const out: OpenEntry[] = [];
     for (const name of names) {

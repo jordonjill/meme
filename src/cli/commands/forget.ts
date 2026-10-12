@@ -14,7 +14,7 @@ import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
 import { agreed, createContext, insideAgent, output, write, type Context } from "../context";
-import { openSessions } from "../open";
+import { openCheck } from "../open";
 
 export const forgetHelp = `Usage: meme forget [<session>...] [--yes] [--chain]
 
@@ -28,8 +28,9 @@ everything it will delete and asks before deleting.
   --chain   also delete the earlier sessions a continued session came from
 
 ${PROFILES.map((p) => p.forgetHelp).join("\n")}
-The session that runs meme cannot be deleted, nor one open in an agent that
-lists its open sessions.
+The session that runs meme cannot be deleted, nor one open in an agent. Where
+meme cannot tell whether a session is open, it does not delete one active in
+the last few minutes.
 `;
 
 interface Item {
@@ -81,8 +82,10 @@ export async function forget(argv: string[]): Promise<number> {
   const home = ctx.platform.home;
 
   // What was named, or picked from the list: never the session that runs meme, nor
-  // one open in an agent (plan §6 ⑧.3), even with --yes.
-  const open = openSessions(ctx.platform);
+  // one open in an agent, nor one meme cannot tell about that was written in the
+  // last few minutes (plan §6 ⑧.3, ⑧.4); not even with --yes.
+  const check = openCheck(ctx.platform);
+  const open = check.open;
   const chosen: SessionRow[] = [];
   if (!positionals.length) {
     const picked = await pickSession(ctx, out, { all: false, project: ctx.project, exclude: ctx.current }, "Delete which session?", "choose", (r) => (open.has(r.id) ? "open now" : null));
@@ -94,14 +97,17 @@ export async function forget(argv: string[]): Promise<number> {
     if (ctx.current.has(s.id)) throw new CommandError(`${s.short} is the session that is running meme; it cannot delete itself`);
     if (!chosen.some((c) => c.id === s.id)) chosen.push(s);
   }
-  const opened = chosen.filter((s) => open.has(s.id));
-  if (opened.length) {
-    const why = opened.map((s) => {
-      const o = open.get(s.id)!;
-      return `${s.short} is open in ${profileOf(o.agent).name} (${o.where}, process ${o.pid}).`;
-    });
-    throw new CommandError(`${why.join(" ")} Close ${opened.length === 1 ? "it" : "them"} there first. Nothing deleted.`);
-  }
+  /** Why a session must not be deleted now, if it must not. */
+  const stillOpen = (s: SessionRow): string | null => {
+    const o = open.get(s.id);
+    if (o) return `${s.short} is open in ${profileOf(o.agent).name} (${o.where}, process ${o.pid}). Close it there first.`;
+    if (mayBeRunning(lastActive(s.ended_at), ctx.now) && check.stateOf(s.id, sessionFiles(ctx.store.db, s.id)) === "unknown") {
+      return `${s.short} was active ${ago(s.ended_at, ctx.now, true)} and may still be open in ${profileOf(s.agent).name}. Close it there first, or delete it in a few minutes.`;
+    }
+    return null;
+  };
+  const why = chosen.map(stillOpen).filter((w): w is string => w !== null);
+  if (why.length) throw new CommandError(`${why.join(" ")} Nothing deleted.`);
 
   // A continued session: its earlier part stays in the older session unless that goes too.
   for (const s of [...chosen]) {
@@ -111,7 +117,7 @@ export async function forget(argv: string[]): Promise<number> {
     write(`${s.short} was continued from ${names}. ${names} still ${earlier.length === 1 ? "holds" : "hold"} the first part of this conversation; if only ${s.short} is deleted, ${names} ${earlier.length === 1 ? "shows" : "show"} up in the list again.\n`);
     let include = Boolean(values.chain);
     if (!include && interactive) include = agreed(`Also delete ${names}?`);
-    if (include) for (const e of earlier) if (!ctx.current.has(e.id) && !open.has(e.id)) chosen.push(e);
+    if (include) for (const e of earlier) if (!ctx.current.has(e.id) && !stillOpen(e)) chosen.push(e);
     write("\n");
   }
 
@@ -165,13 +171,7 @@ export async function forget(argv: string[]): Promise<number> {
   }
   lines.push("", "  Then meme's copy of these sessions.", "", "This cannot be undone. The sessions also disappear from the agents' own lists (/resume).");
 
-  const warnings: string[] = [];
   const deletable = items.filter((i) => !i.plan.blocked);
-  const running = deletable.filter((i) => mayBeRunning(lastActive(i.session.ended_at), ctx.now));
-  for (const { session: s } of running) {
-    warnings.push(`${s.short} was active ${ago(s.ended_at, ctx.now, true)} and may still be running in another window.`);
-  }
-  for (const w of warnings) lines.push(st.yellow(`Warning: ${w}`));
   write(lines.join("\n") + "\n\n");
 
   if (!deletable.length) {
@@ -183,19 +183,9 @@ export async function forget(argv: string[]): Promise<number> {
       process.stderr.write("meme: nothing deleted. Deleting needs the user's confirmation: run it in a terminal, or add --yes only if the user has explicitly asked to delete these sessions.\n");
       return 1;
     }
-    if (running.length) {
-      process.stderr.write(`meme: nothing deleted: ${running.map((r) => r.session.short).join(", ")} may still be running, which needs a second confirmation; run meme forget in a terminal.\n`);
-      return 1;
-    }
-  } else {
-    if (!agreed(deletable.length === 1 ? "Delete this session?" : `Delete these ${deletable.length} sessions?`)) {
-      write("Nothing deleted.\n");
-      return 1;
-    }
-    if (warnings.length && !agreed("There are warnings above. Delete anyway?")) {
-      write("Nothing deleted.\n");
-      return 1;
-    }
+  } else if (!agreed(deletable.length === 1 ? "Delete this session?" : `Delete these ${deletable.length} sessions?`)) {
+    write("Nothing deleted.\n");
+    return 1;
   }
 
   // The original first; only once it is gone, the mirror.

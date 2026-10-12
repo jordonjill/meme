@@ -14,7 +14,7 @@ import { codexProfile } from "./codex.profile";
 import { droppedLines, dropPartialLine, TypeCounter, typeKey } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
 import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type OpenEntry, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "codex" as const;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -465,6 +465,27 @@ export const codex: Adapter = {
 
   homeOf(root: SourceRoot): string {
     return root.path;
+  },
+
+  /**
+   * Codex (0.162) keeps `<home>/thread-writer-locks/<session id>.lock` locked with
+   * flock while a session is open, and removes it when it quits; a killed one
+   * leaves it unlocked (plan §6 ⑧.4).
+   */
+  openSessions(root: SourceRoot): OpenEntry[] | null {
+    const dir = path.join(root.path, "thread-writer-locks");
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return null;
+    }
+    const out: OpenEntry[] = [];
+    for (const name of names) {
+      const m = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.lock$/i.exec(name);
+      if (m) out.push({ session: m[1]!.toLowerCase(), lockFile: path.join(dir, name) });
+    }
+    return out;
   },
 
   /**

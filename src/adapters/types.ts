@@ -111,12 +111,15 @@ export interface ForgetTarget {
   files: string[];
 }
 
-/** A session the agent lists as open, and the process that has it open. */
+/** A session the agent lists as open, and how to tell whether it still is (plan §6 ⑧.3, ⑧.4). */
 export interface OpenEntry {
   session: string;
-  pid: number;
+  /** The process that has it open, as the agent recorded it. */
+  pid?: number;
   /** When that process started, as the agent recorded it (Linux: field 22 of /proc/<pid>/stat); null if it did not. */
-  started: string | null;
+  started?: string | null;
+  /** Or a file the agent's process keeps locked (flock) while the session is open. */
+  lockFile?: string;
 }
 
 export interface Adapter {
@@ -137,10 +140,11 @@ export interface Adapter {
   /** The home a source root belongs to: without it, the agent is not installed there (plan §6 ⑧.3). */
   homeOf(root: SourceRoot): string;
   /**
-   * Sessions the agent lists as open under this root, when it keeps such a list
-   * (plan §6 ⑧.3). Whether each process still runs is for the caller to check. Never throws.
+   * Sessions the agent lists as open under this root (plan §6 ⑧.3, ⑧.4); whether
+   * each still is, is for the caller to check. A session not listed is closed.
+   * null when the agent keeps no such list there (an older version): meme cannot tell. Never throws.
    */
-  openSessions?(root: SourceRoot): OpenEntry[];
+  openSessions?(root: SourceRoot): OpenEntry[] | null;
   /** How to delete a session from the agent itself (plan §3.5). */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
   /**
