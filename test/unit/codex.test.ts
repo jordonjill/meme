@@ -42,8 +42,8 @@ describe("codex adapter", () => {
     const users = sessionRecords(w.store.db, s.id).filter((r) => r.role === "user").map((r) => contentOf(r.body));
     expect(users).toEqual(["Make add() take any number of arguments and run the tests.", "Now add subtract(a, b) in subtract.js with a test."]);
     const out = showText(buildShow(w.store.db, row), showOpts, 1);
-    expect(out).toContain("⏺ exec_command  sed -n '1,40p' add.js\n");
-    expect(out).toContain("⏺ apply_patch  /work/codex-demo/add.js, /work/codex-demo/test.js\n");
+    expect(out).toContain("● exec_command  sed -n '1,40p' add.js\n");
+    expect(out).toContain("● apply_patch  /work/codex-demo/add.js, /work/codex-demo/test.js\n");
     // Codex's "Script completed / Wall time / Output:" header is not shown.
     expect(out).toContain("⎿ function add(a, b) {\n");
     expect(out).not.toContain("Script completed");

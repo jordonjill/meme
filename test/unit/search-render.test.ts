@@ -189,7 +189,7 @@ describe("show", () => {
     const m = buildShow(store.db, getSession(store.db, a.id)!);
     expect(showText(m, opts(), 2).split("\n").slice(2)).toEqual([
       "  2 ❯ 状态栏现在显示哪些内容？接力",
-      "      ⏺ Read  /home/u/.claude/settings.json",
+      "      ● Read  /home/u/.claude/settings.json",
       "      ⎿ {",
       '          "statusLine": {}',
       "        }",

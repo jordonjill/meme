@@ -40,7 +40,7 @@ describe("meme CLI", () => {
       "      ▸ 1 step · 1 command",
     ]);
     const one = run(w, ["show", "2222", "1"]);
-    expect(one.out).toContain("      ⏺ PowerShell  Get-ChildItem -Force\n");
+    expect(one.out).toContain("      ● PowerShell  Get-ChildItem -Force\n");
     const bad = run(w, ["show", "2222", "5"]);
     expect([bad.code, bad.err]).toEqual([1, "meme: session 22222222 has 1 turn; there is no turn 5\n"]);
     const none = run(w, ["show", "3333"]);
