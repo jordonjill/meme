@@ -177,8 +177,9 @@ matches too, it says how many (`-a` lists them).
 
 `meme forget` lists every file it will delete and asks `[y/N]`; Enter alone
 deletes nothing. It refuses the session that is running it and a session open in
-Claude Code (which lists the sessions it has open), and asks once more for a
-session active in the last few minutes.
+Claude Code or Codex (meme checks the process that has it open). Where it cannot
+tell (an older agent, Codex on Windows), it refuses a session active in the last
+few minutes.
 
 - **Claude Code**: the session file and its folders (subagents and large tool
   output, `file-history`, `session-env`).

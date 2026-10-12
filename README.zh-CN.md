@@ -153,7 +153,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ### 删除
 
 `meme forget` 列出要删的每一个文件，然后问 `[y/N]`，只按回车不会删除。
-它不会删正在运行它的那个会话，也不会删在 Claude Code 里开着的会话（Claude Code 登记着它开着哪些会话）；最近几分钟还在写的会话会再确认一次。
+它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。查不到的时候（老版本的 Agent、Windows 上的 Codex），最近几分钟还在写的会话也不删。
 
 - **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`）。
 - **Codex**：meme 用会话所在那一边的 codex 运行 `codex delete --force <id>`，
