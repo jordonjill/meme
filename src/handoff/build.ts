@@ -47,6 +47,12 @@ export interface HandoffInput {
   env: Env;
   /** Windows reading a WSL session: the distribution it is in, for a note on where to work. */
   wsl?: WslPlace | null;
+  /**
+   * The session's start directory as a path where meme runs (place.ts `localDir`,
+   * which reads the distribution's wsl.conf). Left out: worked out here, a WSL
+   * path from Windows always through `\\wsl.localhost`.
+   */
+  localDir?: string | null;
   now: number;
   /** Finds the sessions handed over into this one (A1); without it there is no relay chain. */
   lookup?: Lookup;
@@ -310,7 +316,9 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
 
   const dir = startDir(records, s);
   const wsl = input.wsl && dir?.startsWith("/") ? input.wsl : null;
-  const localDir = wsl ? toHost(wsl.root, dir!) : dir && input.env === "wsl" && isWindowsPath(dir) ? winToWsl(dir) : dir;
+  const localDir = input.localDir ?? (wsl ? toHost(wsl.root, dir!) : dir && input.env === "wsl" && isWindowsPath(dir) ? winToWsl(dir) : dir);
+  // A WSL session on a Windows drive (/mnt/c/...) is at C:\... from Windows: not slow there.
+  const inDistro = wsl !== null && !isWindowsPath(localDir!);
   const facts = [
     label(s.agent, s.env),
     `session ${sid}`,
@@ -338,7 +346,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   if (input.env === "wsl" && s.env === "win") {
     head.push("Note: the repository is on the Windows side. In WSL, run git with `-c core.autocrlf=true -c core.filemode=false`, or every file looks modified.");
   }
-  if (wsl) {
+  if (inDistro) {
     head.push(`Note: the repository is inside WSL (${wsl.distro}). From Windows it is at ${localDir}, where git and builds are slow and can fail. Tell the user, and suggest continuing in WSL instead: \`wsl -d ${wsl.distro} --cd ${dir}\`, then \`meme continue ${sid}\` there.`);
   }
 

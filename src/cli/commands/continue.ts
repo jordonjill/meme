@@ -158,17 +158,19 @@ export async function continueSession(argv: string[]): Promise<number> {
       // The agent running meme keeps only so much of a command's output (its profile).
       const limits = limitsIn(runningAgent(ctx.platform.vars));
       const wsl = wslOf(ctx, picked);
+      const started = startDirOf(db, picked);
       const handoff = buildHandoff(
         {
           session: picked,
           records: sessionRecords(db, picked.id),
           env: ctx.platform.env,
           wsl,
+          localDir: started && localDir(started, picked.env, ctx.platform, wsl),
           now: ctx.now,
           lookup: (ref, before) => handedOver(db, ref, before),
           current: ctx.current,
           // Not on the session's files: say so first (arch.md 6.3, rules 1 and 2).
-          away: awayFrom(startDirOf(db, picked), picked.env, ctx.platform, wsl, process.cwd()),
+          away: awayFrom(started, picked.env, ctx.platform, wsl, process.cwd()),
         },
         { fresh: Boolean(values.fresh), limits },
       );
