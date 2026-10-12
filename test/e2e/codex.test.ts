@@ -46,7 +46,7 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     expect(inside.out).toContain("11111111");
   });
 
-  test("inside Codex a handoff stays under 36,000 bytes", () => {
+  test("each agent's limit in its unit; the tightest of all when the agent is not known", () => {
     const w = world();
     mkdirSync(demoDir(w), { recursive: true });
     const big = new CodexSession({ id: "c0dec0de-0000-4000-8000-0000000000bb", cwd: demoDir(w) });
@@ -55,13 +55,30 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
       big.assistant("已完成。" + "导入模块现在又多处理了一种情况。".repeat(10));
     }
     big.write(path.join(w.home, ".codex"));
-    const outside = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"]);
+    const claude = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"], { env: { CLAUDECODE: "1" } });
     const inside = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"], { env: { CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-0000000000ff" } });
-    expect(Buffer.byteLength(outside.out)).toBeGreaterThan(36_000);
-    expect(outside.out.length).toBeLessThanOrEqual(25_000);
+    const unknown = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"]);
+    // Claude Code counts characters: Chinese text may take more than 36,000 bytes there.
+    expect(Buffer.byteLength(claude.out)).toBeGreaterThan(36_000);
+    expect(claude.out.length).toBeLessThanOrEqual(25_000);
     expect(Buffer.byteLength(inside.out)).toBeLessThanOrEqual(36_000);
     expect(inside.out).toContain("\n1. 第 1 步：");
     expect(inside.out).toContain("\n60. 第 60 步：");
+    // Not knowing the agent: 25,000 characters and 36,000 bytes both.
+    expect(Buffer.byteLength(unknown.out)).toBeLessThanOrEqual(36_000);
+    expect(unknown.out.length).toBeLessThanOrEqual(25_000);
+
+    // English text: inside Codex it may go over 25,000 characters, never over 36,000 bytes.
+    const en = new CodexSession({ id: "c0dec0de-0000-4000-8000-0000000000bc", cwd: demoDir(w) });
+    for (let i = 1; i <= 80; i++) {
+      en.user(`step ${i}: ` + "keep tidying the import module and say what changed in this step. ".repeat(8));
+      en.assistant("Done. " + "The import module handles one more case now. ".repeat(6));
+    }
+    en.write(path.join(w.home, ".codex"));
+    const enCodex = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bc"], { env: { CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-0000000000ff" } }).out;
+    expect(enCodex.length).toBeGreaterThan(25_000);
+    expect(Buffer.byteLength(enCodex)).toBeLessThanOrEqual(36_000);
+    expect(run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bc"], { env: { CLAUDECODE: "1" } }).out.length).toBeLessThanOrEqual(25_000);
   });
 
   test("push to Codex: codex starts in the project and is asked to run meme continue itself", () => {

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { CHAR_LIMIT, cutToTokens, estimateTokens, fitMessages, TOKEN_LIMIT, weight, type Limits } from "../../src/handoff/budget";
+import { cutToTokens, estimateTokens, fitMessages, limitsIn, measure, TOKEN_LIMIT, within, type Limits } from "../../src/handoff/budget";
+import { claudeCodeProfile } from "../../src/adapters/claude-code.profile";
+import { codexProfile } from "../../src/adapters/codex.profile";
 import { buildHandoff } from "../../src/handoff/build";
 import { getSession, sessionRecords } from "../../src/store/queries";
 import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
@@ -174,10 +176,16 @@ describe("handoff (plan §4.6.6)", () => {
     expect(text).toMatch(/messages left out/);
   });
 
-  test("the default budget: 15,000 tokens and 25,000 characters, whichever comes first", () => {
-    expect([TOKEN_LIMIT, CHAR_LIMIT]).toEqual([15_000, 25_000]);
-    expect(weight("a".repeat(400))).toBe(400);
-    // 300 CJK characters are 300 tokens, which weigh as 500 characters against these limits.
-    expect(weight("接".repeat(300))).toBe(500);
+  test("the limits: meme's 15,000 tokens, and the unit of the agent it goes to; the tightest of all when unknown", () => {
+    expect(TOKEN_LIMIT).toBe(15_000);
+    expect(limitsIn(claudeCodeProfile)).toEqual({ tokens: 15_000, chars: 25_000 });
+    expect(limitsIn(codexProfile)).toEqual({ tokens: 15_000, bytes: 36_000 });
+    expect(limitsIn(null)).toEqual({ tokens: 15_000, chars: 25_000, bytes: 36_000 });
+    // 30,000 English characters: too many for Claude Code, fine for Codex (30,000 bytes).
+    const en = measure("a".repeat(30_000));
+    expect([within(en, limitsIn(claudeCodeProfile)), within(en, limitsIn(codexProfile)), within(en, limitsIn(null))]).toEqual([false, true, false]);
+    // 13,000 CJK characters: 39,000 bytes, too many for Codex; fine for Claude Code (13,000 tokens and characters).
+    const zh = measure("接".repeat(13_000));
+    expect([within(zh, limitsIn(claudeCodeProfile)), within(zh, limitsIn(codexProfile))]).toEqual([true, false]);
   });
 });

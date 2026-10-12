@@ -7,7 +7,7 @@ import { claudeCode } from "../../src/adapters/claude-code";
 import { estimateTokens, type Limits } from "../../src/handoff/budget";
 import { buildHandoff, plainMarkdown } from "../../src/handoff/build";
 import { isMemeCommand, parseHandoff } from "../../src/handoff/chain";
-import { onlyReads, outcome, runs, segments } from "../../src/handoff/commands";
+import { onlyReads, outcome, recognized, runs, segments } from "../../src/handoff/commands";
 import { nullLogger } from "../../src/platform/log";
 import { numberList } from "../../src/render/text";
 import { openStore } from "../../src/store/db";
@@ -271,6 +271,14 @@ describe("last verification", () => {
     expect(runs("cat > notes.md <<'EOF'\nmake sure to run bun test\nEOF", test)).toBe(false);
     expect(runs("grep -n 'bun test' README.md", test)).toBe(false);
     expect(runs("git commit -m 'make tsc happy'", test)).toBe(false);
+  });
+
+  test("only the test or build is shown, with … where other commands come before or after", () => {
+    const test = /\b(?:bun\s+(?:run\s+typecheck|test)|npm\s+test)/;
+    expect(recognized("bun test", test)).toBe("bun test");
+    expect(recognized("python3 - <<'EOF'\nprint(1)\nEOF\nbun run typecheck 2>&1 | grep TS; bun test 2>&1 | tail -3", test)).toBe("… bun test 2>&1 …");
+    expect(recognized("cd /w && npm test", test)).toBe("… npm test");
+    expect(recognized("ls", test)).toBeNull();
   });
 
   test("passed only when the record says so", () => {

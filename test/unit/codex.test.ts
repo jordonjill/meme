@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { codex } from "../../src/adapters/codex";
 import { currentSessions } from "../../src/cli/context";
-import { LIMITS, limitsIn, weight } from "../../src/handoff/budget";
+import { limitsIn, measure, within } from "../../src/handoff/budget";
 import { codexProfile } from "../../src/adapters/codex.profile";
 import { contentOf } from "../../src/model/record";
 import { commandOf, describeCall, editedFiles, resultFailed, resultText } from "../../src/model/tools";
@@ -189,10 +189,10 @@ describe("running inside Codex", () => {
     expect([...currentSessions({ CODEX_THREAD_ID: "C0DE", CLAUDE_CODE_SESSION_ID: "abcd" })].sort()).toEqual(["abcd", "c0de"]);
     expect(currentSessions({}).size).toBe(0);
   });
-  test("the byte cap weighs Chinese text by its UTF-8 size", () => {
-    const zh = "接".repeat(1000); // 3,000 bytes
-    expect(weight(zh, LIMITS)).toBe(Math.ceil((1000 * 25_000) / 15_000));
-    expect(limitsIn(codexProfile).bytes).toBe(36_000);
-    expect(weight(zh, limitsIn(codexProfile))).toBe(Math.ceil((3000 * 25_000) / 36_000));
+  test("the byte cap counts Chinese text by its UTF-8 size", () => {
+    const zh = measure("接".repeat(12_000)); // 36,000 bytes
+    expect(zh.bytes).toBe(36_000);
+    expect(within(zh, limitsIn(codexProfile))).toBe(true);
+    expect(within(measure("接".repeat(12_001)), limitsIn(codexProfile))).toBe(false);
   });
 });
