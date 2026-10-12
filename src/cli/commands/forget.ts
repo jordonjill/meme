@@ -14,6 +14,7 @@ import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
 import { agreed, createContext, insideAgent, output, write, type Context } from "../context";
+import { openSessions } from "../open";
 
 export const forgetHelp = `Usage: meme forget [<session>...] [--yes] [--chain]
 
@@ -27,7 +28,8 @@ everything it will delete and asks before deleting.
   --chain   also delete the earlier sessions a continued session came from
 
 ${PROFILES.map((p) => p.forgetHelp).join("\n")}
-The session that runs meme cannot be deleted.
+The session that runs meme cannot be deleted, nor one open in an agent that
+lists its open sessions.
 `;
 
 interface Item {
@@ -78,10 +80,12 @@ export async function forget(argv: string[]): Promise<number> {
   const st = out.st;
   const home = ctx.platform.home;
 
-  // What was named, or picked from the list: never the session that runs meme.
+  // What was named, or picked from the list: never the session that runs meme, nor
+  // one open in an agent (plan §6 ⑧.3), even with --yes.
+  const open = openSessions(ctx.platform);
   const chosen: SessionRow[] = [];
   if (!positionals.length) {
-    const picked = await pickSession(ctx, out, { all: false, project: ctx.project, exclude: ctx.current }, "Delete which session?", "choose");
+    const picked = await pickSession(ctx, out, { all: false, project: ctx.project, exclude: ctx.current }, "Delete which session?", "choose", (r) => (open.has(r.id) ? "open now" : null));
     if (!picked) return 0;
     chosen.push(picked);
   }
@@ -89,6 +93,14 @@ export async function forget(argv: string[]): Promise<number> {
     const s = resolveSession(ctx.store.db, ref);
     if (ctx.current.has(s.id)) throw new CommandError(`${s.short} is the session that is running meme; it cannot delete itself`);
     if (!chosen.some((c) => c.id === s.id)) chosen.push(s);
+  }
+  const opened = chosen.filter((s) => open.has(s.id));
+  if (opened.length) {
+    const why = opened.map((s) => {
+      const o = open.get(s.id)!;
+      return `${s.short} is open in ${profileOf(o.agent).name} (${o.where}, process ${o.pid}).`;
+    });
+    throw new CommandError(`${why.join(" ")} Close ${opened.length === 1 ? "it" : "them"} there first. Nothing deleted.`);
   }
 
   // A continued session: its earlier part stays in the older session unless that goes too.
@@ -99,7 +111,7 @@ export async function forget(argv: string[]): Promise<number> {
     write(`${s.short} was continued from ${names}. ${names} still ${earlier.length === 1 ? "holds" : "hold"} the first part of this conversation; if only ${s.short} is deleted, ${names} ${earlier.length === 1 ? "shows" : "show"} up in the list again.\n`);
     let include = Boolean(values.chain);
     if (!include && interactive) include = agreed(`Also delete ${names}?`);
-    if (include) for (const e of earlier) if (!ctx.current.has(e.id)) chosen.push(e);
+    if (include) for (const e of earlier) if (!ctx.current.has(e.id) && !open.has(e.id)) chosen.push(e);
     write("\n");
   }
 
