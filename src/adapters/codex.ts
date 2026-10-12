@@ -11,10 +11,10 @@ import { assignTurns } from "../model/turns";
 import { displayPath, wslToWin, type Platform } from "../platform/paths";
 import { BOUNDS } from "./claude-code";
 import { codexProfile } from "./codex.profile";
-import { dropPartialLine } from "./read";
+import { dropPartialLine, TypeCounter } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
 import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type SourceRoot } from "./types";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "codex" as const;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -46,6 +46,8 @@ interface HistoryBase {
 interface SessionMeta {
   id?: string;
   cwd?: string;
+  cli_version?: string;
+  timestamp?: string;
   forked_from_id?: string;
   history_base?: HistoryBase;
   git?: { branch?: string };
@@ -260,6 +262,62 @@ function lastActivity(buf: Buffer): string | null {
   return null;
 }
 
+/** Record types of a session's own files that its profile does not list (arch.md §6.1, point 4). */
+function unknownTypes(own: Loaded[]): TypeCounter {
+  const types = new TypeCounter(codexProfile.recordTypes);
+  for (const f of own) {
+    const version = typeof f.meta.cli_version === "string" ? f.meta.cli_version : null;
+    for (const line of f.buf.toString("utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let o: unknown;
+      try {
+        o = JSON.parse(line);
+      } catch {
+        types.notJson(version);
+        continue;
+      }
+      if (!o || typeof o !== "object" || Array.isArray(o)) {
+        types.notJson(version);
+        continue;
+      }
+      const r = o as { type?: unknown; payload?: { type?: unknown } };
+      const sub = r.payload && typeof r.payload === "object" && typeof r.payload.type === "string" ? r.payload.type : null;
+      types.add(typeof r.type === "string" ? r.type : "(no type)", sub, version);
+    }
+  }
+  return types;
+}
+
+/** `rollout-2026-10-12T11-33-04-…`: when it started, in local time. */
+function nameTime(file: string): string | null {
+  const m = FILE.exec(path.basename(file))?.[1];
+  const p = m && /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})$/.exec(m);
+  if (!p) return null;
+  const [y, mo, d, h, mi, s] = p.slice(1).map(Number) as [number, number, number, number, number, number];
+  return new Date(y, mo - 1, d, h, mi, s).toISOString();
+}
+
+/** The first line names the session and its directory; failing that, the file name has the time. */
+export function peekCodex(files: string[], ctx: ConvertContext): Peeked {
+  const out: Peeked = { cwd: null, title: threadNames(ctx.root.path).get(ctx.sessionId) ?? null, startedAt: null, endedAt: null, version: null };
+  for (const file of [...files].sort()) {
+    try {
+      const f = load(file);
+      out.cwd ??= f.meta.cwd ?? null;
+      out.version = f.meta.cli_version ?? out.version;
+      out.startedAt ??= f.meta.timestamp ?? null;
+      out.endedAt = lastActivity(f.buf) ?? out.endedAt;
+    } catch {}
+    out.startedAt ??= nameTime(file);
+    if (!out.endedAt) {
+      try {
+        out.endedAt = new Date(statSync(file).mtimeMs).toISOString();
+      } catch {}
+    }
+  }
+  return out;
+}
+
 export function convertCodex(files: string[], ctx: ConvertContext): Converted {
   const own = files.map(load).sort(byAge);
   const active = own.at(-1)!;
@@ -288,6 +346,7 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
       forkPoint: first.meta.forked_from_id ? Math.max(0, records.findIndex((r) => r.own && r.rec.role !== "meta")) : null,
     },
     records: out,
+    unknown: unknownTypes(own).list(),
   };
 }
 
@@ -432,5 +491,9 @@ export const codex: Adapter = {
 
   convert(files: string[], ctx: ConvertContext): Converted {
     return convertCodex(files, ctx);
+  },
+
+  peek(files: string[], ctx: ConvertContext): Peeked {
+    return peekCodex(files, ctx);
   },
 };

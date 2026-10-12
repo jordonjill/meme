@@ -47,6 +47,28 @@ export interface ConvertedRecord {
 export interface Converted {
   session: SessionFields;
   records: ConvertedRecord[];
+  /** Lines of record types its profile does not list (arch.md §6.1, point 4). */
+  unknown: UnknownType[];
+}
+
+/** Lines of one record type meme does not know, and the agent version that wrote them. */
+export interface UnknownType {
+  type: string;
+  version: string | null;
+  count: number;
+}
+
+/**
+ * What can be told about a session without converting it, for one meme cannot
+ * read (arch.md §6.1, point 2): from the first and last lines, or the file name.
+ */
+export interface Peeked {
+  cwd: string | null;
+  title: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  /** The agent version that wrote it. */
+  version: string | null;
 }
 
 export interface ConvertContext {
@@ -98,6 +120,8 @@ export interface Adapter {
   readText(path: string): string;
   /** One session from all its files (Codex can have several after a rollback). */
   convert(files: string[], ctx: ConvertContext): Converted;
+  /** What can be told about the session without converting it; never throws. */
+  peek(files: string[], ctx: ConvertContext): Peeked;
   /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
   home(platform: Platform): string;
   /** How to delete a session from the agent itself (plan §3.5). */

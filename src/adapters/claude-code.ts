@@ -8,8 +8,8 @@ import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
 import { toHost } from "../platform/wsl";
 import { claudeCodeProfile } from "./claude-code.profile";
-import { parseLines, readJsonl } from "./read";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type SourceRoot } from "./types";
+import { parseLines, readJsonl, TypeCounter } from "./read";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "claude-code" as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -104,6 +104,32 @@ export const claudeCode: Adapter = {
     // Claude Code keeps one file per session.
     return convertClaude(readJsonl(files[0]!), ctx);
   },
+
+  /** Every line has the time, the directory and the version; titles have lines of their own. */
+  peek(files: string[]): Peeked {
+    const out: Peeked = { cwd: null, title: null, startedAt: null, endedAt: null, version: null };
+    let custom: string | null = null;
+    try {
+      for (const { obj } of parseLines(readJsonl(files[0]!))) {
+        out.cwd ??= str(obj.cwd);
+        out.version = str(obj.version) ?? out.version;
+        const ts = str(obj.timestamp);
+        if (ts) {
+          out.startedAt ??= ts;
+          out.endedAt = ts;
+        }
+        if (obj.type === "custom-title") custom = str(obj.customTitle) ?? custom;
+        if (obj.type === "ai-title") out.title = str(obj.aiTitle) ?? out.title;
+      }
+    } catch {}
+    out.title = custom ?? out.title;
+    if (!out.endedAt) {
+      try {
+        out.endedAt = new Date(statSync(files[0]!).mtimeMs).toISOString();
+      } catch {}
+    }
+    return out;
+  },
 };
 
 interface Line {
@@ -114,7 +140,17 @@ interface Line {
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 export function convertClaude(text: string, ctx: ConvertContext): Converted {
-  const lines = parseLines(text).filter((l) => l.obj.isSidechain !== true);
+  const parsed = parseLines(text);
+  // Record types its profile does not list, with the version that wrote them (arch.md §6.1, point 4).
+  const types = new TypeCounter(claudeCodeProfile.recordTypes);
+  let version: string | null = null;
+  for (const { obj } of parsed) {
+    version = str(obj.version) ?? version;
+    types.add(typeof obj.type === "string" ? obj.type : "(no type)", typeof obj.subtype === "string" ? obj.subtype : null, version);
+  }
+  const notJson = text.split("\n").filter((l) => l.trim()).length - parsed.length;
+  for (let i = 0; i < notJson; i++) types.notJson(version);
+  const lines = parsed.filter((l) => l.obj.isSidechain !== true);
   const byUuid = new Map<string, Line>();
   for (const l of lines) {
     const uuid = str(l.obj.uuid);
@@ -214,6 +250,7 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
       forkPoint: null,
     },
     records,
+    unknown: types.list(),
   };
 }
 
