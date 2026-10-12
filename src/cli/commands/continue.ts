@@ -8,7 +8,7 @@ import { runAttached } from "../../platform/spawn";
 import { findInWsl, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
 import { agentName } from "../../render/labels";
 import { listing, numberedText, type ListFilter, type Listing } from "../../render/ls";
-import { allSessions, getSession, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
+import { allSessions, getSession, handedOver, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
 import { chooseHandover, type AgentChoice, type Launchable } from "../../tui/handover";
 import { CommandError, parse, UsageError } from "../args";
 import { createContext, output, write, type Context } from "../context";
@@ -144,7 +144,18 @@ export async function continueSession(argv: string[]): Promise<number> {
     if (picked) {
       // Codex cuts command output at about 40,000 bytes; keep the handoff under that there.
       const limits = ctx.platform.vars.CODEX_THREAD_ID ? { ...LIMITS, bytes: CODEX_BYTES } : LIMITS;
-      const handoff = buildHandoff({ session: picked, records: sessionRecords(db, picked.id), env: ctx.platform.env, wsl: wslOf(ctx, picked), now: ctx.now }, { fresh: Boolean(values.fresh), limits });
+      const handoff = buildHandoff(
+        {
+          session: picked,
+          records: sessionRecords(db, picked.id),
+          env: ctx.platform.env,
+          wsl: wslOf(ctx, picked),
+          now: ctx.now,
+          lookup: (ref, before) => handedOver(db, ref, before),
+          current: ctx.current,
+        },
+        { fresh: Boolean(values.fresh), limits },
+      );
       write(handoff.text);
       return 0;
     }
