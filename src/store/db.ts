@@ -8,7 +8,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * mismatch deletes the database and rebuilds it from the original sessions
  * (plan §4.4); there are no migrations.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -60,13 +60,15 @@ CREATE TABLE failures (
   meme    TEXT NOT NULL,
   at      TEXT NOT NULL
 );
--- Lines of record types an agent's profile does not list (arch.md §6.1, point 4).
+-- Lines meme could not read (arch.md §6.1, point 4): kind 'unknown', of record types an
+-- agent's profile does not list; kind 'unread', of known types, that became no record.
 CREATE TABLE unknown_types (
   session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  kind    TEXT NOT NULL,
   type    TEXT NOT NULL,
   version TEXT NOT NULL,
   count   INTEGER NOT NULL,
-  PRIMARY KEY (session, type, version)
+  PRIMARY KEY (session, kind, type, version)
 );
 CREATE INDEX records_uid ON records(uid);
 CREATE INDEX failures_session ON failures(session);

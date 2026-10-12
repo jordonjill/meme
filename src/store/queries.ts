@@ -262,22 +262,36 @@ export function failures(db: Database): FailureRow[] {
     .map((r) => ({ ...r, short: shortId(db, r.session) }));
 }
 
-/** Record types meme does not know, per agent and version: how many lines and sessions (arch.md §6.1, point 4). */
-export function unknownTypes(db: Database): { agent: Agent; version: string; type: string; lines: number; sessions: number }[] {
+/** What meme could not read (arch.md §6.1, point 4): types it does not know, or known types whose lines became no record. */
+export type Unread = "unknown" | "unread";
+
+/** Per agent and version: how many lines and sessions, by type. */
+export function unknownTypes(db: Database, kind: Unread = "unknown"): { agent: Agent; version: string; type: string; lines: number; sessions: number }[] {
   return db
-    .query<{ agent: Agent; version: string; type: string; lines: number; sessions: number }, []>(
+    .query<{ agent: Agent; version: string; type: string; lines: number; sessions: number }, [string]>(
       `SELECT s.agent, u.version, u.type, SUM(u.count) AS lines, COUNT(DISTINCT u.session) AS sessions
-       FROM unknown_types u JOIN sessions s ON s.id = u.session
+       FROM unknown_types u JOIN sessions s ON s.id = u.session WHERE u.kind = ?
        GROUP BY s.agent, u.version, u.type ORDER BY s.agent, u.version, u.type`,
     )
-    .all();
+    .all(kind);
 }
 
-/** One session's lines of unknown record types, by type. */
-export function unknownIn(db: Database, session: string): { type: string; count: number }[] {
+/** Per agent and version, all types together: lines and sessions. */
+export function unreadByVersion(db: Database, kind: Unread): { agent: Agent; version: string; lines: number; sessions: number; types: string }[] {
   return db
-    .query<{ type: string; count: number }, [string]>("SELECT type, SUM(count) AS count FROM unknown_types WHERE session = ? GROUP BY type ORDER BY type")
-    .all(session);
+    .query<{ agent: Agent; version: string; lines: number; sessions: number; types: string }, [string]>(
+      `SELECT s.agent, u.version, SUM(u.count) AS lines, COUNT(DISTINCT u.session) AS sessions, GROUP_CONCAT(DISTINCT u.type) AS types
+       FROM unknown_types u JOIN sessions s ON s.id = u.session WHERE u.kind = ?
+       GROUP BY s.agent, u.version ORDER BY s.agent, u.version`,
+    )
+    .all(kind);
+}
+
+/** One session's lines meme could not read, of this kind, by type. */
+export function unknownIn(db: Database, session: string, kind: Unread = "unknown"): { type: string; count: number }[] {
+  return db
+    .query<{ type: string; count: number }, [string, string]>("SELECT type, SUM(count) AS count FROM unknown_types WHERE session = ? AND kind = ? GROUP BY type ORDER BY type")
+    .all(session, kind);
 }
 
 /** Why a session's files cannot be read: the first file's error. */

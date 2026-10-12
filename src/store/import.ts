@@ -291,8 +291,10 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
     // Read again: no longer unreadable; and the record types it does not know, as of now.
     db.run("DELETE FROM failures WHERE session = ?", [s.id]);
     db.run("DELETE FROM unknown_types WHERE session = ?", [s.id]);
-    for (const u of converted.unknown) {
-      db.run("INSERT INTO unknown_types (session, type, version, count) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET count = count + excluded.count", [s.id, u.type, u.version ?? "", u.count]);
+    for (const [kind, list] of [["unknown", converted.unknown], ["unread", converted.unread]] as const) {
+      for (const u of list) {
+        db.run("INSERT INTO unknown_types (session, kind, type, version, count) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET count = count + excluded.count", [s.id, kind, u.type, u.version ?? "", u.count]);
+      }
     }
   }).immediate();
 }
