@@ -95,7 +95,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 | `meme search <模式>` | 像 `rg` 一样搜说过的话（`-F`、`-i`、`-C`）；`--all` 连工具调用和输出里的匹配也列出。 |
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
 | `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话。 |
-| `meme status` | 版本、数据位置、会话来源。 |
+| `meme status` | 版本、数据位置、会话来源，以及 Agent 升级后 meme 读不了的东西（读不了的会话、不认识的记录类型和 Agent 的版本）。报问题时请附上。 |
 | `meme install` / `uninstall` | 把会话全部镜像一遍 / 删除 meme 的数据。 |
 
 会话 id 可以只写开头几位，只要不重复，一般是 8 位；两个会话开头相同时，meme 会多显示几位。

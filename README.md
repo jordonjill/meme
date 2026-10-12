@@ -108,7 +108,7 @@ the middle. The handoff says what it left out, and `meme show` or
 | `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`). `--all` also lists matches in tool calls and output. |
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme. |
-| `meme status` | Version, data location and session sources. |
+| `meme status` | Version, data location, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). Attach it when you report a problem. |
 | `meme install` / `uninstall` | Mirror everything once / remove meme's data. |
 
 Session ids can be shortened to any unique start, usually 8 characters; meme
