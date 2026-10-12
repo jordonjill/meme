@@ -12,9 +12,9 @@ export const TOKEN_LIMIT = 15_000;
 
 export interface Limits {
   tokens: number;
-  /** Characters, where the agent counts those (Claude Code). */
+  /** Characters, where the agent counts those (its profile's `outputLimit`). */
   chars?: number;
-  /** Bytes of UTF-8, where the agent counts those (Codex). */
+  /** Bytes of UTF-8, where the agent counts those. */
   bytes?: number;
 }
 
