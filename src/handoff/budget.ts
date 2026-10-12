@@ -42,6 +42,31 @@ export function weight(s: string, limits: Limits = LIMITS): number {
   return Math.max(s.length, byTokens, byBytes);
 }
 
+/** The three things the limits count; they add up exactly over pieces of text, unlike `weight`. */
+export interface Size {
+  chars: number;
+  tokens: number;
+  bytes: number;
+}
+
+export const ZERO: Size = { chars: 0, tokens: 0, bytes: 0 };
+
+export function measure(s: string): Size {
+  return { chars: s.length, tokens: estimateTokens(s), bytes: Buffer.byteLength(s, "utf8") };
+}
+
+export function plus(...sizes: Size[]): Size {
+  return sizes.reduce((a, b) => ({ chars: a.chars + b.chars, tokens: a.tokens + b.tokens, bytes: a.bytes + b.bytes }), ZERO);
+}
+
+export function minus(a: Size, b: Size): Size {
+  return { chars: a.chars - b.chars, tokens: a.tokens - b.tokens, bytes: a.bytes - b.bytes };
+}
+
+export function within(s: Size, limits: Limits): boolean {
+  return s.chars <= limits.chars && s.tokens <= limits.tokens && (!limits.bytes || s.bytes <= limits.bytes);
+}
+
 /** Cut text to about `max` tokens on a line or character boundary. */
 export function cutToTokens(s: string, max: number): { text: string; cut: boolean } {
   if (estimateTokens(s) <= max) return { text: s, cut: false };
@@ -63,18 +88,24 @@ export function cutToTokens(s: string, max: number): { text: string; cut: boolea
  * what is left out is one stretch in the middle.
  */
 export function fitMessages(costs: number[], budget: number): Set<number> {
+  const sizes = costs.map((c) => ({ chars: c, tokens: 0, bytes: 0 }));
+  return fitSizes(sizes, (s) => s.chars <= budget);
+}
+
+/** `fitMessages` for sizes: `fits` says whether the messages picked so far, added up, still fit. */
+export function fitSizes(costs: Size[], fits: (picked: Size) => boolean): Set<number> {
   const keep = new Set<number>();
   const n = costs.length;
   if (n === 0) return keep;
-  const total = costs.reduce((a, b) => a + b, 0);
-  if (total <= budget) return new Set(costs.keys());
+  if (fits(plus(...costs))) return new Set(costs.keys());
   keep.add(0);
   keep.add(n - 1);
-  let left = budget - costs[0]! - (n > 1 ? costs[n - 1]! : 0);
+  let sum = plus(costs[0]!, n > 1 ? costs[n - 1]! : ZERO);
   for (let i = n - 2; i > 0; i--) {
-    if (costs[i]! > left) break;
+    const next = plus(sum, costs[i]!);
+    if (!fits(next)) break;
     keep.add(i);
-    left -= costs[i]!;
+    sum = next;
   }
   return keep;
 }
