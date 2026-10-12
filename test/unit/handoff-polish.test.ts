@@ -5,9 +5,9 @@ import path from "node:path";
 import { codex } from "../../src/adapters/codex";
 import { claudeCode } from "../../src/adapters/claude-code";
 import { estimateTokens, type Limits } from "../../src/handoff/budget";
-import { buildHandoff } from "../../src/handoff/build";
+import { buildHandoff, plainMarkdown } from "../../src/handoff/build";
 import { isMemeCommand, parseHandoff } from "../../src/handoff/chain";
-import { onlyReads, outcome, segments } from "../../src/handoff/commands";
+import { onlyReads, outcome, runs, segments } from "../../src/handoff/commands";
 import { nullLogger } from "../../src/platform/log";
 import { numberList } from "../../src/render/text";
 import { openStore } from "../../src/store/db";
@@ -130,6 +130,23 @@ describe("A2: one line on each earlier turn", () => {
     expect(text).toMatch(/\n3\. Print the current time instead, and run it again\n4\. Add a --name option\n/);
   });
 
+  test("Markdown is made plain before the reply is cut", () => {
+    expect(plainMarkdown("## Result\n\n| 内容 | 当前值 | 颜色 |\n|---|---|---|\n| 模型 | Opus | 青色 |\n\n**Done.** See [hello.py](/w/hello.py:1).\n```text\nhello\n```\n---\n> quoted")).toBe(
+      "Result\n\n内容, 当前值, 颜色\n模型, Opus, 青色\n\nDone. See hello.py.\nhello\nquoted",
+    );
+    resetIds();
+    const w = world();
+    const s = new ClaudeSession({ id: "a2a2a2a2-0000-4000-8000-000000000004" });
+    s.user("状态栏现在显示哪些内容？");
+    s.assistant("## 状态栏\n\n| 内容 | 当前值 | 颜色 |\n|---|---|---|\n| 模型 | Opus 5.5 | 青色 |\n\n**一共四项。**");
+    s.user("好的");
+    s.assistant("ok");
+    s.user("再改一下");
+    s.assistant("ok");
+    w.claude(s);
+    expect(w.handoff(s.id).text).toContain("1. 状态栏现在显示哪些内容？\n   ↳ AI: 状态栏 内容, 当前值, 颜色 模型, Opus 5.5, 青色 一共四项。\n");
+  });
+
   test("a turn that ended on a step: interrupted or no reply", () => {
     resetIds();
     const w = world();
@@ -165,14 +182,15 @@ describe("A2: one line on each earlier turn", () => {
 
 describe("A4: recent commands", () => {
   test("what only reads, and meme itself, are left out", () => {
-    for (const c of ["ls -la", "cat a | head -5", "git status && git log -3", "git -C x diff", "cd src && grep -rn foo .", "rg x", "pwd; echo hi", "meme continue 2", "./dist/meme-linux-x64 ls", "find . -name '*.ts' | wc -l", "Get-Content a.txt"]) {
+    for (const c of ["sed -n '1,40p' src/a.ts", "sed -n 5p f | head", "ls -la", "cat a | head -5", "git status && git log -3", "git -C x diff", "cd src && grep -rn foo .", "rg x", "pwd; echo hi", "meme continue 2", "./dist/meme-linux-x64 ls", "find . -name '*.ts' | wc -l", "Get-Content a.txt"]) {
       expect(onlyReads(c)).toBe(true);
     }
-    for (const c of ["bun test", "git commit -m x", "cat > a.txt <<'EOF'", "echo hi > a.txt", "ls && rm x", "sed -i s/a/b/ f", "git push"]) {
+    for (const c of ["sed -i s/a/b/ f", "sed -i.bak 's/a/b/' f", "sed -Ei 's/a/b/' f", "sed --in-place 's/a/b/' f", "sed -n 1p f > out", "bun test", "git commit -m x", "cat > a.txt <<'EOF'", "echo hi > a.txt", "ls && rm x", "sed -i s/a/b/ f", "git push"]) {
       expect(onlyReads(c)).toBe(false);
     }
     expect(onlyReads("echo hi 2>&1 >/dev/null")).toBe(true);
     expect(segments(`grep "a|b" f && echo 'x; y'`)).toEqual([`grep "a|b" f`, `echo 'x; y'`]);
+    expect(onlyReads("sed -n 10,30p src/a.ts | cut -c1-120 | sort | uniq -c")).toBe(true);
   });
 
   test("newest last, at most ten, failures marked, the last two turns not repeated", () => {
@@ -210,6 +228,68 @@ describe("A4: recent commands", () => {
     // Codex's code mode: the script completed, the command in it may not have.
     expect(outcome(tool("Script completed\nWall time 0.1 seconds\nOutput:\n\n/bin/bash: line 1: python: command not found\n"))).toBe("(no exit code) /bin/bash: line 1: python: command not found");
     expect(outcome(tool("Script completed\nWall time 0.1 seconds\nOutput:\n\n"))).toBe("(no exit code, no output)");
+  });
+});
+
+describe("a last turn with very many steps", () => {
+  test("the middle of its step list goes before the AI's words; then the files edited earliest", () => {
+    resetIds();
+    const w = world();
+    const s = new ClaudeSession({ id: "b1b1b1b1-0000-4000-8000-000000000001" });
+    s.user("Refactor everything");
+    // Long paths: 300 of them do not fit in the edited files either.
+    const dir = "/work/demo/src/" + "nested/".repeat(12);
+    for (let i = 1; i <= 300; i++) s.tool("Edit", { file_path: `${dir}module${i}.ts`, old_string: "a", new_string: "b" }, "ok");
+    s.assistant("Refactored 300 modules. " + "Details follow. ".repeat(40));
+    s.user("Run the tests");
+    s.tool("Bash", { command: "bun test" }, "300 pass");
+    s.assistant("All pass.");
+    w.claude(s);
+    const text = w.handoff(s.id).text;
+    expect(text.length).toBeLessThanOrEqual(25_000);
+    expect(estimateTokens(text)).toBeLessThanOrEqual(15_000);
+    // The first two steps, a note, then the newest ones.
+    expect(text).toMatch(/Each step:\n- Edit\([^)]*\/module1\.ts\) → ok\n- Edit\([^)]*\/module2\.ts\) → ok\n- … \d+ steps left out; `meme show b1b1b1b1 1` has every step\n/);
+    expect(text).toMatch(/- Edit\([^)]*\/module300\.ts\) → ok\n/);
+    expect(text).toMatch(/Left out: [^\n]*\d+ steps in the middle of turn 1[;.]/);
+    // The AI's words were not cut for it.
+    expect(text).toContain("> Refactored 300 modules. Details follow.");
+    expect(text).not.toContain("part of the AI's replies");
+    // 300 edited files do not fit either: the ones edited last stay.
+    expect(text).toMatch(/- … \d+ more files, edited earlier\n/);
+    expect(text).toMatch(/Left out: [^\n]*\d+ files edited earliest \(`meme show b1b1b1b1`\)/);
+  });
+});
+
+describe("last verification", () => {
+  test("a test or build where a command starts, not inside a script or a heredoc", () => {
+    const test = /\b(?:bun\s+test|npm\s+test|make\b|tsc\b)/;
+    expect(runs("cd /w && MEME_BIN=dist/x ~/tools/bun/bin/bun test test/e2e 2>&1 | tail -3", test)).toBe(true);
+    expect(runs("npm test", test)).toBe(true);
+    expect(runs("python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['bun', 'test'])\nEOF", test)).toBe(false);
+    expect(runs("cat > notes.md <<'EOF'\nmake sure to run bun test\nEOF", test)).toBe(false);
+    expect(runs("grep -n 'bun test' README.md", test)).toBe(false);
+    expect(runs("git commit -m 'make tsc happy'", test)).toBe(false);
+  });
+
+  test("passed only when the record says so", () => {
+    resetIds();
+    const w = world();
+    // Codex's code mode: the script finished; whether `bun test` passed is not recorded.
+    const x = new CodexSession({ id: "f0f0f0f0-0000-7000-8000-000000000001" });
+    x.user("Run the tests");
+    x.command("bun test", "test/a.test.ts:\n(fail) adds\n 1 fail\n 9 pass");
+    x.assistant("One test fails.");
+    w.codex(x);
+    expect(w.handoff(x.id).text).toContain("## Last verification\nTurn 1: `bun test` → finished (no exit code)\n```text\ntest/a.test.ts:\n(fail) adds\n 1 fail\n 9 pass\n```\n");
+
+    resetIds();
+    const c = new ClaudeSession({ id: "f0f0f0f0-0000-4000-8000-000000000002" });
+    c.user("Run the tests");
+    c.tool("Bash", { command: "bun test" }, " 9 pass");
+    c.assistant("All pass.");
+    w.claude(c);
+    expect(w.handoff(c.id).text).toContain("Turn 1: `bun test` → passed\n");
   });
 });
 
@@ -272,6 +352,39 @@ describe("A3: the source agent's compaction summary", () => {
     const t2 = w.handoff(only.id).text;
     expect(t2).toContain("Note: Codex compacted its context after turn 1, and its summary is encrypted; only the records below are included.\n");
     expect(t2).not.toContain("## Summary written by");
+  });
+
+  test("an automatic compaction: after the turn it followed, or during the turn it interrupted", () => {
+    resetIds();
+    const w = world();
+    // 9580fc64: between turns, the last reply and two system lines kept by reference.
+    const s = compactedClaude({ id: "a3a3a3a3-0000-4000-8000-000000000007" });
+    s.user("Give me the whole message to copy");
+    const reply = s.assistant("Here it is.");
+    const duration = s.systemMeta("turn_duration");
+    const away = s.systemMeta("away_summary", "You asked for the message.");
+    s.compact("1. Primary Request and Intent:\n   - the start message for step six", "auto", [reply, duration, away]);
+    s.user("Here is the report back");
+    s.assistant("Reading it.");
+    s.user("Fix these");
+    s.assistant("Fixed.");
+    w.claude(s);
+    const text = w.handoff(s.id).text;
+    expect(text).toContain("## Summary written by the source agent (Claude Code compacted its context after turn 6, ");
+    expect(text).toContain("> 1. Primary Request and Intent:\n>    - the start message for step six\n\n## User messages (all)\n");
+    expect(text).toContain("6. Give me the whole message to copy\n   ↳ context compacted · AI: Here it is.\n");
+    // The earlier, manual one is not repeated: only the last summary.
+    expect(text.match(/## Summary written by/g)!.length).toBe(1);
+
+    resetIds();
+    const t = new ClaudeSession({ id: "a3a3a3a3-0000-4000-8000-000000000008" });
+    t.user("Run the whole suite");
+    t.tool("Bash", { command: "bun test" }, "ok");
+    t.compact("1. Primary Request and Intent:\n   - run the suite", "auto");
+    t.tool("Bash", { command: "bun run typecheck" }, "ok");
+    t.assistant("All green.");
+    w.claude(t);
+    expect(w.handoff(t.id).text).toContain("(Claude Code compacted its context during turn 1, ");
   });
 
   test("cut to 3,000 tokens, then 1,000, then dropped, before anything said by the user", () => {

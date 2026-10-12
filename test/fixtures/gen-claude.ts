@@ -88,26 +88,35 @@ export class ClaudeSession {
     return this.user(text, { isCompactSummary: true, isVisibleInTranscriptOnly: true });
   }
 
+  /** A line Claude Code writes for itself, such as `turn_duration` or `away_summary`. */
+  systemMeta(subtype: string, content = ""): string {
+    return this.push(this.base("system", { subtype, content, level: "info", isMeta: true }));
+  }
+
   /**
    * A compaction as Claude Code 2.1.296 writes it (handoff.md §7.8): `/compact`
    * as typed, a boundary with no parent, the summary, then the command line again
    * with its output. An automatic one has only the boundary and the summary.
+   * `preserved` (9580fc64, an automatic one between turns): the lines kept
+   * verbatim, named by uuid in the boundary, not copied; a system note follows.
    */
-  compact(summary: string, trigger: "manual" | "auto" = "manual"): void {
+  compact(summary: string, trigger: "manual" | "auto" = "manual", preserved: string[] = []): void {
     const promptId = fakeUuid("9909");
     const before = this.parent;
     if (trigger === "manual") this.user("/compact", { promptId });
     this.parent = null;
+    const metadata: Line = { trigger, preTokens: 37840, postTokens: 2557 };
     this.push(
       this.base("system", {
         subtype: "compact_boundary",
         content: "Conversation compacted",
         level: "info",
         logicalParentUuid: before,
-        compactMetadata: { trigger, preTokens: 37840, postTokens: 2557 },
+        compactMetadata: metadata,
+        ...(preserved.length ? { isMeta: true } : {}),
       }),
     );
-    this.user(
+    const anchor = this.user(
       "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n" +
         `Summary:\n${summary}\n\n` +
         `If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/u/.claude/projects/x/${this.id}.jsonl\n` +
@@ -115,6 +124,11 @@ export class ClaudeSession {
         "The messages after this summary are the most recent messages from before compaction, kept verbatim.",
       { isCompactSummary: true, isVisibleInTranscriptOnly: true, promptId },
     );
+    if (preserved.length) {
+      metadata.preservedSegment = { headUuid: preserved[0], anchorUuid: anchor, tailUuid: preserved[preserved.length - 1] };
+      metadata.preservedMessages = { anchorUuid: anchor, uuids: preserved, allUuids: preserved };
+      this.systemMeta("informational", "Context was compacted automatically.");
+    }
     if (trigger === "manual") {
       this.user("<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request.</local-command-caveat>", { isMeta: true, promptId });
       this.user("<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>", { promptId });

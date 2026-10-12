@@ -77,6 +77,31 @@ describe("compaction (handoff.md §7.8)", () => {
     expect(turns[5]!.reply).toBe("Tests pass.");
   });
 
+  test("Claude Code: an automatic compaction between turns keeps a stretch by reference (9580fc64)", () => {
+    resetIds();
+    const s = compactedClaude({ id: "c1a0de00-0000-4000-8000-000000000003" });
+    s.user("Give me the whole message to copy");
+    const reply = s.assistant("Here it is:\n\n```\nStart step six.\n```");
+    const duration = s.systemMeta("turn_duration");
+    const away = s.systemMeta("away_summary", "You asked for the message; it is above.");
+    s.compact("1. Primary Request and Intent:\n   - The user wants the start message for step six.", "auto", [reply, duration, away]);
+    s.user("Here is the report back");
+    s.assistant("Thanks, reading it.");
+    const w = claudeWorld(s);
+    const records = sessionRecords(w.store.db, w.id);
+    const { turns } = groupTurns(records);
+    expect(turns.length).toBe(7);
+    // The compaction belongs to turn 6, after its reply; turn 7 is the next prompt.
+    expect(turns[5]!.compactions.length).toBe(1);
+    expect(turns[5]!.reply).toBe("Here it is:\n\n```\nStart step six.\n```");
+    // Nothing kept verbatim is read twice.
+    const uids = records.filter((r) => r.uid).map((r) => `${r.uid}#${r.part}`);
+    expect(new Set(uids).size).toBe(uids.length);
+    expect(records.filter((r) => contentOf(r.body)?.startsWith("Here it is:")).length).toBe(1);
+    const m = buildShow(w.store.db, getSession(w.store.db, w.id)!);
+    expect(showText(m, showOpts, "none")).toContain("  6 ❯ Give me the whole message to copy\n      ● Here it is:…\n  ── compacted here ──\n  7 ❯ Here is the report back\n");
+  });
+
   test("Codex: the summary message is not something the AI said", () => {
     resetIds();
     const w = codexWorld(compactedCodex({ id: "01a12e00-0000-7000-8000-000000000001" }));
