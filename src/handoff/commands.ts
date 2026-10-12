@@ -87,6 +87,8 @@ export function onlyReads(command: string): boolean {
     if (/^meme(?:\.exe|-[\w-]+)?$/.test(name)) return true;
     // sed edits files only with -i (also -i.bak, -Ei, --in-place).
     if (name === "sed") return !ws.slice(1).some((w) => /^-[A-Za-z]*i/.test(w) || w.startsWith("--in-place"));
+    // sort writes a file with -o (also -uo, -o<file>, --output).
+    if (name === "sort") return !ws.slice(1).some((w) => /^-[A-Za-z]*o/.test(w) || w.startsWith("--output"));
     if (name === "git") {
       const rest = ws.slice(1);
       while (rest.length && rest[0]!.startsWith("-")) rest.splice(0, ["-C", "-c"].includes(rest[0]!) ? 2 : 1);

@@ -185,12 +185,13 @@ describe("A4: recent commands", () => {
     for (const c of ["sed -n '1,40p' src/a.ts", "sed -n 5p f | head", "ls -la", "cat a | head -5", "git status && git log -3", "git -C x diff", "cd src && grep -rn foo .", "rg x", "pwd; echo hi", "meme continue 2", "./dist/meme-linux-x64 ls", "find . -name '*.ts' | wc -l", "Get-Content a.txt"]) {
       expect(onlyReads(c)).toBe(true);
     }
-    for (const c of ["sed -i s/a/b/ f", "sed -i.bak 's/a/b/' f", "sed -Ei 's/a/b/' f", "sed --in-place 's/a/b/' f", "sed -n 1p f > out", "bun test", "git commit -m x", "cat > a.txt <<'EOF'", "echo hi > a.txt", "ls && rm x", "sed -i s/a/b/ f", "git push"]) {
+    for (const c of ["sort -o sorted.txt names.txt", "sort -uo f f", "sort --output=f f", "sed -i s/a/b/ f", "sed -i.bak 's/a/b/' f", "sed -Ei 's/a/b/' f", "sed --in-place 's/a/b/' f", "sed -n 1p f > out", "bun test", "git commit -m x", "cat > a.txt <<'EOF'", "echo hi > a.txt", "ls && rm x", "sed -i s/a/b/ f", "git push"]) {
       expect(onlyReads(c)).toBe(false);
     }
     expect(onlyReads("echo hi 2>&1 >/dev/null")).toBe(true);
     expect(segments(`grep "a|b" f && echo 'x; y'`)).toEqual([`grep "a|b" f`, `echo 'x; y'`]);
     expect(onlyReads("sed -n 10,30p src/a.ts | cut -c1-120 | sort | uniq -c")).toBe(true);
+    expect(onlyReads("sort -n -r sizes.txt")).toBe(true);
   });
 
   test("newest last, at most ten, failures marked, the last two turns not repeated", () => {
