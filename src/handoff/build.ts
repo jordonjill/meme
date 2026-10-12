@@ -14,7 +14,7 @@ import type { SessionRow } from "../store/queries";
 import { cutToTokens, estimateTokens, fitSizes, limitsIn, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
 import type { Away } from "./place";
-import { recentCommands, runs } from "./commands";
+import { recentCommands, recognized } from "./commands";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
 const MESSAGE_CHARS = 1500;
@@ -205,7 +205,9 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
     const calls = t.records.flatMap((r) => callsOf(r.body)).reverse();
     for (const call of calls) {
       const command = commandOf(call);
-      if (!command || !runs(command, VERIFY)) continue;
+      // Only the test or build, not the whole line it is in (handoff.md §7.3).
+      const shown = command ? recognized(command, VERIFY) : null;
+      if (!shown) continue;
       const result = resultFor(t, call);
       const raw = result ? (contentOf(result.body) ?? "") : "";
       const output = resultText(raw);
@@ -223,7 +225,7 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
       const tail = trimmedLines(output).slice(-OUTPUT_TAIL).map((l) => clip(l, OUTPUT_LINE));
       return {
         turn: t.n,
-        lines: [`Turn ${t.n}: \`${truncate(oneLine(command), 200)}\` → ${status}`, ...(tail.length ? ["```text", ...tail, "```"] : [])],
+        lines: [`Turn ${t.n}: \`${truncate(oneLine(shown), 200)}\` → ${status}`, ...(tail.length ? ["```text", ...tail, "```"] : [])],
       };
     }
   }

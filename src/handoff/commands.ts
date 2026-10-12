@@ -73,7 +73,22 @@ const nameOf = (p: Part) => (p.words[0] ?? "").split(/[\\/]/).pop()!;
 
 /** One of the commands a shell line runs starts like `re`: `cd x && bun test`, not `cat > notes.md <<EOF … bun test …`. */
 export function runs(command: string, re: RegExp): boolean {
-  return parts(command).some((p) => re.exec([nameOf(p), ...p.words.slice(1)].join(" "))?.index === 0);
+  return recognized(command, re) !== null;
+}
+
+/**
+ * The command in a shell line that starts like `re` (the last, when several do),
+ * as written, with `…` where other commands come before or after it:
+ * `python3 - <<EOF … EOF && bun test` reads `… bun test`.
+ */
+export function recognized(command: string, re: RegExp): string | null {
+  const all = parts(command);
+  for (let i = all.length - 1; i >= 0; i--) {
+    const p = all[i]!;
+    if (re.exec([nameOf(p), ...p.words.slice(1)].join(" "))?.index !== 0) continue;
+    return `${i > 0 ? "… " : ""}${p.text}${i < all.length - 1 ? " …" : ""}`;
+  }
+  return null;
 }
 
 /** Only reads, or is meme itself: nothing a new agent needs to know was run. */
