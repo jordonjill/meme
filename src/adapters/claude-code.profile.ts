@@ -64,8 +64,8 @@ export const claudeCodeProfile: Profile = {
   sessionVar: "CLAUDE_CODE_SESSION_ID",
   nesting: 0,
   // It keeps 30,000 characters of a command's output, for `!` and its Bash tool alike;
-  // meme's own 25,000 already stays under that.
-  outputLimit: {},
+  // 25,000 leaves room for the lines around the handoff.
+  outputLimit: { chars: 25_000 },
   bangReachesModel: true,
   firstMessage: (command) => `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`,
   howToContinue: [

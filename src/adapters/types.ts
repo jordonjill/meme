@@ -224,9 +224,10 @@ export interface Profile {
    */
   nesting: number;
   /**
-   * What a handoff printed inside it must stay under: it keeps only so much of a
-   * command's output (handoff.md §7.3); added to meme's own 15,000 tokens and
-   * 25,000 characters.
+   * What a handoff printed inside it must stay under, in the unit it counts: it
+   * keeps only so much of a command's output (handoff.md §7.3); added to meme's
+   * own 15,000 tokens. Measure it (print `seq 1 20000`, see where it is cut) and
+   * leave about 10% for the lines around the handoff.
    */
   outputLimit: { chars?: number; bytes?: number };
   /** The output of a `!` command reaches the model by itself (else only with the next message). */

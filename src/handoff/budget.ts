@@ -1,25 +1,35 @@
 /**
- * Length budget of a handoff (plan §4.6.6): at most 15,000 tokens and 25,000
- * characters, under what the agents keep of a command's output, so a handoff
- * printed there is never cut. An agent that keeps less adds its own limit in its
- * profile (`outputLimit`).
+ * Length budget of a handoff (plan §4.6.6, handoff.md §7.3): meme's own 15,000
+ * tokens, and what the agent it is printed into keeps of a command's output, in
+ * that agent's unit (its profile's `outputLimit`), so the handoff is never cut.
+ * What is cut and in what order is the same for every agent; only how far
+ * depends on where the handoff goes.
  */
+import { PROFILES } from "../adapters/profiles";
 
+/** meme's own: a handoff takes no more than this of a model's window. */
 export const TOKEN_LIMIT = 15_000;
-export const CHAR_LIMIT = 25_000;
 
 export interface Limits {
   tokens: number;
-  chars: number;
-  /** Also bytes of UTF-8, where the agent counts those. */
+  /** Characters, where the agent counts those (Claude Code). */
+  chars?: number;
+  /** Bytes of UTF-8, where the agent counts those (Codex). */
   bytes?: number;
 }
 
-export const LIMITS: Limits = { tokens: TOKEN_LIMIT, chars: CHAR_LIMIT };
-
-/** The limits inside an agent: meme's own, and what the agent keeps of a command's output (its profile). */
+/**
+ * The limits inside an agent: meme's own and that agent's. Not knowing which
+ * agent will read it (`--plain`, a pipe, an agent without a profile), the tightest
+ * of every profile, each in its unit.
+ */
 export function limitsIn(agent: { outputLimit: { chars?: number; bytes?: number } } | null): Limits {
-  return { ...LIMITS, ...(agent?.outputLimit ?? {}) };
+  if (agent) return { tokens: TOKEN_LIMIT, ...agent.outputLimit };
+  const tightest = (unit: "chars" | "bytes") => {
+    const all = PROFILES.map((p) => p.outputLimit[unit]).filter((n): n is number => n !== undefined);
+    return all.length ? { [unit]: Math.min(...all) } : {};
+  };
+  return { tokens: TOKEN_LIMIT, ...tightest("chars"), ...tightest("bytes") };
 }
 
 const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
@@ -30,18 +40,7 @@ export function estimateTokens(s: string): number {
   return cjk + Math.ceil((s.length - cjk) / 4);
 }
 
-/**
- * Size against both limits at once, counted in characters: text fits the budget
- * when its weight is at most `limits.chars`. Summing weights over-counts a little
- * for mixed text, which only errs on the short side.
- */
-export function weight(s: string, limits: Limits = LIMITS): number {
-  const byTokens = Math.ceil((estimateTokens(s) * limits.chars) / limits.tokens);
-  const byBytes = limits.bytes ? Math.ceil((Buffer.byteLength(s, "utf8") * limits.chars) / limits.bytes) : 0;
-  return Math.max(s.length, byTokens, byBytes);
-}
-
-/** The three things the limits count; they add up exactly over pieces of text, unlike `weight`. */
+/** The three things the limits count; they add up exactly over pieces of text. */
 export interface Size {
   chars: number;
   tokens: number;
@@ -63,7 +62,7 @@ export function minus(a: Size, b: Size): Size {
 }
 
 export function within(s: Size, limits: Limits): boolean {
-  return s.chars <= limits.chars && s.tokens <= limits.tokens && (!limits.bytes || s.bytes <= limits.bytes);
+  return s.tokens <= limits.tokens && (limits.chars === undefined || s.chars <= limits.chars) && (limits.bytes === undefined || s.bytes <= limits.bytes);
 }
 
 /** Cut text to about `max` tokens on a line or character boundary. */

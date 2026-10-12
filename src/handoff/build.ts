@@ -11,7 +11,7 @@ import { agentName, label } from "../render/labels";
 import { stepFacts } from "../render/show";
 import { ago, numberList, plural, span, trimmedLines, truncate, turnsText, when } from "../render/text";
 import type { SessionRow } from "../store/queries";
-import { cutToTokens, estimateTokens, fitSizes, LIMITS, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
+import { cutToTokens, estimateTokens, fitSizes, limitsIn, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
 import type { Away } from "./place";
 import { recentCommands, runs } from "./commands";
@@ -59,7 +59,7 @@ export interface HandoffInput {
 export interface HandoffOptions {
   /** `--fresh`: only the user's messages and the reminder to start from the repository. */
   fresh: boolean;
-  /** Defaults to 15,000 tokens and 25,000 characters. */
+  /** Defaults to the tightest of every agent's (`limitsIn(null)`). */
   limits?: Limits;
 }
 
@@ -299,7 +299,7 @@ function upstreamSection(u: Upstream, now: Date): Section {
 /** The handoff for one session (plan §4.6.6, handoff.md §7.3), verbatim from the records, no LLM. */
 export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff {
   const { session: s, records } = input;
-  const limits = opts.limits ?? LIMITS;
+  const limits = opts.limits ?? limitsIn(null);
   const sid = s.short;
   const now = new Date(input.now);
   const { turns } = groupTurns(records);
@@ -420,7 +420,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   // Characters, tokens and bytes are added up separately, each against its own limit.
   const line = (t: string) => measure(t + "\n");
   // 1% for rounding, and room for a "… left out" note in each section.
-  const slack = { chars: Math.ceil(limits.chars * 0.01), tokens: Math.ceil(limits.tokens * 0.01), bytes: Math.ceil((limits.bytes ?? 0) * 0.01) };
+  const slack = { chars: Math.ceil((limits.chars ?? 0) * 0.01), tokens: Math.ceil(limits.tokens * 0.01), bytes: Math.ceil((limits.bytes ?? 0) * 0.01) };
   const note = line(`… 9,999 messages left out (turns 9999–9999); find them with \`meme search <text> --session 0123456789ab\` or \`meme show 0123456789ab\``);
   const reserve = plus(line([...head, "", ...preamble(sid, opts, WORST_INCLUDED, WORST_LEFT_OUT), ""].join("\n")), slack, ...sections.map(() => note));
   const items = sections.flatMap((sec) => sec.items);
