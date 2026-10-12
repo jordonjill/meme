@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach } from "bun:test";
 import { claudeCode, convertClaude } from "../src/adapters/claude-code";
 import type { SourceRoot } from "../src/adapters/types";
 import { projectResolver } from "../src/model/project";
@@ -20,9 +19,10 @@ export function tempDir(name = "meme-test-"): string {
   return d;
 }
 
-afterEach(() => {
+/** Removes the directories `tempDir` made; run after every test of every file (test/setup.ts). */
+export function removeTempDirs(): void {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+}
 
 export function testPlatform(home: string, env: Env = "linux", windowsUsersDir: string | null = null): Platform {
   return { env, home, dataDir: path.join(home, ".meme"), windowsUsersDir, wsl: [], vars: {} };
