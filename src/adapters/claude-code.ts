@@ -1,5 +1,5 @@
 import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { userKind, type Injected, type UserKind } from "../model/injected";
 import { contentOf, type Body } from "../model/record";
@@ -9,7 +9,7 @@ import type { Platform } from "../platform/paths";
 import { toHost } from "../platform/wsl";
 import { claudeCodeProfile } from "./claude-code.profile";
 import { droppedLines, parseLines, readJsonl, TypeCounter, typeKey } from "./read";
-import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
+import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type OpenEntry, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "claude-code" as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,6 +30,35 @@ export const claudeCode: Adapter = {
 
   home(platform: Platform): string {
     return platform.vars[claudeCodeProfile.homeVar] || path.join(platform.home, claudeCodeProfile.homeDir);
+  },
+
+  homeOf(root: SourceRoot): string {
+    return path.dirname(root.path);
+  },
+
+  /**
+   * Claude Code lists each open session in `<home>/sessions/<pid>.json` and removes
+   * the file when it quits (2.1.296: `sessionId`, `pid`, and `procStart`, which on
+   * Linux is field 22 of /proc/<pid>/stat). A killed one leaves its file behind.
+   */
+  openSessions(root: SourceRoot): OpenEntry[] {
+    const dir = path.join(this.homeOf(root), "sessions");
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return [];
+    }
+    const out: OpenEntry[] = [];
+    for (const name of names) {
+      if (!/^\d+\.json$/.test(name)) continue;
+      try {
+        const j = JSON.parse(readFileSync(path.join(dir, name), "utf8")) as Record<string, unknown>;
+        const started = typeof j.procStart === "string" || typeof j.procStart === "number" ? String(j.procStart) : null;
+        if (typeof j.sessionId === "string" && Number.isSafeInteger(j.pid)) out.push({ session: j.sessionId.toLowerCase(), pid: j.pid as number, started });
+      } catch {}
+    }
+    return out;
   },
 
   /**

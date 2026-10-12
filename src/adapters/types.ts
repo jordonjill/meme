@@ -111,6 +111,14 @@ export interface ForgetTarget {
   files: string[];
 }
 
+/** A session the agent lists as open, and the process that has it open. */
+export interface OpenEntry {
+  session: string;
+  pid: number;
+  /** When that process started, as the agent recorded it (Linux: field 22 of /proc/<pid>/stat); null if it did not. */
+  started: string | null;
+}
+
 export interface Adapter {
   agent: Agent;
   /** Session source directories; in WSL also the Windows ones under /mnt/c. */
@@ -126,6 +134,13 @@ export interface Adapter {
   peek(files: string[], ctx: ConvertContext): Peeked;
   /** The agent's own home (e.g. `~/.claude`); its presence means the agent is installed. */
   home(platform: Platform): string;
+  /** The home a source root belongs to: without it, the agent is not installed there (plan §6 ⑧.3). */
+  homeOf(root: SourceRoot): string;
+  /**
+   * Sessions the agent lists as open under this root, when it keeps such a list
+   * (plan §6 ⑧.3). Whether each process still runs is for the caller to check. Never throws.
+   */
+  openSessions?(root: SourceRoot): OpenEntry[];
   /** How to delete a session from the agent itself (plan §3.5). */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
   /**

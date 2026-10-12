@@ -463,6 +463,10 @@ export const codex: Adapter = {
     return platform.vars[codexProfile.homeVar] || path.join(platform.home, codexProfile.homeDir);
   },
 
+  homeOf(root: SourceRoot): string {
+    return root.path;
+  },
+
   /**
    * Codex deletes its own sessions: `codex delete --force <uuid>` removes the
    * files and its database rows (sessions.md §7.1). meme never touches them itself,
