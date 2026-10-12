@@ -56,7 +56,7 @@ interface Candidate {
  */
 export function search(db: Database, o: SearchOptions): Hit[] {
   const re = compile(o);
-  const where = ["injected = 0", "copied = 0", "text IS NOT NULL"];
+  const where = ["injected IS NULL", "copied = 0", "text IS NOT NULL"];
   const params: (string | number)[] = [];
   // `instr` narrows plain-text searches in SQL; `LIKE` would treat `_` as a wildcard.
   if (o.fixed && (!o.ignoreCase || /^[\x00-\x7f]*$/.test(o.pattern))) {

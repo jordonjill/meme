@@ -8,7 +8,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * mismatch deletes the database and rebuilds it from the original sessions
  * (plan §4.4); there are no migrations.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -39,7 +39,7 @@ CREATE TABLE records (
   uid      TEXT,
   part     INTEGER NOT NULL,
   turn     INTEGER,
-  injected INTEGER NOT NULL,
+  injected TEXT,
   copied   INTEGER NOT NULL,
   role     TEXT,
   ts       TEXT,

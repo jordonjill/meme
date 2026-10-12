@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { Agent } from "../adapters/types";
+import type { Injected } from "../model/injected";
 import type { Body, Rec } from "../model/record";
 import type { Env } from "../platform/env";
 
@@ -109,7 +110,7 @@ interface RecordRow {
   uid: string | null;
   part: number;
   turn: number;
-  injected: number;
+  injected: Injected | null;
   copied: number;
   role: string;
   ts: string | null;
@@ -125,7 +126,7 @@ export function sessionRecords(db: Database, session: string): Rec[] {
       uid: r.uid,
       part: r.part,
       turn: r.turn,
-      injected: r.injected === 1,
+      injected: r.injected,
       copied: r.copied === 1,
       role: r.role,
       ts: r.ts,
@@ -212,4 +213,19 @@ export function sources(db: Database): SourceRow[] {
        FROM sources s ORDER BY s.agent, s.env, s.root`,
     )
     .all();
+}
+
+/**
+ * A session named in a handoff, by the start of its id (handoff.md §7.3, A1),
+ * with its records. Several sessions sharing that start: the newest one started
+ * before the handoff was made.
+ */
+export function handedOver(db: Database, ref: string, before: string | null): { session: SessionRow; records: Rec[] } | null {
+  const rows = db.query<{ id: string; started_at: string | null }, [string, number]>("SELECT id, started_at FROM sessions WHERE substr(id, 1, ?2) = ?1").all(ref.toLowerCase(), ref.length);
+  if (!rows.length) return null;
+  const cut = before ? Date.parse(before) : NaN;
+  const earlier = rows.filter((r) => !Number.isNaN(cut) && r.started_at && Date.parse(r.started_at) <= cut).sort((a, b) => b.started_at!.localeCompare(a.started_at!));
+  const id = (earlier[0] ?? rows[0]!).id;
+  const session = getSession(db, id);
+  return session ? { session, records: sessionRecords(db, id) } : null;
 }

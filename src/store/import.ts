@@ -223,7 +223,7 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
     for (const row of rows) {
       if (existing.get(row.seq) === row.hash) continue;
       const r = row.rec;
-      upsertRecord.run(s.id, row.seq, r.uid, r.part, r.turn, r.injected ? 1 : 0, r.role, r.ts, row.body, row.text, row.hash);
+      upsertRecord.run(s.id, row.seq, r.uid, r.part, r.turn, r.injected, r.role, r.ts, row.body, row.text, row.hash);
     }
     db.run("DELETE FROM records WHERE session = ? AND seq >= ?", [s.id, rows.length]);
   }).immediate();
