@@ -9,7 +9,9 @@ import { runAttached } from "../../platform/spawn";
 import { findInWsl, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
 import { agentName } from "../../render/labels";
 import { listing, numberedText, type ListFilter, type Listing } from "../../render/ls";
-import { allSessions, failureOf, getSession, handedOver, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
+import { allSessions, failureOf, getSession, handedOver, sessionFiles, sessionRecords, startDirOf, type SessionRow } from "../../store/queries";
+import { awayFrom, localDir } from "../../handoff/place";
+import { toHost } from "../../platform/wsl";
 import { chooseHandover, type AgentChoice, type Launchable } from "../../tui/handover";
 import { CommandError, parse, UsageError } from "../args";
 import { createContext, output, write, type Context } from "../context";
@@ -20,8 +22,10 @@ import { unreadableMessage } from "./show";
 
 export const continueHelp = `Usage: meme continue [<target>] [-a] [--in ${agentWords("|")}] [--fresh] [--plain]
 
-Continue a session in a new agent session. The handoff is worked out from the
-session each time and printed; nothing is written, and nothing is summarized.
+Continue a session in its project. At a terminal, meme opens the agent in the
+directory the session ran in; inside an agent, the handoff says so when the agent
+is somewhere else. The handoff is worked out from the session each time and
+printed; nothing is written, and nothing is summarized.
 
 ${HOW_TO_CONTINUE}
 
@@ -80,9 +84,15 @@ function wslOf(ctx: Context, s: SessionRow): WslPlace | null {
  * looked up there, as the user's shell finds them; the agent there fetches the
  * handoff with WSL's meme.
  */
+/** The push cannot start where the session started (arch.md 6.3, rule 4). */
+function notThere(dir: string | null, s: SessionRow): string {
+  return `the session's directory ${dir ?? "(unknown)"} is not there. To continue somewhere else, open the agent there and run \`! meme continue ${s.short}\`.`;
+}
+
 function agentsInWsl(ctx: Context, s: SessionRow, place: WslPlace, wanted: readonly Adapter[]): AgentChoice {
-  const dir = s.project;
-  if (!dir) return { problem: `the session's project directory is unknown` };
+  // Where the session started, not its project's root: a worktree is its own place.
+  const dir = startDirOf(ctx.store.db, s);
+  if (!dir || !existsSync(toHost(place.root, dir))) return { problem: notThere(dir, s) };
   const there = `open WSL with \`wsl -d ${place.distro} --cd ${dir}\` and run \`meme continue ${s.short}\``;
   const r = findInWsl(ctx.platform, place, dir, ["meme", ...wanted.map((a) => a.launch("").cmd)]);
   if (!r.ok) return { problem: `could not start anything in WSL (${place.distro}): ${r.error}. To continue there yourself, ${there}` };
@@ -147,15 +157,18 @@ export async function continueSession(argv: string[]): Promise<number> {
     if (picked) {
       // The agent running meme keeps only so much of a command's output (its profile).
       const limits = limitsIn(runningAgent(ctx.platform.vars));
+      const wsl = wslOf(ctx, picked);
       const handoff = buildHandoff(
         {
           session: picked,
           records: sessionRecords(db, picked.id),
           env: ctx.platform.env,
-          wsl: wslOf(ctx, picked),
+          wsl,
           now: ctx.now,
           lookup: (ref, before) => handedOver(db, ref, before),
           current: ctx.current,
+          // Not on the session's files: say so first (arch.md 6.3, rules 1 and 2).
+          away: awayFrom(startDirOf(db, picked), picked.env, ctx.platform, wsl, process.cwd()),
         },
         { fresh: Boolean(values.fresh), limits },
       );
@@ -208,9 +221,12 @@ export async function continueSession(argv: string[]): Promise<number> {
     if (session.unreadable && !session.readable_until) throw new CommandError(unreadableMessage(session.short, failureOf(db, session.id)));
   }
 
-  const dir = session.project;
-  // In WSL the directory was checked when wsl.exe started there to look for the agent.
-  if (!dir || (!agent.wsl && !existsSync(dir))) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
+  // Where the session started (arch.md 6.3, rule 4), as a path where the agent runs:
+  // not its project's root, so a worktree session opens in the worktree.
+  const started = startDirOf(db, session);
+  const dir = started && (agent.wsl ? started : localDir(started, session.env, ctx.platform, null));
+  // In WSL the directory was checked before looking for the agent there.
+  if (!dir || (!agent.wsl && !existsSync(dir))) throw new CommandError(notThere(dir, session));
   const sid = session.short;
   const command = `meme continue ${sid}${values.fresh ? " --fresh" : ""}`;
   const message = profileOf(agent.adapter.agent).firstMessage(command);
