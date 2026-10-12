@@ -9,8 +9,8 @@
  *
  * Output goes to .cache/eval/v5/ (gitignored): it holds real session content.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { createContext } from "../src/cli/context";
 import { buildHandoff } from "../src/handoff/build";
@@ -84,6 +84,13 @@ for (const c of cases) {
       stderr: "pipe",
     });
     writeFileSync(path.join(dir, "answer.json"), p.stdout.toString());
+    // Claude Code still makes a project folder holding an empty memory/ for the directory; rmdir removes only empty ones.
+    const project = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), "projects", realpathSync(empty).replace(/[^A-Za-z0-9]/g, "-"));
+    for (const d of [path.join(project, "memory"), project, empty]) {
+      try {
+        rmdirSync(d);
+      } catch {}
+    }
     if (p.exitCode !== 0) console.log(`  claude exited with ${p.exitCode}: ${p.stderr.toString().slice(0, 300)}`);
     else {
       const out = JSON.parse(p.stdout.toString());
