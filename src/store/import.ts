@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import pkg from "../../package.json";
 import type { Adapter, ConvertContext, Converted, SourceRoot } from "../adapters/types";
 import { projectResolver } from "../model/project";
@@ -83,7 +83,8 @@ function importRoot(
   } catch (err) {
     markSource(db, root, false);
     result.unreachable.push(root.path);
-    log.info(`source unreachable, nothing deleted: ${root.path} (${(err as Error).message})`);
+    // An agent not installed here has nothing to read: not a line on every run (plan §6 ⑧.3).
+    if (existsSync(adapter.homeOf(root))) log.info(`source unreachable, nothing deleted: ${root.path} (${(err as Error).message})`);
     return;
   }
   markSource(db, root, true);
