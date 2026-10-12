@@ -229,7 +229,7 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
         const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
         const { name, summary } = describeCall(call);
         const line = `${name}${summary ? "  " + summary : ""}`;
-        out.push(indent + (failed ? o.st.red("✗ ") : o.st.green("⏺ ")) + (o.full ? line : truncate(line, room)));
+        out.push(indent + (failed ? o.st.red("✗ ") : o.st.green("● ")) + (o.full ? line : truncate(line, room)));
         if (result) {
           shown.add(result);
           const text = resultText(contentOf(result.body) ?? "");
