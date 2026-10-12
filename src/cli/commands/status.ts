@@ -1,12 +1,13 @@
 import { statSync } from "node:fs";
 import pkg from "../../../package.json";
 import { displayPath } from "../../platform/paths";
+import { wslPlace } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
 import { ago, padEnd, plural, size, when } from "../../render/text";
 import { getMeta } from "../../store/db";
 import { counts, failures, sources, unknownTypes, unreadByVersion } from "../../store/queries";
 import { parse, UsageError } from "../args";
-import { createContext, write } from "../context";
+import { createContext, stoppedNotice, write } from "../context";
 
 export const statusHelp = `Usage: meme status
 
@@ -44,10 +45,16 @@ export async function status(argv: string[]): Promise<number> {
   const rows = sources(db);
   const lw = Math.max(0, ...rows.map((r) => label(r.agent, r.env).length));
   const w = Math.max(0, ...rows.map((r) => displayPath(r.root, home).length));
+  // A stopped WSL distribution is not opened (that would start it): its sources are as of the last run.
+  const stopped = new Set(ctx.wslStopped.map((d) => d.distro));
   for (const r of rows) {
-    lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${r.reachable ? "readable" : "NOT READABLE (nothing deleted)"}  ${plural(r.sessions, "session")}`);
+    const place = r.env === "wsl" ? wslPlace(ctx.platform, r.root) : null;
+    const state = place && stopped.has(place.distro) ? "not running" : r.reachable ? "readable" : "NOT READABLE (nothing deleted)";
+    lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${state}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");
+  const notice = stoppedNotice(ctx.wslStopped, ctx.now);
+  if (notice) lines.push(`  ${notice}`);
 
   // Agent upgrades (arch.md §6.1): files meme cannot convert, and record types it does not know.
   const failed = failures(db);
