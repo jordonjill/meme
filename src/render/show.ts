@@ -5,9 +5,9 @@ import { firstLine } from "../model/title";
 import { describeCall, oneLine, resultFailed, resultText } from "../model/tools";
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Ending, type Turn } from "../model/turns";
 import { displayPath } from "../platform/paths";
-import { ancestors, sessionRecords, shortId, uidsOf, type Ancestor, type SessionRow } from "../store/queries";
+import { ancestors, failureOf, sessionRecords, shortId, uidsOf, unknownIn, type Ancestor, type SessionRow } from "../store/queries";
 import { coloredLabel, type Style } from "./labels";
-import { ago, padStart, plural, size, span, trimmedLines, truncate, width, wrap } from "./text";
+import { ago, padStart, plural, size, span, trimmedLines, truncate, when, width, wrap } from "./text";
 
 export interface ShowModel {
   session: SessionRow;
@@ -18,13 +18,27 @@ export interface ShowModel {
   /** The short id of the session this one was continued in, if any. */
   continuedIn: string | null;
   ending: Ending;
+  /** What meme could not read of it (arch.md §6.1): said under the header. */
+  notes: string[];
 }
 
-export function buildShow(db: Database, session: SessionRow): ShowModel {
+/** A session meme cannot read any more, or with records it does not know (arch.md §6.1, points 2 and 4). */
+export function readNotes(db: Database, session: SessionRow, now: number): string[] {
+  const notes: string[] = [];
+  if (session.unreadable && session.readable_until) {
+    notes.push(`meme can't read this session's file any more (${failureOf(db, session.id) ?? "unknown error"}): this is the session as of ${when(session.readable_until, new Date(now))}; what came after is missing. See \`meme status\`.`);
+  }
+  const unknown = unknownIn(db, session.id);
+  const n = unknown.reduce((a, u) => a + u.count, 0);
+  if (n) notes.push(`${plural(n, "record")} meme couldn't read (${unknown.map((u) => u.type).join(", ")}); see \`meme status\`.`);
+  return notes;
+}
+
+export function buildShow(db: Database, session: SessionRow, now = Date.now()): ShowModel {
   const records = sessionRecords(db, session.id);
   const { turns } = groupTurns(records);
   const continuedIn = session.continued_in ? shortId(db, session.continued_in) : null;
-  return { session, records, turns, separators: continuationPoints(db, session, turns), continuedIn, ending: endingOf(records) };
+  return { session, records, turns, separators: continuationPoints(db, session, turns), continuedIn, ending: endingOf(records), notes: readNotes(db, session, now) };
 }
 
 /**
@@ -79,7 +93,7 @@ export function headerLines(m: ShowModel, o: ShowOptions): string[] {
     size(s.size),
     s.archived ? "archived" : null,
   ].filter(Boolean);
-  return [title, o.st.dim(facts.join(" · "))];
+  return [title, o.st.dim(facts.join(" · ")), ...m.notes.map((n) => o.st.yellow(n))];
 }
 
 export function endingLine(m: ShowModel, o: ShowOptions): string {

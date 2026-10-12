@@ -4,7 +4,7 @@ import { stoppedNotice, type Context, type Output } from "../cli/context";
 import type { Env } from "../platform/env";
 import { displayPath } from "../platform/paths";
 import { coloredLabel, label } from "../render/labels";
-import { fallbackNotice, listed, listing, othersHint, type ListFilter } from "../render/ls";
+import { fallbackNotice, listed, listing, marks, othersHint, unreadableHint, type ListFilter } from "../render/ls";
 import { buildShow, endingLine, foldedTurn, headerLines, numberWidth, separatorLine, type ShowModel, type ShowOptions } from "../render/show";
 import { ago, padEnd, shortPath, size, truncate, width, wrapParts } from "../render/text";
 import { allSessions, type SessionRow } from "../store/queries";
@@ -163,7 +163,8 @@ export class PickerView implements View {
     const where = this.all ? "all projects" : shortPath(displayPath(this.filter.project, this.ctx.platform.home), Math.max(20, cols - 40));
     // Notices are read whole: wrapped, not cut at the window's edge.
     const out: string[] = [];
-    for (const n of [this.notice, stoppedNotice(this.ctx.wslStopped, this.ctx.now)]) if (n) out.push(...wrapLine(st.yellow(` ${n}`), cols - 1, " "));
+    const unreadable = unreadableHint(this.rows.filter((r) => r.unreadable === 1).length);
+    for (const n of [this.notice, stoppedNotice(this.ctx.wslStopped, this.ctx.now), unreadable]) if (n) out.push(...wrapLine(st.yellow(` ${n}`), cols - 1, " "));
     out.push(` ${st.bold(this.pick?.title ?? "Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
     const filters = this.filterRows();
     const nameOf = (r: FilterRow<string>) => (v: string | null) => (v === null ? "All" : ((r === (this.platforms as FilterRow<string> | null) ? ENV_NAME : AGENT_NAME) as Record<string, string>)[v] ?? v);
@@ -200,7 +201,7 @@ export class PickerView implements View {
       lines.push(`${selected ? st.cyan("❯ ") : "  "}${selected ? st.bold(title) : title}${gap}${coloredLabel(st, r.agent, r.env)}`);
       // Facts on the left; the id on the right under the label (`meme show`, `continue`
       // and `forget` take it). Across projects the project comes last, losing its middle.
-      const facts = [ago(r.ended_at, this.ctx.now), r.branch, size(r.size), r.archived ? "archived" : null].filter(Boolean).join(" · ");
+      const facts = [ago(r.ended_at, this.ctx.now), r.branch, size(r.size), marks(r, this.ctx.now).replace(/^ \((.*)\)$/, "$1") || null].filter(Boolean).join(" · ");
       const room = cols - 5 - width(r.short) - width(facts) - 3;
       const project = this.all ? ` · ${shortPath(displayPath(r.project ?? "", this.ctx.platform.home), Math.max(12, Math.min(PATH_COLS, room)))}` : "";
       const left = truncate(facts + project, Math.max(10, cols - 5 - width(r.short)));

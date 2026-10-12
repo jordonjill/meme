@@ -3,7 +3,7 @@ import type { Env } from "../platform/env";
 import { displayPath, samePath } from "../platform/paths";
 import type { SessionRow } from "../store/queries";
 import { coloredLabel, label, type Style } from "./labels";
-import { ago, padEnd, plural, shortPath, size, truncate, width } from "./text";
+import { ago, padEnd, plural, shortPath, size, truncate, when, width } from "./text";
 
 /** The project column of a list across projects: longer paths lose their middle. */
 const PROJECT_COLS = 40;
@@ -27,7 +27,7 @@ export interface ListFilter {
 export function listed(rows: SessionRow[], f: ListFilter): SessionRow[] {
   return rows.filter(
     (r) =>
-      r.talked === 1 &&
+      (r.talked === 1 || r.unreadable === 1) &&
       r.superseded === 0 &&
       !f.exclude?.has(r.id) &&
       (!f.only || f.only.has(r.id)) &&
@@ -44,16 +44,32 @@ export interface Listing {
   fellBack: boolean;
   /** Sessions in other projects, when only the current project is shown (plan §3.1). */
   others: number;
+  /** Sessions meme cannot read, in any project (arch.md §6.1, point 2). */
+  unreadable?: number;
 }
 
 /** What `ls` lists: the current project, or all projects when it has nothing (plan §3.1). */
 export function listing(rows: SessionRow[], f: ListFilter): Listing {
+  const unreadable = rows.filter((r) => r.unreadable === 1).length;
   const mine = listed(rows, f);
-  if (f.all) return { rows: mine, filter: f, fellBack: false, others: 0 };
+  if (f.all) return { rows: mine, filter: f, fellBack: false, others: 0, unreadable };
   const all = { ...f, all: true };
   const everywhere = listed(rows, all);
-  if (mine.length) return { rows: mine, filter: f, fellBack: false, others: everywhere.length - mine.length };
-  return { rows: everywhere, filter: all, fellBack: true, others: 0 };
+  if (mine.length) return { rows: mine, filter: f, fellBack: false, others: everywhere.length - mine.length, unreadable };
+  return { rows: everywhere, filter: all, fellBack: true, others: 0, unreadable };
+}
+
+/** After a title: "(archived)", "(can't read)", or "(can't read after 10-12 11:36)" when an older copy is shown. */
+export function marks(r: SessionRow, now: number): string {
+  const out: string[] = [];
+  if (r.archived) out.push("archived");
+  if (r.unreadable) out.push(r.readable_until ? `can't read after ${when(r.readable_until, new Date(now))}` : "can't read");
+  return out.length ? ` (${out.join(", ")})` : "";
+}
+
+/** The line under a list when some sessions cannot be read. */
+export function unreadableHint(n: number | undefined): string | null {
+  return n ? `${plural(n, "session")} could not be read, see \`meme status\`` : null;
 }
 
 /** The line under a list of the current project's sessions, when other projects have some. */
@@ -75,7 +91,7 @@ export interface LsTextOptions {
 }
 
 /** Plain-text list, for agents and pipes (plan §3.1). */
-export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOptions): string {
+export function lsText({ rows, filter, fellBack, others, unreadable }: Listing, o: LsTextOptions): string {
   const where = filter.all ? "all projects" : displayPath(filter.project, o.home);
   if (rows.length === 0) return "No sessions found.\n";
   const cells = rows.map((r) => ({
@@ -87,7 +103,7 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     size: size(r.size),
     project: filter.all ? shortPath(displayPath(r.project ?? "", o.home), PROJECT_COLS) : "",
     title: r.title ?? "(untitled)",
-    archived: r.archived === 1,
+    marks: marks(r, o.now),
   }));
   const colW = (k: "id" | "label" | "ago" | "branch" | "size" | "project") => Math.max(...cells.map((c) => width(c[k])));
   const wId = colW("id");
@@ -101,10 +117,12 @@ export function lsText({ rows, filter, fellBack, others }: Listing, o: LsTextOpt
     let line = `  ${padEnd(c.id, wId)}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
     if (filter.all) line += padEnd(c.project, wProject) + "  ";
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
-    out.push(line + truncate(c.title, Math.max(20, o.width - used - (c.archived ? 11 : 0))) + (c.archived ? o.st.dim(" (archived)") : ""));
+    out.push(line + truncate(c.title, Math.max(20, o.width - used - width(c.marks))) + o.st.dim(c.marks));
   }
   const hint = othersHint(others, "use -a");
   if (hint) out.push(hint);
+  const bad = unreadableHint(unreadable);
+  if (bad) out.push(bad);
   out.push(o.footer ?? "Run `meme continue <id>` to continue one.");
   return out.join("\n") + "\n";
 }
@@ -122,7 +140,7 @@ export interface NumberedOptions extends LsTextOptions {
  * The list of `meme continue` for agents and pipes (plan §3.4):
  * `1  <Agent·Env>  2h ago  <title>  01a11a65`, then the given last line.
  */
-export function numberedText({ rows, filter, fellBack, others }: Listing, o: NumberedOptions): string {
+export function numberedText({ rows, filter, fellBack, others, unreadable }: Listing, o: NumberedOptions): string {
   const where = filter.all ? "all projects" : displayPath(filter.project, o.home);
   if (rows.length === 0) return "No sessions found.\n";
   const cells = rows.map((r, i) => ({
@@ -131,7 +149,7 @@ export function numberedText({ rows, filter, fellBack, others }: Listing, o: Num
     labelColored: coloredLabel(o.st, r.agent, r.env),
     ago: ago(r.ended_at, o.now),
     project: filter.all ? shortPath(displayPath(r.project ?? "", o.home), PROJECT_COLS) : "",
-    title: truncate(r.title ?? "(untitled)", 48) + (r.archived ? " (archived)" : ""),
+    title: truncate(r.title ?? "(untitled)", 48) + marks(r, o.now),
     id: r.short,
   }));
   const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));
@@ -145,6 +163,8 @@ export function numberedText({ rows, filter, fellBack, others }: Listing, o: Num
   }
   const hint = othersHint(others, o.allHint);
   if (hint) out.push(hint);
+  const bad = unreadableHint(unreadable);
+  if (bad) out.push(bad);
   if (o.footer) out.push(o.footer);
   return out.join("\n") + "\n";
 }
