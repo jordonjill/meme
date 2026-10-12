@@ -112,10 +112,10 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     const r = run(w, ["continue", "a5a5", "--in", "claude"], { env: { ...env, ...fake.env } });
     expect(r.err).not.toContain("meme:");
     expect(r.code).toBe(0);
-    expect(r.out).toBe("Continuing a5a5a5a5 (把导入模块的错误处理补完整) in Claude Code, in /home/u/work/app (WSL: Ubuntu)\n");
-    // First where meme and claude are, then the agent itself, both in the project.
-    expect(fake.calls().map((c) => c.split(" -e ")[0])).toEqual(["-d Ubuntu --cd /home/u/work/app", "-d Ubuntu --cd /home/u/work/app"]);
-    expect(fake.agent().cwd).toBe(path.join(ubuntu, "home", "u", "work", "app"));
+    expect(r.out).toBe("Continuing a5a5a5a5 (把导入模块的错误处理补完整) in Claude Code, in /home/u/work/app/src (WSL: Ubuntu)\n");
+    // First where meme and claude are, then the agent itself, both where the session started (arch.md 6.3, rule 4).
+    expect(fake.calls().map((c) => c.split(" -e ")[0])).toEqual(["-d Ubuntu --cd /home/u/work/app/src", "-d Ubuntu --cd /home/u/work/app/src"]);
+    expect(fake.agent().cwd).toBe(path.join(ubuntu, "home", "u", "work", "app", "src"));
     expect(fake.agent().args).toEqual([
       "Continue an earlier session: run `meme continue a5a5a5a5` and follow the instructions at the top of its output.",
       "--allowedTools",
@@ -129,7 +129,7 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     const r = run(w, ["continue", "a5a5", "--in", "claude"], { env: { ...env, ...fake.env } });
     expect(r.code).toBe(1);
     expect(r.err).toBe(
-      "meme: meme is not installed in WSL (Ubuntu), and the agent there needs it to fetch the handoff. Install it there, then open WSL with `wsl -d Ubuntu --cd /home/u/work/app` and run `meme continue a5a5a5a5`\n",
+      "meme: meme is not installed in WSL (Ubuntu), and the agent there needs it to fetch the handoff. Install it there, then open WSL with `wsl -d Ubuntu --cd /home/u/work/app/src` and run `meme continue a5a5a5a5`\n",
     );
     expect(existsSync(path.join(w.home, "agent-was-called.args"))).toBe(false);
   });

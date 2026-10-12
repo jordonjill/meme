@@ -339,7 +339,7 @@ describe("A3: the source agent's compaction summary", () => {
     w.codex(s);
     const text = w.handoff(s.id).text;
     expect(text).toContain("(Codex compacted its context after turn 4, ");
-    expect(text).toContain("It compacted again after turn 5, but that summary is encrypted; this one covers up to turn 4.\n");
+    expect(text).toContain("It compacted again after turn 5, but that summary cannot be read; this one covers up to turn 4.\n");
 
     resetIds();
     const only = new CodexSession({ id: "a3a3a3a3-0000-7000-8000-000000000004" });
@@ -351,7 +351,7 @@ describe("A3: the source agent's compaction summary", () => {
     only.assistant("Going.");
     w.codex(only);
     const t2 = w.handoff(only.id).text;
-    expect(t2).toContain("Note: Codex compacted its context after turn 1, and its summary is encrypted; only the records below are included.\n");
+    expect(t2).toContain("Note: Codex compacted its context after turn 1, and its summary cannot be read (encrypted, or written in a way meme does not know); only the records below are included.\n");
     expect(t2).not.toContain("## Summary written by");
   });
 

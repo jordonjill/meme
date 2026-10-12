@@ -93,6 +93,31 @@ describe.skipIf(process.platform === "win32")("agent upgrades", () => {
     expect(run(w, ["show", "11111111", "--plain"]).out).not.toContain("couldn't read");
   });
 
+  test("blind spots: a compaction with neither a summary nor anything encrypted, and no start directory", () => {
+    const w = world();
+    mkdirSync(demoDir(w), { recursive: true });
+    // Codex wrote the summary somewhere new: not readable, not encrypted.
+    const x = sampleCodex({ id: "c0de0500-0000-4000-8000-0000000000e1", cwd: demoDir(w), start: "2026-10-10T08:00:00.000Z" });
+    x.lines.push({ timestamp: "2026-10-10T08:06:00.000Z", type: "compacted", payload: { summary_v2: { text: "a summary" }, replacement_history: [] } });
+    // An encrypted one is not a problem.
+    x.lines.push({ timestamp: "2026-10-10T08:07:00.000Z", type: "compacted", payload: { message: "", replacement_history: [{ type: "compaction", encrypted_content: "gAAAA" }] } });
+    x.write(codexHome(w));
+    // No line says where the session ran: the project would be guessed wrong.
+    const c = new ClaudeSession({ id: "c1a0de97-0000-4000-8000-0000000000e2", version: "2.1.300" });
+    c.user("hello");
+    c.assistant("hi");
+    for (const l of c.lines) delete l.cwd;
+    c.write(path.join(w.home, ".claude", "projects"));
+    const y = sampleCodex({ id: "c0de0600-0000-4000-8000-0000000000e3", start: "2026-10-10T08:00:00.000Z" });
+    delete (y.lines[0]!.payload as Record<string, unknown>).cwd;
+    y.write(codexHome(w));
+
+    const status = run(w, ["status"]).out;
+    expect(status).toContain("  Claude Code 2.1.300: 1 record of known types meme couldn't read (start directory; 1 session)\n");
+    expect(status).toContain("  Codex 0.162.0: 2 records of known types meme couldn't read (compacted, start directory; 2 sessions)\n");
+    expect(run(w, ["show", "c0de0500", "--plain"]).out).toContain("\n1 record of known types meme couldn't read (compacted); see `meme status`.\n");
+  });
+
   test("records of a known type that read as nothing: the second layer counts them", () => {
     const w = world();
     mkdirSync(demoDir(w), { recursive: true });
