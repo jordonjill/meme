@@ -1,4 +1,5 @@
 import path from "node:path";
+import { agentNamed } from "../adapters/profiles";
 import type { Agent } from "../adapters/types";
 import type { Env } from "../platform/env";
 import { listed, listing, type ListFilter, type Listing } from "../render/ls";
@@ -6,8 +7,8 @@ import type { SessionRow } from "../store/queries";
 
 /**
  * What `meme continue <target>` points at (plan §3.4). A target is one or more
- * words, each narrowing the choice: `last` (the newest), an agent (`claude`,
- * `codex`), an environment (`win`, `wsl`, `mac`, `linux`), the start of a session
+ * words, each narrowing the choice: `last` (the newest), an agent (any of its
+ * profile's aliases), an environment (`win`, `wsl`, `mac`, `linux`), the start of a session
  * id, or a word from the title or the project's folder name. Numbers from a
  * printed list are handled by the caller.
  */
@@ -16,7 +17,6 @@ export type Resolution =
   | { kind: "many"; listing: Listing }
   | { kind: "none"; message: string };
 
-const AGENTS: Record<string, Agent> = { claude: "claude-code", cc: "claude-code", "claude-code": "claude-code", codex: "codex" };
 const ENVS: Record<string, Env> = { win: "win", windows: "win", wsl: "wsl", mac: "mac", macos: "mac", linux: "linux" };
 
 export function isListNumber(token: string): boolean {
@@ -32,7 +32,7 @@ export function resolveTarget(tokens: string[], rows: SessionRow[], filter: List
   for (const raw of tokens) {
     const t = raw.toLowerCase();
     if (t === "last") last = true;
-    else if (AGENTS[t]) agent = AGENTS[t];
+    else if (agentNamed(t)) agent = agentNamed(t);
     else if (ENVS[t]) env = ENVS[t];
     else if (/^[0-9a-f][0-9a-f-]{3,}$/.test(t) && rows.some((r) => r.id.startsWith(t))) ids.push(t);
     else words.push(t);

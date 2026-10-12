@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { adapterFor } from "../../adapters";
+import { PROFILES, profileOf } from "../../adapters/profiles";
 import type { ForgetPlan } from "../../adapters/types";
 import { lastActive, mayBeRunning } from "../../model/turns";
 import { removeDir, removeFile } from "../../platform/fs";
@@ -25,9 +26,7 @@ everything it will delete and asks before deleting.
             explicitly asked to delete these sessions
   --chain   also delete the earlier sessions a continued session came from
 
-Claude Code: meme deletes the session file and its folders (subagents and large
-tool output, file-history backups, session-env). Codex: meme runs
-\`codex delete --force <id>\`, and only for sessions of this environment.
+${PROFILES.map((p) => p.forgetHelp).join("\n")}
 The session that runs meme cannot be deleted.
 `;
 
@@ -37,7 +36,7 @@ interface Item {
   files: string[];
 }
 
-/** The sessions a continued session came from, nearest first (Claude Code's continued-in chain). */
+/** The sessions a continued session came from, nearest first (the continued-in chain). */
 function earlierParts(ctx: Context, id: string): SessionRow[] {
   const chain = ancestors(ctx.store.db, id);
   const out: SessionRow[] = [];
@@ -119,20 +118,20 @@ export async function forget(argv: string[]): Promise<number> {
     let plan: ForgetPlan = adapter
       ? adapter.forgetPlan({ id: session.id, env: session.env, files }, ctx.platform)
       : { steps: [], gone: [], notes: [], blocked: "meme does not know how to delete this agent's sessions" };
-    // Codex refuses to delete a session while a fork still reads its history from
-    // it ("failed to delete session", plan §3.5): name the forks too, or delete them first.
-    const forks = forksOf(ctx, session.id).filter((f) => !chosen.some((c) => c.id === f.id));
+    // Some agents refuse to delete a session while a fork still reads its history
+    // from it (its profile, plan §3.5): name the forks too, or delete them first.
+    const forks = profileOf(session.agent).keepsForkParents ? forksOf(ctx, session.id).filter((f) => !chosen.some((c) => c.id === f.id)) : [];
     if (!plan.blocked && forks.length) {
       const list = forks.map((f) => `${f.short} "${f.title ?? "untitled"}"`).join(", ");
       plan = {
         ...plan,
         steps: [],
-        blocked: `Codex does not delete a session while ${forks.length === 1 ? "a fork reads" : "forks read"} its history from it: ${list}. Name ${forks.length === 1 ? "the fork" : "the forks"} too (\`meme forget ${[session, ...forks].map((s) => s.short).join(" ")}\`; ${forks.length === 1 ? "it is" : "they are"} deleted first), or delete ${forks.length === 1 ? "it" : "them"} first.`,
+        blocked: `${profileOf(session.agent).name} does not delete a session while ${forks.length === 1 ? "a fork reads" : "forks read"} its history from it: ${list}. Name ${forks.length === 1 ? "the fork" : "the forks"} too (\`meme forget ${[session, ...forks].map((s) => s.short).join(" ")}\`; ${forks.length === 1 ? "it is" : "they are"} deleted first), or delete ${forks.length === 1 ? "it" : "them"} first.`,
       };
     }
     return { session, plan, files };
   });
-  // Forks before the sessions they were forked from, so Codex lets the parent go.
+  // Forks before the sessions they were forked from, so the agent lets the parent go.
   const order = (i: Item): number => {
     let depth = 0;
     for (let s: SessionRow | null = i.session; s?.forked_from && depth < 16; s = chosen.find((c) => c.id === s!.forked_from) ?? null) depth++;

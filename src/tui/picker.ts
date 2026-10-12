@@ -1,3 +1,4 @@
+import { PROFILES } from "../adapters/profiles";
 import type { Agent } from "../adapters/types";
 import { stoppedNotice, type Context, type Output } from "../cli/context";
 import type { Env } from "../platform/env";
@@ -23,9 +24,9 @@ const PLACEHOLDER = "Search titles, projects, branches, ids…";
 const ENV_ORDER: Env[] = ["wsl", "win", "mac", "linux"];
 /** At most this wide, a project path in the list: longer ones lose their middle. */
 const PATH_COLS = 40;
-const AGENT_ORDER: Agent[] = ["claude-code", "codex"];
+const AGENT_ORDER: Agent[] = PROFILES.map((p) => p.agent);
 const ENV_NAME: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
-const AGENT_NAME: Record<Agent, string> = { "claude-code": "Claude", codex: "Codex" };
+const AGENT_NAME = Object.fromEntries(PROFILES.map((p) => [p.agent, p.short])) as Record<Agent, string>;
 
 /** A filter row only when there is more than one value to tell apart (plan §3.1). */
 function filterRow<T extends string>(name: string, present: Set<T>, order: T[], start: T | undefined): FilterRow<T> | null {
@@ -44,7 +45,7 @@ export interface Pick {
 }
 
 /**
- * `meme ls` in a terminal, modeled on Claude Code's `/resume` (list.md §4): two
+ * `meme ls` in a terminal, modeled on the agents' own session pickers (list.md §4): two
  * lines per session, type to search, Space to preview, Enter to open. Above the
  * list, a row of platforms and a row of agents when there is more than one:
  * ←→ change the row in focus, Tab moves between the rows. With all platforms

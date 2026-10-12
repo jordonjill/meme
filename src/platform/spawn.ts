@@ -9,8 +9,8 @@ export function findCommand(name: string, vars: Record<string, string | undefine
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
 
 /**
- * How to start a program with arguments. On Windows a `.cmd` or `.bat` (an npm
- * install of Codex, say) runs through cmd.exe, and the command line is built the
+ * How to start a program with arguments. On Windows a `.cmd` or `.bat` (an agent
+ * installed with npm, say) runs through cmd.exe, and the command line is built the
  * way cross-spawn builds it, so quotes, backticks, parentheses and semicolons in a
  * first message reach the program unchanged.
  */

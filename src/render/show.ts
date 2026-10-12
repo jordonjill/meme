@@ -183,7 +183,7 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
       text.forEach((line, i) => {
         for (const [j, piece] of prose(line).entries()) out.push((i === 0 && j === 0 ? head : indent) + piece);
       });
-      // A Codex `!` command carries its output in the same record.
+      // Some agents record a `!` command and its output together.
       const output = shellOutput(contentOf(body) ?? "");
       if (output !== null) push(o.st.dim("⎿ "), limited(resultText(output)), o.st.dim);
       continue;

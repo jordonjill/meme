@@ -1,3 +1,4 @@
+import { profileOf } from "../adapters/profiles";
 import type { Agent } from "../adapters/types";
 import type { Env } from "../platform/env";
 
@@ -38,20 +39,17 @@ export function makeStyle(color: boolean): Style {
   };
 }
 
-const AGENT_SHORT: Record<Agent, string> = { "claude-code": "Claude", codex: "Codex" };
 const ENV_SHORT: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
-/** One color per agent (256-color palette): Claude orange, Codex blue. */
-const AGENT_COLOR: Record<Agent, number> = { "claude-code": 209, codex: 75 };
 
-/** The source label, e.g. `Claude·WSL`. */
+/** The source label, `<short name>·WSL`: the agent's short name from its profile. */
 export function label(agent: Agent, env: Env): string {
-  return `${AGENT_SHORT[agent] ?? agent}·${ENV_SHORT[env] ?? env}`;
+  return `${profileOf(agent)?.short ?? agent}·${ENV_SHORT[env] ?? env}`;
 }
 
 export function agentName(agent: Agent): string {
-  return agent === "claude-code" ? "Claude Code" : "Codex";
+  return profileOf(agent)?.name ?? agent;
 }
 
 export function coloredLabel(st: Style, agent: Agent, env: Env): string {
-  return st.fg(AGENT_COLOR[agent] ?? 250, label(agent, env));
+  return st.fg(profileOf(agent)?.color ?? 250, label(agent, env));
 }

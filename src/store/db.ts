@@ -67,7 +67,7 @@ export interface Store {
   memory: boolean;
 }
 
-/** Errors that mean "this place cannot be written", e.g. inside the Codex sandbox. */
+/** Errors that mean "this place cannot be written", e.g. inside an agent's sandbox. */
 export function isReadOnlyError(err: unknown): boolean {
   const code = errorCode(err) ?? "";
   if (["EACCES", "EROFS", "EPERM"].includes(code)) return true;

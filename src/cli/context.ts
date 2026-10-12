@@ -1,4 +1,5 @@
 import { ADAPTERS } from "../adapters";
+import { PROFILES } from "../adapters/profiles";
 import { projectResolver } from "../model/project";
 import { fileLogger, type Logger } from "../platform/log";
 import { currentPlatform, type Platform } from "../platform/paths";
@@ -109,19 +110,19 @@ export function projectOf(platform: Platform, cwd: string): string {
 }
 
 /**
- * The sessions of the agents that run this meme: Claude Code sets
- * CLAUDE_CODE_SESSION_ID for its tools, Codex sets CODEX_THREAD_ID (sessions.md
- * §7.1). Both can be set when one agent was started inside the other; both are
- * running, so both are left out.
+ * The sessions of the agents that run this meme: each agent puts its session id
+ * in a variable its tools see (its profile's `sessionVar`, sessions.md §7.1).
+ * Several can be set when one agent was started inside another; all of them are
+ * running, so all are left out.
  */
 export function currentSessions(vars: Record<string, string | undefined>): Set<string> {
-  const ids = [vars.CLAUDE_CODE_SESSION_ID, vars.CODEX_THREAD_ID].map((v) => v?.trim().toLowerCase()).filter((v): v is string => Boolean(v));
+  const ids = PROFILES.map((p) => vars[p.sessionVar]?.trim().toLowerCase()).filter((v): v is string => Boolean(v));
   return new Set(ids);
 }
 
 /** Running inside an agent's tool call rather than a person's terminal. */
-export function insideAgent(vars = process.env): boolean {
-  return vars.CLAUDECODE === "1" || Boolean(vars.CODEX_THREAD_ID) || Object.keys(vars).some((k) => k.startsWith("CODEX_SANDBOX"));
+export function insideAgent(vars: Record<string, string | undefined> = process.env): boolean {
+  return PROFILES.some((p) => p.inside(vars));
 }
 
 export interface Output {

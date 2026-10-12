@@ -92,7 +92,7 @@ function importRoot(
     stored.set(row.path, row);
   }
 
-  // A session can have several files (a Codex rollback starts a new one): convert them together.
+  // A session can have several files (an agent may start a new one on a rollback): convert them together.
   const groups = new Map<string, string[]>();
   for (const file of listed) {
     const id = adapter.sessionId(file);
@@ -120,7 +120,7 @@ function importRoot(
       result.failed++;
       continue;
     }
-    // Both size and mtime: Codex on Windows appends without updating mtime.
+    // Both size and mtime: an agent on Windows may append without updating mtime (sessions.md §7.1).
     const same = (s: FileState) => {
       const prev = stored.get(s.path);
       return prev !== undefined && prev.session === sessionId && prev.size === s.size && prev.mtime === s.mtime;

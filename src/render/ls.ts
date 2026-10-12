@@ -120,7 +120,7 @@ export interface NumberedOptions extends LsTextOptions {
 
 /**
  * The list of `meme continue` for agents and pipes (plan §3.4):
- * `1  Codex·WSL  2h ago  <title>  01a11a65`, then the given last line.
+ * `1  <Agent·Env>  2h ago  <title>  01a11a65`, then the given last line.
  */
 export function numberedText({ rows, filter, fellBack, others }: Listing, o: NumberedOptions): string {
   const where = filter.all ? "all projects" : displayPath(filter.project, o.home);

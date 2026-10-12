@@ -3,7 +3,7 @@ import { isCompaction } from "../model/injected";
 import type { Rec } from "../model/record";
 import { callsOf, contentOf, promptText } from "../model/record";
 import { commandOf, describeCall, editedFiles as filesOfCall, exitCodeOf, oneLine, resultFailed, resultText, type ParsedCall } from "../model/tools";
-import { endingOf, groupTurns, lastActive, mayBeRunning, type Turn } from "../model/turns";
+import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Turn } from "../model/turns";
 import type { Env } from "../platform/env";
 import { isWindowsPath, winToWsl } from "../platform/paths";
 import { toHost, type WslPlace } from "../platform/wsl";
@@ -133,7 +133,7 @@ function stepLines(t: Turn): string[] {
   const out: string[] = [];
   for (const rec of t.records) {
     if (rec.injected) continue;
-    if (rec.body.role === "user" && /^\s*\[Request interrupted by user/.test(contentOf(rec.body) ?? "")) out.push("- ⏹ Interrupted by the user");
+    if (kindOf(rec) === "interrupt") out.push("- ⏹ Interrupted by the user");
     for (const call of callsOf(rec.body)) {
       const result = resultFor(t, call);
       const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
@@ -209,7 +209,7 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
       const code = exitCodeOf(raw);
       const exit = code === null ? undefined : String(code);
       const tool = result?.body.role === "tool" ? result.body : null;
-      // Passed only when the record says so: Codex's code mode reports a finished script even when the test inside failed.
+      // Passed only when the record says so: an agent's script tool can report a finished script when the test inside failed.
       const status = !tool
         ? "no result"
         : resultFailed(tool.ok, raw)

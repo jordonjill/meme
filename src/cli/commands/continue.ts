@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { ADAPTERS, launchable } from "../../adapters";
+import { agentWords, profileOf, runningAgent } from "../../adapters/profiles";
 import type { Adapter } from "../../adapters/types";
-import { CODEX_BYTES, LIMITS } from "../../handoff/budget";
+import { limitsIn } from "../../handoff/budget";
 import { buildHandoff } from "../../handoff/build";
 import { displayPath } from "../../platform/paths";
 import { runAttached } from "../../platform/spawn";
@@ -16,7 +17,7 @@ import { isListNumber, resolveTarget } from "../target";
 import { HOW_TO_CONTINUE } from "../usage";
 import { parseAgent } from "./ls";
 
-export const continueHelp = `Usage: meme continue [<target>] [-a] [--in claude|codex] [--fresh] [--plain]
+export const continueHelp = `Usage: meme continue [<target>] [-a] [--in ${agentWords("|")}] [--fresh] [--plain]
 
 Continue a session in a new agent session. The handoff is worked out from the
 session each time and printed; nothing is written, and nothing is summarized.
@@ -24,11 +25,11 @@ session each time and printed; nothing is written, and nothing is summarized.
 ${HOW_TO_CONTINUE}
 
 A target is a number from the list (counted again each time, the same way), or
-words that narrow it down: last, claude, codex, win, wsl, the start of a session
+words that narrow it down: last, ${agentWords(", ")}, win, wsl, the start of a session
 id, or a word from the title. One match is handed over; several are listed.
 
   -a, --all      list the sessions of all projects, not only this one
-  --in <agent>   at a terminal, continue in claude or codex without asking
+  --in <agent>   at a terminal, continue in ${agentWords()} without asking
   --fresh        only the user's messages: start over from the repository,
                  not from the previous agent's approach
   --plain        print instead of starting an agent, even in a terminal
@@ -41,13 +42,12 @@ const MATCHES = 20;
 
 /**
  * The last line of a list printed into an agent session (plan §3.4): the agent
- * must not pick. In Claude Code the agent runs the user's choice itself, so the
- * handoff lands folded in its tool output; Codex never sees `!` output on its own,
- * so there the user types the command.
+ * must not pick. Where `!` output reaches the model, the agent runs the user's
+ * choice itself, so the handoff lands folded in its tool output; where it does
+ * not, the user types the command.
  */
 function forTheUser(how: string, vars: Record<string, string | undefined>): string {
-  const claudeCode = (vars.CLAUDECODE === "1" || Boolean(vars.CLAUDE_CODE_SESSION_ID)) && !vars.CODEX_THREAD_ID;
-  const yourself = claudeCode ? ` When the user has chosen, run \`${how}\` yourself.` : "";
+  const yourself = runningAgent(vars)?.bangReachesModel ? ` When the user has chosen, run \`${how}\` yourself.` : "";
   return `This list is for the user. Ask which one to continue and wait; do not pick one yourself.${yourself} The user can also type: ! ${how}`;
 }
 
@@ -142,8 +142,8 @@ export async function continueSession(argv: string[]): Promise<number> {
 
   if (!terminal) {
     if (picked) {
-      // Codex cuts command output at about 40,000 bytes; keep the handoff under that there.
-      const limits = ctx.platform.vars.CODEX_THREAD_ID ? { ...LIMITS, bytes: CODEX_BYTES } : LIMITS;
+      // The agent running meme keeps only so much of a command's output (its profile).
+      const limits = limitsIn(runningAgent(ctx.platform.vars));
       const handoff = buildHandoff(
         {
           session: picked,
@@ -196,7 +196,7 @@ export async function continueSession(argv: string[]): Promise<number> {
     if ("problem" in c) throw new CommandError(c.problem);
     agent = c.agents[0]!;
   } else {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) throw new UsageError("choosing needs a terminal; name the session and add --in claude");
+    if (!process.stdin.isTTY || !process.stdout.isTTY) throw new UsageError(`choosing needs a terminal; name the session and add --in ${agentWords("|")}`);
     const pickFrom = choices ? { ...filter, all: true, only: new Set(choices.rows.map((r) => r.id)) } : filter;
     const chosen = await chooseHandover(ctx, out, pickFrom, session, agentsFor, Boolean(target));
     if (!chosen) return 0;
@@ -209,11 +209,7 @@ export async function continueSession(argv: string[]): Promise<number> {
   if (!dir || (!agent.wsl && !existsSync(dir))) throw new CommandError(`the session's project directory ${dir ?? "(unknown)"} is not there`);
   const sid = session.short;
   const command = `meme continue ${sid}${values.fresh ? " --fresh" : ""}`;
-  const message =
-    agent.adapter.agent === "codex"
-      ? // Codex's model sets how much command output it keeps; ask for enough (sessions.md §7.1).
-        `Continue an earlier session: run \`${command}\` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.`
-      : `Continue an earlier session: run \`${command}\` and follow the instructions at the top of its output.`;
+  const message = profileOf(agent.adapter.agent).firstMessage(command);
   const { args } = agent.adapter.launch(message);
   const where = agent.wsl ? `${dir} (WSL: ${agent.wsl.distro})` : displayPath(dir, ctx.platform.home);
   write(`Continuing ${sid} (${session.title ?? "untitled"}) in ${agentName(agent.adapter.agent)}, in ${where}\n`);

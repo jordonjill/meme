@@ -6,6 +6,7 @@
  * out from the records each time.
  */
 import { callsOf, contentOf, promptText, shellOutput, type Rec } from "../model/record";
+import { LONG_OUTPUTS } from "../model/formats";
 import { commandOf, resultText } from "../model/tools";
 import { groupTurns, kindOf } from "../model/turns";
 import type { SessionRow } from "../store/queries";
@@ -66,13 +67,10 @@ interface Found {
 
 /**
  * The handoff a command printed, if its output is one: meme's notes on stderr and
- * Claude Code's note on a large output ("Output too large … Preview") may come first.
+ * an agent's note on a long output ("Output too large … Preview") may come first.
  */
 function handoffOutput(output: string): string | null {
-  const text = output
-    .replace(/^<bash-stdout>/, "")
-    .replace(/^<persisted-output>[\s\S]*?\nPreview[^\n]*\n/, "")
-    .replace(/^(?:meme: [^\n]*\n)+/, "");
+  const text = LONG_OUTPUTS.reduce((t, re) => t.replace(re, ""), output).replace(/^(?:meme: [^\n]*\n)+/, "");
   return HEADER.test(text) ? text : null;
 }
 
@@ -105,10 +103,10 @@ export function handoffsIn(records: Rec[]): Found[] {
       lastPrompt = promptText(body.content).trim();
       const file = HANDOFF_FILE.exec(lastPrompt);
       if (file) out.push({ ref: file[1]!, ts: r.ts, text: null });
-      // Codex records a `!` command and its output together.
+      // Some agents record a `!` command and its output together.
       const shell = shellOutput(body.content);
       if (shell !== null && PULL.test(lastPrompt.slice(1))) add(r, resultText(shell));
-    } else if (kind === "output" && lastPrompt.startsWith("!") && PULL.test(lastPrompt.slice(1))) add(r, body.content);
+    } else if (kind === "output" && lastPrompt.startsWith("!") && PULL.test(lastPrompt.slice(1))) add(r, shellOutput(body.content) ?? body.content);
   }
   return out;
 }
@@ -130,8 +128,7 @@ function items(lines: string[]): Message[] {
  * (forgotten): its own, and those of the sessions before it.
  */
 export function parseHandoff(text: string, ref: string): { messages: Message[]; earlier: Upstream[] } | null {
-  // Only the handoff, not what wraps a `!` command's output.
-  const body = text.split(/<\/bash-stdout>|<\/result>\s*<\/user_shell_command>/)[0]!;
+  const body = text;
   let messages: Message[] | null = null;
   const earlier: Upstream[] = [];
   for (const section of body.split(/\n(?=## )/)) {

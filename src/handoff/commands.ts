@@ -108,8 +108,8 @@ function resultOf(t: Turn, call: ParsedCall): Rec | undefined {
 
 /**
  * `ok`, `✗ exit 1`, or `no result`. When the record has output but no verdict,
- * its first line: Codex's code mode reports "Script completed" even when the
- * command inside it failed.
+ * its first line: an agent's script tool can report a finished script even when
+ * the command inside it failed.
  */
 export function outcome(result: Rec | undefined): string {
   if (!result || result.body.role !== "tool") return "no result";

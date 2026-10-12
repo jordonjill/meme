@@ -1,3 +1,4 @@
+import { agentNamed, agentWords } from "../../adapters/profiles";
 import type { Agent } from "../../adapters/types";
 import { isEnv, type Env } from "../../platform/env";
 import { listing, lsText, type ListFilter } from "../../render/ls";
@@ -6,14 +7,14 @@ import { runPicker } from "../../tui/picker";
 import { parse, UsageError } from "../args";
 import { createContext, output, stoppedNotice, write } from "../context";
 
-export const lsHelp = `Usage: meme ls [-a] [--agent claude|codex] [--env wsl|win|mac|linux] [--plain]
+export const lsHelp = `Usage: meme ls [-a] [--agent ${agentWords("|")}] [--env wsl|win|mac|linux] [--plain]
 
 List the sessions of the current project, newest first; all projects when the
 current one has none. A continued session shows up once, as its newest part.
 Run from inside an agent, the agent's own session is left out.
 
   -a, --all        all projects
-  --agent <name>   only claude or codex sessions
+  --agent <name>   only ${agentWords()} sessions
   --env <name>     only sessions from wsl, win, mac or linux
   --plain          plain text, even in a terminal
 
@@ -24,10 +25,9 @@ those two rows, Ctrl+A all projects, Esc quit.
 
 export function parseAgent(v: string | undefined): Agent | undefined {
   if (v === undefined) return undefined;
-  const a = v.toLowerCase();
-  if (a === "claude" || a === "claude-code" || a === "cc") return "claude-code";
-  if (a === "codex") return "codex";
-  throw new UsageError(`unknown agent: ${v} (use claude or codex)`);
+  const agent = agentNamed(v);
+  if (agent) return agent;
+  throw new UsageError(`unknown agent: ${v} (use ${agentWords()})`);
 }
 
 export function parseEnv(v: string | undefined): Env | undefined {

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import pkg from "../../../package.json";
 import { ADAPTERS } from "../../adapters";
+import { PROFILES } from "../../adapters/profiles";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { agentName, label } from "../../render/labels";
@@ -15,7 +16,7 @@ export const installHelp = `Usage: meme install [--dry-run]
 
 Set meme up on this machine: find the agents and their sessions, and mirror
 all sessions once. Safe to run again. It changes nothing outside ~/.meme: no
-skills, no CLAUDE.md or AGENTS.md, no settings, no hooks.
+skills, no ${PROFILES.map((p) => p.instructionFile).join(" or ")}, no settings, no hooks.
 
   --dry-run   show what would happen, change nothing
 `;
@@ -74,7 +75,7 @@ export async function install(argv: string[]): Promise<number> {
   lines.push(`  ${summary}`);
 
   if (!findCommand("meme", platform.vars)) {
-    lines.push("", "Note: `meme` is not on your PATH yet; add the folder that holds it, so `! meme continue` works inside Claude Code.");
+    lines.push("", `Note: \`meme\` is not on your PATH yet; add the folder that holds it, so \`! meme continue\` works inside ${PROFILES.map((p) => p.name).join(" and ")}.`);
   }
   lines.push("", HOW_TO_CONTINUE);
   write(lines.join("\n") + "\n");

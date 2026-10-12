@@ -1,7 +1,8 @@
 /**
  * Length budget of a handoff (plan §4.6.6): at most 15,000 tokens and 25,000
- * characters. Claude Code keeps 30,000 characters of a command's output, both for
- * `!` commands and for its Bash tool, so a handoff printed there is never cut.
+ * characters, under what the agents keep of a command's output, so a handoff
+ * printed there is never cut. An agent that keeps less adds its own limit in its
+ * profile (`outputLimit`).
  */
 
 export const TOKEN_LIMIT = 15_000;
@@ -10,18 +11,16 @@ export const CHAR_LIMIT = 25_000;
 export interface Limits {
   tokens: number;
   chars: number;
-  /** Also bytes of UTF-8, where the consumer counts those (Codex). */
+  /** Also bytes of UTF-8, where the agent counts those. */
   bytes?: number;
 }
 
 export const LIMITS: Limits = { tokens: TOKEN_LIMIT, chars: CHAR_LIMIT };
 
-/**
- * Inside Codex: it keeps 10,000 of its tokens of a command's output and counts a
- * token as 4 bytes, so 40,000 bytes; 10% is left for the lines around the handoff
- * (sessions.md §7.1).
- */
-export const CODEX_BYTES = 36_000;
+/** The limits inside an agent: meme's own, and what the agent keeps of a command's output (its profile). */
+export function limitsIn(agent: { outputLimit: { chars?: number; bytes?: number } } | null): Limits {
+  return { ...LIMITS, ...(agent?.outputLimit ?? {}) };
+}
 
 const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
 

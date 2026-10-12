@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { PROFILES } from "../adapters/profiles";
 import type { Agent } from "../adapters/types";
 import type { Injected } from "../model/injected";
 import type { Body, Rec } from "../model/record";
@@ -16,7 +17,7 @@ export interface SessionRow {
   continued_in: string | null;
   forked_from: string | null;
   fork_point: number | null;
-  /** Codex moved its file to archived_sessions/: listed, marked "archived". */
+  /** The agent moved its file to its archive folder (its profile's `archivedDir`): listed, marked "archived". */
   archived: number;
   /** Sum of the original files' sizes. */
   size: number;
@@ -33,8 +34,8 @@ export interface SessionRow {
 
 /**
  * The shortest start of an id that no other id shares: 8 characters, more when
- * another session's id starts the same way. Codex ids are uuid v7, whose first
- * characters are the time, so sessions made within a minute of each other (a
+ * another session's id starts the same way. Ids that are uuid v7 (one agent's) start with
+ * the time, so sessions made within a minute of each other (a
  * fork and its parent, say) share their first 8. `near` are the ids next to it
  * in sorted order, which share the longest start with it.
  */
@@ -61,6 +62,9 @@ function withShort({ prev_id, next_id, ...row }: Loaded): SessionRow {
   return { ...row, short: shortest(row.id, [prev_id, next_id]) };
 }
 
+/** A file in an agent's archive folder. */
+const ARCHIVED = PROFILES.flatMap((p) => (p.archivedDir ? [`instr(f.path, '${p.archivedDir.replace(/'/g, "''")}') > 0`] : [])).join(" OR ") || "0";
+
 const SESSION_SELECT = `
 SELECT s.*,
   COALESCE((SELECT SUM(size) FROM files f WHERE f.session = s.id), 0) AS size,
@@ -68,7 +72,7 @@ SELECT s.*,
   COALESCE((SELECT turn FROM records r WHERE r.session = s.id ORDER BY seq DESC LIMIT 1), 0) AS turns,
   EXISTS (SELECT 1 FROM records r WHERE r.session = s.id AND r.role = 'assistant') AS talked,
   EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded,
-  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND instr(f.path, 'archived_sessions') > 0) AS archived,
+  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND (${ARCHIVED})) AS archived,
   (SELECT MAX(p.id) FROM sessions p WHERE p.id < s.id) AS prev_id,
   (SELECT MIN(n.id) FROM sessions n WHERE n.id > s.id) AS next_id
 FROM sessions s`;
@@ -137,7 +141,7 @@ export function sessionRecords(db: Database, session: string): Rec[] {
 export interface Ancestor {
   id: string;
   short: string;
-  /** How the part after it came from it: a continuation (Claude Code) or a fork (Codex). */
+  /** How the part after it came from it: a continuation (the agent copied it into a new session) or a fork. */
   link: "continued" | "forked";
 }
 

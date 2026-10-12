@@ -3,6 +3,7 @@
  * homes in them that have sessions, and paths both ways. A distribution that is
  * not running is never opened: opening \\wsl.localhost\<name> starts it.
  */
+import { PROFILES } from "../adapters/profiles";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Platform } from "./paths";
@@ -14,7 +15,7 @@ export interface WslPlace {
   root: string;
 }
 
-/** A home in a running distribution with Claude Code or Codex sessions. */
+/** A home in a running distribution with sessions of an agent meme reads. */
 export interface WslHome extends WslPlace {
   /** The home as WSL sees it, e.g. `/home/jihd`. */
   home: string;
@@ -122,7 +123,7 @@ export function wslPlace(platform: Platform, hostPath: string): WslPlace | null 
   return m ? { distro: m[2]!, root: m[1]! } : null;
 }
 
-/** The homes in these distributions that have `.claude` or `.codex`. */
+/** The homes in these distributions that have the folder of an agent meme reads (its profile's `homeDir`). */
 export function wslHomes(platform: Platform, distros: string[]): WslHome[] {
   const out: WslHome[] = [];
   for (const distro of distros) {
@@ -133,7 +134,7 @@ export function wslHomes(platform: Platform, distros: string[]): WslHome[] {
     } catch {}
     for (const home of [...users.map((u) => `/home/${u}`), "/root"]) {
       const host = toHost(root, home);
-      if (isDir(path.join(host, ".claude")) || isDir(path.join(host, ".codex"))) out.push({ distro, root, home });
+      if (PROFILES.some((p) => isDir(path.join(host, p.homeDir)))) out.push({ distro, root, home });
     }
   }
   return out;

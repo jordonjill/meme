@@ -1,10 +1,9 @@
-/** The two ways to continue a session (plan §2.2, §2.3), shown by install and continue --help. */
-export const HOW_TO_CONTINUE = `How to continue a session:
-  In a terminal:   meme continue          pick a session with the arrow keys, then the agent;
-                                          meme starts it, and it fetches the handoff itself
-  In Claude Code:  ! meme continue        see the numbered list
-                   ! meme continue <n>    hand over number n (or: last, codex, win, an id,
-                                          a word from the title); it sums up where things
-                                          stand and waits for your go-ahead
-  In Codex:        the same two commands, then say "continue": Codex keeps the output
-                   of a ! command but does not pass it to the model by itself`;
+import { PROFILES } from "../adapters/profiles";
+
+/** The two ways to continue a session (plan §2.2, §2.3), shown by install and continue --help; each agent's lines are in its profile. */
+export const HOW_TO_CONTINUE = [
+  "How to continue a session:",
+  "  In a terminal:   meme continue          pick a session with the arrow keys, then the agent;",
+  "                                          meme starts it, and it fetches the handoff itself",
+  ...PROFILES.flatMap((p) => p.howToContinue.map((line, i) => (i === 0 ? `  ${`In ${p.name}:`.padEnd(15)}  ` : " ".repeat(19)) + line)),
+].join("\n");

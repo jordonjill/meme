@@ -27,7 +27,7 @@ export function deleteFile(db: Database, path: string): string[] {
 
 /**
  * Copy flags (plan §4.6.4): when A says `continued-in → B`, the records in B whose
- * uid also appears in A were copied from A. A Codex fork B of A starts with A's
+ * uid also appears in A were copied from A. A fork B of A starts with A's
  * records up to the fork point, under the same uids, so the same rule applies.
  * Recounted for every continuation target and fork plus the sessions touched in
  * this run (a deleted A clears B's flags).
