@@ -82,7 +82,7 @@ describe.skipIf(process.platform === "win32")("agent upgrades", () => {
     c.write(path.join(w.home, ".claude", "projects"));
 
     const status = run(w, ["status"]).out;
-    expect(status).toContain("Record types: some that meme doesn't know (a new agent version?):\n");
+    expect(status).toContain("Record types: some meme doesn't know or can't read (a new agent version?):\n");
     expect(status).toContain("  Claude Code 2.1.400 writes record types meme doesn't know: brand-new-line (1 session)\n");
     expect(status).toContain("  Codex 0.170.0 writes record types meme doesn't know: event_msg/brand_new_event (1 session)\n");
 
@@ -90,6 +90,36 @@ describe.skipIf(process.platform === "win32")("agent upgrades", () => {
     expect(run(w, ["show", "c1a0de99", "--plain"]).out).toContain("\n1 record meme couldn't read (brand-new-line); see `meme status`.\n");
     // The rest reads as before.
     expect(run(w, ["show", NEWER, "--plain"]).out).toContain("2 ❯ Now add subtract(a, b) in subtract.js with a test.");
+    expect(run(w, ["show", "11111111", "--plain"]).out).not.toContain("couldn't read");
+  });
+
+  test("records of a known type that read as nothing: the second layer counts them", () => {
+    const w = world();
+    mkdirSync(demoDir(w), { recursive: true });
+    // An update changes what an assistant record holds: trajectory drops it without a word.
+    const c = new ClaudeSession({ id: "c1a0de98-0000-4000-8000-0000000000b5", cwd: demoDir(w), version: "2.1.300" });
+    c.user("Summarize the README");
+    c.assistant("It describes a CLI.");
+    c.user("And the license?");
+    c.lines.push({
+      parentUuid: null, isSidechain: false, type: "assistant", uuid: "c1a0de98-aaaa-4000-8000-000000000001", timestamp: "2026-09-30T09:09:00.000Z",
+      sessionId: c.id, version: "2.1.300", message: { role: "assistant", model: "m", content: [{ type: "rich_text", spans: [{ text: "Apache-2.0." }] }] },
+    });
+    // Codex: a message whose content moved to a field meme has never seen.
+    const x = sampleCodex({ id: "c0de0300-0000-4000-8000-0000000000b6", cwd: demoDir(w), start: "2026-10-10T08:00:00.000Z" });
+    (x.lines[0]!.payload as Record<string, unknown>).cli_version = "0.180.0";
+    x.lines.push({ timestamp: "2026-10-10T08:06:00.000Z", type: "response_item", payload: { type: "message", role: "assistant", parts: [{ kind: "text", value: "Done." }] } });
+    c.write(path.join(w.home, ".claude", "projects"));
+    x.write(codexHome(w));
+
+    const status = run(w, ["status"]).out;
+    expect(status).toContain("Record types: some meme doesn't know or can't read (a new agent version?):\n");
+    expect(status).toContain("  Claude Code 2.1.300: 1 record of known types meme couldn't read (assistant; 1 session)\n");
+    expect(status).toContain("  Codex 0.180.0: 1 record of known types meme couldn't read (response_item/message; 1 session)\n");
+    expect(status).not.toContain("writes record types meme doesn't know");
+    expect(run(w, ["show", "c1a0de98", "--plain"]).out).toContain("\n1 record of known types meme couldn't read (assistant); see `meme status`.\n");
+    expect(run(w, ["show", "c0de0300", "--plain"]).out).toContain("\n1 record of known types meme couldn't read (response_item/message); see `meme status`.\n");
+    // Sessions without such records say nothing.
     expect(run(w, ["show", "11111111", "--plain"]).out).not.toContain("couldn't read");
   });
 });

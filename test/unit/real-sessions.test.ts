@@ -45,7 +45,7 @@ test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every Claude Code r
   expect(files).toBeGreaterThan(0);
 });
 
-test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every record type is in its agent's profile (arch.md §6.1)", () => {
+test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every record type is in its agent's profile, and every conversation line read (arch.md §6.1)", () => {
   const p = currentPlatform();
   let sessions = 0;
   const unknown: string[] = [];
@@ -65,12 +65,13 @@ test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every record type i
       for (const [id, files] of groups) {
         sessions++;
         const c = adapter.convert(files, { sessionId: id, root, project: projectResolver(p), filesOf: (x) => groups.get(x) ?? [] });
-        // Types and counts only, never content.
+        // Types and counts only, never content. Both layers: unknown types, and lines of known ones that became nothing.
         for (const u of c.unknown) unknown.push(`${adapter.agent} ${u.version ?? "?"} ${u.type} ×${u.count}`);
+        for (const u of c.unread) unknown.push(`${adapter.agent} ${u.version ?? "?"} ${u.type} ×${u.count} (known type, read as nothing)`);
       }
     }
   }
-  console.log(`real sessions: ${sessions} sessions, ${unknown.length} unknown record types${unknown.length ? ":\n  " + unknown.join("\n  ") : ""}`);
+  console.log(`real sessions: ${sessions} sessions, ${unknown.length} kinds of lines meme could not read (unknown types, or known types read as nothing)${unknown.length ? ":\n  " + unknown.join("\n  ") : ""}`);
   expect(sessions).toBeGreaterThan(0);
   expect(unknown).toEqual([]);
 });
