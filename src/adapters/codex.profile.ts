@@ -62,6 +62,25 @@ function edited(name: string, a: Record<string, unknown>): string[] {
   return [];
 }
 
+/**
+ * Why a conversation line may become no record (2026-10-12, checked on the
+ * author's sessions): see plan §6 ⑦.1.
+ */
+function expectedDrop(line: Record<string, unknown>): string | null {
+  const p = (line.payload ?? {}) as { type?: unknown; role?: unknown; content?: unknown; text?: unknown };
+  if (p.type === "message") {
+    if (p.role === "developer") return "instructions to the model (developer role)";
+    // Empty only when the content is there and has nothing in it; content somewhere else is not empty.
+    const empty = Array.isArray(p.content) && p.content.every((b) => {
+      const { type, text } = (b ?? {}) as { type?: unknown; text?: unknown };
+      return (type === "input_text" || type === "output_text") && typeof text === "string" && !text.trim();
+    });
+    if (empty) return "empty";
+  }
+  if (p.type === "agent_reasoning" && (typeof p.text !== "string" || !p.text.trim())) return "empty";
+  return null;
+}
+
 export const codexProfile: Profile = {
   agent: "codex",
   name: "Codex",
@@ -143,4 +162,16 @@ export const codexProfile: Profile = {
     "event_msg/item_completed": "skipped: interface progress",
     "event_msg/thread_settings_applied": "skipped: settings",
   },
+  conversation: [
+    "response_item/message",
+    "response_item/function_call",
+    "response_item/function_call_output",
+    "response_item/custom_tool_call",
+    "response_item/custom_tool_call_output",
+    "response_item/web_search_call",
+    "response_item/tool_search_call",
+    "response_item/tool_search_output",
+    "event_msg/agent_reasoning",
+  ],
+  expectedDrop,
 };

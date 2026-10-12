@@ -11,7 +11,7 @@ import { assignTurns } from "../model/turns";
 import { displayPath, wslToWin, type Platform } from "../platform/paths";
 import { BOUNDS } from "./claude-code";
 import { codexProfile } from "./codex.profile";
-import { dropPartialLine, TypeCounter } from "./read";
+import { droppedLines, dropPartialLine, TypeCounter, typeKey } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
 import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
@@ -102,23 +102,50 @@ function threadNames(home: string): Map<string, string> {
   return names;
 }
 
-function canonical(text: string, groupId: string | undefined, partial: boolean): CanonicalRecord[] {
-  const run = (group?: string) =>
-    normalizeToCanonical({
+function canonical(text: string, groupId: string | undefined, partial: boolean): { records: CanonicalRecord[]; dropped: Set<number> } {
+  const run = (group?: string) => {
+    const r = normalizeToCanonical({
       source: "codex",
       transcript: text,
       bounds: BOUNDS,
       ...(group || partial ? { sourceContext: { ...(group ? { groupId: group } : {}), ...(partial ? { partial } : {}) } } : {}),
-    }).records;
+    });
+    return { records: r.records, dropped: droppedLines(r.diagnostics) };
+  };
   try {
     return run(groupId);
   } catch (err) {
     if (err instanceof NormalizationError) {
-      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return [];
+      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return { records: [], dropped: new Set() };
       if (err.code === "source_group_conflict") return run();
     }
     throw err;
   }
+}
+
+/**
+ * The second layer of the alarm (plan §6 ⑦.1): conversation lines of a session's
+ * own file that became no record, matched by position (trajectory's ids for
+ * Codex are the line's byte offset).
+ */
+function unreadLines(text: string, produced: Set<string>, dropped: Set<number>, group: string, version: string | null, unread: TypeCounter): void {
+  let offset = 0;
+  text.split("\n").forEach((line, i) => {
+    const at = offset;
+    offset += Buffer.byteLength(line, "utf8") + 1;
+    if (!line.trim()) return;
+    let o: { type?: unknown; payload?: { type?: unknown } } | null = null;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      return; // counted as "(not JSON)" already
+    }
+    if (!o || typeof o !== "object") return;
+    const key = typeKey(o.type, o.payload && typeof o.payload === "object" ? o.payload.type : undefined);
+    if (!codexProfile.conversation.includes(key)) return;
+    if (produced.has(locationId(group, at)) || dropped.has(i) || codexProfile.expectedDrop(o as Record<string, unknown>)) return;
+    unread.add(key, null, version);
+  });
 }
 
 interface ChainRecord {
@@ -133,21 +160,23 @@ interface ChainRecord {
  * points to, cut at the recorded byte offset, then the file's own records. A
  * rollback's base is the session's previous file; a fork's is its parent's file.
  */
-function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | undefined, depth: number, top = ctx.sessionId): ChainRecord[] {
+function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | undefined, depth: number, unread: TypeCounter, top = ctx.sessionId): ChainRecord[] {
   const out: ChainRecord[] = [];
   const base = file.meta.history_base;
   if (base?.thread_id && typeof base.end_byte_offset === "number" && depth < 8) {
     const baseId = base.thread_id.toLowerCase();
     const candidates = (baseId === ctx.sessionId ? own : ctx.filesOf(baseId).map(load)).filter((f) => f !== file && f.path !== file.path && byAge(f, file) < 0);
     const baseFile = candidates.sort(byAge).at(-1);
-    if (baseFile) out.push(...chain(baseFile, baseId === ctx.sessionId ? own : candidates, { ...ctx, sessionId: baseId }, base.end_byte_offset, depth + 1, top));
+    if (baseFile) out.push(...chain(baseFile, baseId === ctx.sessionId ? own : candidates, { ...ctx, sessionId: baseId }, base.end_byte_offset, depth + 1, unread, top));
   }
   const text = (cut === undefined ? file.buf : file.buf.subarray(0, cut)).toString("utf8");
   const group = file.meta.id?.toLowerCase();
   const ownRecord = (group ?? ctx.sessionId) === top;
   // Ids are per file position; a rollback's later file gets its own prefix so they never collide.
   const uidOf = (id: string) => (file.tag ? `${file.tag}:${id}` : id);
-  const records = canonical(text, group, Boolean(base) && cut === undefined);
+  const { records, dropped } = canonical(text, group, Boolean(base) && cut === undefined);
+  const trajectoryGroup = records[0]?.source_group_id ?? group ?? ctx.sessionId;
+  if (ownRecord) unreadLines(text, new Set(records.map((c) => c.stable_source_record_id)), dropped, trajectoryGroup, file.meta.cli_version ?? null, unread);
   const mine: ChainRecord[] = [];
   for (const c of records) {
     const body = JSON.parse(c.record_json) as Body;
@@ -166,7 +195,7 @@ function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | u
       },
     });
   }
-  markCompactions(text, records, mine, records[0]?.source_group_id ?? group ?? ctx.sessionId, uidOf, ownRecord);
+  markCompactions(text, records, mine, trajectoryGroup, uidOf, ownRecord);
   out.push(...mine);
   return out;
 }
@@ -322,7 +351,8 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
   const own = files.map(load).sort(byAge);
   const active = own.at(-1)!;
   // One meta record for the session: the oldest one in the chain.
-  const all = chain(active, own, ctx, undefined, 0);
+  const unread = new TypeCounter({});
+  const all = chain(active, own, ctx, undefined, 0, unread);
   const firstMeta = all.findIndex((r) => r.rec.role === "meta");
   const records = all.filter((r, i) => r.rec.role !== "meta" || i === firstMeta);
   const turns = assignTurns(records.map((r) => r.kind));
@@ -347,6 +377,7 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
     },
     records: out,
     unknown: unknownTypes(own).list(),
+    unread: unread.list(),
   };
 }
 

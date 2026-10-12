@@ -64,3 +64,23 @@ export class TypeCounter {
     return [...this.counts.values()];
   }
 }
+
+/**
+ * trajectory's diagnostics for lines it drops on purpose (a subagent's lines in
+ * the parent file, harness noise, injected context): not something meme failed
+ * to read (the second layer of the alarm, plan §6 ⑦.1).
+ */
+export const TRAJECTORY_DROPS = new Set(["sidechain_record_dropped", "noise_record_dropped", "injected_context_dropped"]);
+
+/** The 0-based line indexes trajectory says it dropped on purpose. */
+export function droppedLines(diagnostics: { code: string; inputLine?: number }[]): Set<number> {
+  const out = new Set<number>();
+  for (const d of diagnostics) if (TRAJECTORY_DROPS.has(d.code) && d.inputLine) out.add(d.inputLine - 1);
+  return out;
+}
+
+/** A record type's key: `type`, or `type/subtype` (Claude Code's system lines) or `type/payload.type` (Codex). */
+export function typeKey(type: unknown, sub: unknown): string {
+  const t = typeof type === "string" ? type : "(no type)";
+  return typeof sub === "string" ? `${t}/${sub}` : t;
+}

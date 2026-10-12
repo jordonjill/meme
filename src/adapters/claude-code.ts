@@ -8,7 +8,7 @@ import { assignTurns } from "../model/turns";
 import type { Platform } from "../platform/paths";
 import { toHost } from "../platform/wsl";
 import { claudeCodeProfile } from "./claude-code.profile";
-import { parseLines, readJsonl, TypeCounter } from "./read";
+import { droppedLines, parseLines, readJsonl, TypeCounter, typeKey } from "./read";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "claude-code" as const;
@@ -192,11 +192,13 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
   }
 
   const merged: { rec: ConvertedRecord; kind: UserKind | null; restored?: boolean }[] = [];
+  const repeats = new Set<string>();
   let next = 0;
   const flushCommands = (beforeLine: number) => {
     while (next < commands.length && commands[next]!.line < beforeLine) {
       const rec = commands[next++]!.rec;
       if (!repeatsTypedCommand(rec)) merged.push({ rec, kind: "prompt", restored: true });
+      else if (rec.uid) repeats.add(rec.uid);
     }
   };
   // `/compact` is written twice: as typed before compacting, and as a command line
@@ -209,7 +211,8 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     }
     return false;
   };
-  for (const c of canonical(text, ctx.sessionId)) {
+  const { records: canon, dropped } = canonical(text, ctx.sessionId);
+  for (const c of canon) {
     const body = JSON.parse(c.record_json) as Body;
     const raw = c.source_identity_kind === "native" ? byUuid.get(c.stable_source_record_id) : undefined;
     if (raw) flushCommands(raw.index);
@@ -233,6 +236,21 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
 
   const turns = assignTurns(merged.map((m) => m.kind));
   const records = merged.map((m, i) => ({ ...m.rec, turn: turns[i]! }));
+
+  // The second layer of the alarm (plan §6 ⑦.1): conversation lines that became no
+  // record. Matched by uuid; meme skips a subagent's lines and the repeated /compact.
+  const unread = new TypeCounter({});
+  const produced = new Set(merged.map((m) => m.rec.uid));
+  let lineVersion: string | null = null;
+  for (const { index, obj } of parsed) {
+    lineVersion = str(obj.version) ?? lineVersion;
+    const key = typeKey(obj.type, obj.subtype);
+    if (!claudeCodeProfile.conversation.includes(key)) continue;
+    const uuid = str(obj.uuid);
+    if (uuid && (produced.has(uuid) || repeats.has(uuid))) continue;
+    if (obj.isSidechain === true || dropped.has(index) || claudeCodeProfile.expectedDrop(obj)) continue;
+    unread.add(key, null, lineVersion);
+  }
   const prompts = merged.filter((m) => m.kind === "prompt").map((m) => (m.rec.body as { content: string }).content);
 
   return {
@@ -251,6 +269,7 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     },
     records,
     unknown: types.list(),
+    unread: unread.list(),
   };
 }
 
@@ -271,19 +290,21 @@ function commandOf(obj: Record<string, unknown>): string | null {
  * Canonical records carry the source line's `uuid` (plan §4.6.2). A session with
  * no conversation at all (only `/model`, say) is not an error: it has no records.
  */
-function canonical(text: string, sessionId: string): CanonicalRecord[] {
-  const run = (groupId?: string) =>
-    normalizeToCanonical({
+function canonical(text: string, sessionId: string): { records: CanonicalRecord[]; dropped: Set<number> } {
+  const run = (groupId?: string) => {
+    const r = normalizeToCanonical({
       source: "claude-code",
       transcript: text,
       bounds: BOUNDS,
       ...(groupId ? { sourceContext: { groupId } } : {}),
-    }).records;
+    });
+    return { records: r.records, dropped: droppedLines(r.diagnostics) };
+  };
   try {
     return run(sessionId);
   } catch (err) {
     if (err instanceof NormalizationError) {
-      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return [];
+      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return { records: [], dropped: new Set() };
       if (err.code === "source_group_conflict") return run();
     }
     throw err;

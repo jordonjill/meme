@@ -49,6 +49,8 @@ export interface Converted {
   records: ConvertedRecord[];
   /** Lines of record types its profile does not list (arch.md §6.1, point 4). */
   unknown: UnknownType[];
+  /** Lines of types it lists as conversation that became no record, for no known reason (the second layer). */
+  unread: UnknownType[];
 }
 
 /** Lines of one record type meme does not know, and the agent version that wrote them. */
@@ -246,4 +248,12 @@ export interface Profile {
    * point 4). Keys are `type` or `type/subtype`.
    */
   recordTypes: Record<string, string>;
+  /**
+   * The second layer of the alarm: record types whose every line should become
+   * at least one record. A line that becomes none is counted, unless trajectory
+   * says it dropped it on purpose or `expectedDrop` gives a reason.
+   */
+  conversation: string[];
+  /** Why a line of a conversation type may become no record (nothing in it, the harness's); null when there is no such reason. */
+  expectedDrop(line: Record<string, unknown>): string | null;
 }
