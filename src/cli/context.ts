@@ -35,26 +35,44 @@ export interface WslStopped {
  * date. On Windows, asking `wsl.exe` which distributions run starts first and is
  * awaited after the Windows sessions are synced; WSL's come second (plan step 5).
  */
+/**
+ * How long the parts of this run took, in milliseconds since the process started
+ * or as durations; `meme.log` gets them when a run is slow (plan §6 ⑧.3).
+ */
+export const timings: { open?: number; import?: number; wsl?: number; importWsl?: number; ready?: number } = {};
+
 export async function createContext(): Promise<Context> {
   const platform = currentPlatform();
   const distros = platform.env === "win" ? runningDistros(platform) : null;
   const log = fileLogger(platform.dataDir);
+  let t = performance.now();
+  const lap = () => {
+    const now = performance.now();
+    const took = now - t;
+    t = now;
+    return took;
+  };
   const store = openStore(platform.dataDir);
+  timings.open = lap();
   let imported: ImportResult | null = null;
   let running: string[] = [];
   try {
     imported = importAll(store, platform, ADAPTERS, log);
+    timings.import = lap();
     // wsl.exe has been answering meanwhile.
     running = distros ? await distros : [];
+    if (distros) timings.wsl = lap();
     if (running.length) {
       platform.wsl = wslHomes(platform, running);
       if (platform.wsl.length) imported = addUp(imported, importAll(store, platform, ADAPTERS, log, (root) => Boolean(root.wsl)));
+      timings.importWsl = lap();
     }
   } catch (err) {
     // An import failure must not stop the command: use what the store has.
     log.error("import failed", err);
   }
   if (distros) running = await distros;
+  timings.ready = performance.now();
   const now = Date.now();
   return {
     platform,

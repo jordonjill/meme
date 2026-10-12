@@ -4,6 +4,7 @@ import { fileLogger } from "../platform/log";
 import { currentPlatform } from "../platform/paths";
 import { LookupError } from "../store/queries";
 import { CommandError, UsageError } from "./args";
+import { timings } from "./context";
 import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
@@ -41,7 +42,42 @@ Commands:
 Run \`meme <command> --help\` for a command's options.
 `;
 
+/** A run this slow leaves a line in `meme.log` with how long each part took (plan §6 ⑧.3); `MEME_SLOW_MS` sets it for tests. */
+const SLOW_MS = 2000;
+
+/**
+ * In a terminal the user may take their time choosing (the list, a [y/N]): only
+ * the part before the command itself counts there.
+ */
+function logIfSlow(argv: string[], begun: number): void {
+  const platform = currentPlatform();
+  const limit = Number(platform.vars.MEME_SLOW_MS || SLOW_MS);
+  const end = process.stdout.isTTY && timings.ready !== undefined ? timings.ready : performance.now();
+  if (end < limit) return;
+  const ms = (n: number | undefined) => (n === undefined ? null : Math.round(n));
+  const parts: [string, number | null][] = [
+    ["start", ms(begun)],
+    ["open", ms(timings.open)],
+    ["import", ms(timings.import)],
+    ["wsl.exe", ms(timings.wsl)],
+    ["import WSL", ms(timings.importWsl)],
+    ["command", timings.ready === undefined ? null : ms(end - timings.ready)],
+  ];
+  const shown = parts.filter(([, n]) => n !== null).map(([k, n]) => `${k} ${n}`);
+  fileLogger(platform.dataDir).info(`slow: meme ${argv.join(" ")} took ${Math.round(end)}ms (${shown.join(", ")})`);
+}
+
 export async function main(argv: string[]): Promise<number> {
+  // Milliseconds since the process started: what Windows and the runtime took before meme's own code.
+  const begun = performance.now();
+  try {
+    return await run(argv);
+  } finally {
+    logIfSlow(argv, begun);
+  }
+}
+
+async function run(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (!command || command === "help" || command === "-h" || command === "--help") {
     const topic = command === "help" && rest[0] ? COMMANDS[rest[0]] : undefined;
