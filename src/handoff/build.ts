@@ -328,7 +328,12 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     plural(lastN, "turn"),
     `last turn: ${ending}`,
   ].filter(Boolean);
-  const head = [`# Handoff: ${s.title ?? "(untitled)"}`, `Source: ${facts.join(" · ")}`];
+  const head = [
+    `# Handoff: ${s.title ?? "(untitled)"}`,
+    `Source: ${facts.join(" · ")}`,
+    // Always within the first 2KB, which is what an agent shows of an output it saves to a file (plan §6 ⑧.3).
+    "If your tool saved this output to a file, read the whole file before you reply.",
+  ];
   const away = input.away;
   if (away) {
     head.push(

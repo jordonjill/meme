@@ -11,6 +11,7 @@ import { LONG_OUTPUTS } from "../model/formats";
 import { commandOf, resultText } from "../model/tools";
 import { groupTurns, kindOf } from "../model/turns";
 import type { SessionRow } from "../store/queries";
+import { parts } from "./commands";
 
 export interface Message {
   /** The turn it started, in its own session. */
@@ -36,10 +37,33 @@ export type Lookup = (ref: string, before: string | null) => { session: SessionR
 const HEADER = /^# Handoff: [^\n]*\r?\nSource: [^\n]*?\bsession ([0-9a-f]{4,36})\b/;
 /** `meme continue <target>` on its own: how a handoff is pulled, by the user with `!` or by the agent. */
 const PULL = /^\s*(?:\S*[\\/])?meme(?:\.exe)?\s+continue(?:\s+[^\s|&;<>`$()]+)*\s*$/;
+/** At most this many lines may come before a handoff's header: what the command printed first (`command -v meme`). */
+const LINES_BEFORE = 5;
 /** 2026-10-10, development only: the first message attached a handoff file named after the session. */
 const HANDOFF_FILE = /^@\S*?[\\/]\.meme[\\/]handoffs[\\/]([0-9a-f]{8})-\d{8}-\d{4}\.md$/;
 /** The first message meme starts an agent with (plan §2.3, the agents' profiles), up to the command. */
 const LAUNCHES = PROFILES.map((p) => p.firstMessage("\u0000").split("\u0000")[0]! + "meme continue ");
+
+/** The session a launch message asks the agent to hand over, e.g. `7e629e49`. */
+function launchTarget(prompt: string): string | null {
+  const l = LAUNCHES.find((x) => prompt.startsWith(x));
+  return l ? (/^[0-9a-f][0-9a-f-]{3,}/i.exec(prompt.slice(l.length))?.[0]?.toLowerCase() ?? null) : null;
+}
+
+/**
+ * In a turn meme started with its launch message, the agent may wrap the command
+ * it was asked to run (`2>&1 | head -200`, `command -v meme;` before it): B4 of
+ * the step 5 checks, plan §6 ⑧.3. One of the segments runs `meme continue <target>`.
+ * Elsewhere such a command is someone looking at a handoff, not taking one over.
+ */
+function pullsTarget(command: string, target: string): boolean {
+  return parts(command).some((p) => {
+    const [name = "", sub, ref = ""] = p.words;
+    const r = ref.toLowerCase();
+    return /^meme(?:\.exe)?$/i.test(name.split(/[\\/]/).pop()!) && sub === "continue" && r.length >= 4 && (r.startsWith(target) || target.startsWith(r));
+  });
+}
+
 const MAX_DEPTH = 8;
 
 /**
@@ -67,23 +91,32 @@ interface Found {
 }
 
 /**
- * The handoff a command printed, if its output is one: meme's notes on stderr and
- * an agent's note on a long output ("Output too large … Preview") may come first.
+ * The handoff a command printed, if its output is one: meme's notes on stderr, an
+ * agent's note on a long output ("Output too large … Preview") and a few lines the
+ * command printed first may come before it.
  */
 function handoffOutput(output: string): string | null {
   const text = LONG_OUTPUTS.reduce((t, re) => t.replace(re, ""), output).replace(/^(?:meme: [^\n]*\n)+/, "");
-  return HEADER.test(text) ? text : null;
+  let at = 0;
+  for (const line of text.split("\n", LINES_BEFORE + 1)) {
+    if (line.startsWith("# Handoff: ")) return HEADER.test(text.slice(at)) ? text.slice(at) : null;
+    at += line.length + 1;
+  }
+  return null;
 }
 
 /**
  * Handoffs pulled into these records, in order: the output of a plain `meme
- * continue …`, typed with `!` or run by the agent. A handoff merely shown on the
- * way (piped into `head`, read from a file, printed by a test) does not count.
+ * continue …`, typed with `!` or run by the agent, or of the command an agent ran
+ * for meme's launch message; when the agent saved a long output to a file, the
+ * preview it kept. A handoff merely shown on the way (piped into `head` while
+ * working, read from a file, printed by a test) does not count.
  */
 export function handoffsIn(records: Rec[]): Found[] {
   const out: Found[] = [];
   const commands = new Map<string, string>();
   let lastPrompt = "";
+  let target: string | null = null;
   const add = (r: Rec, output: string | null) => {
     const text = output === null ? null : handoffOutput(output);
     if (text) out.push({ ref: HEADER.exec(text)![1]!, ts: r.ts, text });
@@ -95,13 +128,15 @@ export function handoffsIn(records: Rec[]): Found[] {
       if (command) commands.set(call.id, command);
     }
     if (body.role === "tool") {
-      if (PULL.test(commands.get(body.tool_call_id) ?? "")) add(r, resultText(body.content));
+      const command = commands.get(body.tool_call_id) ?? "";
+      if (PULL.test(command) || (target && pullsTarget(command, target))) add(r, resultText(body.content));
       continue;
     }
     if (body.role !== "user") continue;
     const kind = kindOf(r);
     if (kind === "prompt") {
       lastPrompt = promptText(body.content).trim();
+      target = launchTarget(lastPrompt);
       const file = HANDOFF_FILE.exec(lastPrompt);
       if (file) out.push({ ref: file[1]!, ts: r.ts, text: null });
       // Some agents record a `!` command and its output together.
