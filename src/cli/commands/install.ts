@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import pkg from "../../../package.json";
-import { ADAPTERS } from "../../adapters";
+import { ADAPTERS, installedAt } from "../../adapters";
 import { PROFILES } from "../../adapters/profiles";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
@@ -55,7 +55,7 @@ export async function install(argv: string[]): Promise<number> {
         try {
           n = plural(adapter.listFiles(root).length, "session file");
         } catch {
-          n = "not readable";
+          n = installedAt(root) ? "not readable" : "not installed";
         }
         table.push([label(root.agent, root.env), displayPath(root.path, home), n]);
       }
@@ -64,7 +64,8 @@ export async function install(argv: string[]): Promise<number> {
   } else {
     const ctx = await createContext();
     for (const s of sources(ctx.store.db)) {
-      table.push([label(s.agent, s.env), displayPath(s.root, home), s.reachable ? plural(s.sessions, "session") : "not readable"]);
+      const state = s.reachable ? plural(s.sessions, "session") : installedAt({ agent: s.agent, env: s.env, path: s.root }) ? "not readable" : "not installed";
+      table.push([label(s.agent, s.env), displayPath(s.root, home), state]);
     }
     const c = counts(ctx.store.db);
     summary = `mirrored ${plural(c.sessions, "session")} into ${ctx.store.memory ? "memory (nothing here can be written)" : displayPath(ctx.store.file, home)}`;
