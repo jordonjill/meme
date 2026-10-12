@@ -1,6 +1,6 @@
 /** End to end: ls, show, search and status (see world.ts for the setup). */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { run, world } from "./world";
 
@@ -80,6 +80,28 @@ describe("meme CLI", () => {
     expect(r.out).toContain("Mirror:       2 sessions");
     expect(r.out).toMatch(/Claude·WSL +~\/\.claude\/projects +readable +1 session/);
     expect(r.out).toMatch(/Claude·Win +.*mnt-c-Users\/me\/\.claude\/projects +readable +1 session/);
+  });
+
+  test("an agent not installed is said so, and not logged on every run; installed but unreadable is NOT READABLE (plan §6 ⑧.3)", () => {
+    const w = world();
+    const log = path.join(w.home, ".meme", "logs", "meme.log");
+    const r = run(w, ["status"]);
+    expect(r.out).toMatch(/Codex·WSL +~\/\.codex +not installed +0 sessions\n/);
+    expect(readFileSync(log, "utf8")).not.toContain("source unreachable");
+    expect(run(w, ["install", "--dry-run"]).out).toMatch(/Codex·WSL +~\/\.codex +not installed\n/);
+    // Its home is there, its sessions folder is not.
+    mkdirSync(path.join(w.home, ".codex"));
+    expect(run(w, ["status"]).out).toMatch(/Codex·WSL +~\/\.codex +NOT READABLE \(nothing deleted\) +0 sessions\n/);
+    expect(readFileSync(log, "utf8")).toContain("source unreachable, nothing deleted: " + path.join(w.home, ".codex"));
+  });
+
+  test("a slow run leaves a line in meme.log with how long each part took (plan §6 ⑧.3)", () => {
+    const w = world();
+    const log = path.join(w.home, ".meme", "logs", "meme.log");
+    run(w, ["ls", "--plain"]);
+    expect(readFileSync(log, "utf8")).not.toContain("slow:");
+    run(w, ["ls", "--plain"], { env: { MEME_SLOW_MS: "0" } });
+    expect(readFileSync(log, "utf8")).toMatch(/ INFO slow: meme ls --plain took \d+ms \(start \d+, open \d+, import \d+, command \d+\)\n/);
   });
 
   test("the Windows side going away deletes nothing", () => {

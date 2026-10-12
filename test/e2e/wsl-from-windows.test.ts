@@ -156,7 +156,7 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect(fake.calls().map((c) => c.split(" -e ")[0])).toEqual(["-d Ubuntu --cd /home/u/work/app/src", "-d Ubuntu --cd /home/u/work/app/src"]);
     expect(fake.agent().cwd).toBe(path.join(ubuntu, "home", "u", "work", "app", "src"));
     expect(fake.agent().args).toEqual([
-      "Continue an earlier session: run `meme continue a5a5a5a5` and follow the instructions at the top of its output.",
+      "Continue an earlier session: run `meme continue a5a5a5a5` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.",
       "--allowedTools",
       "Bash(meme:*)",
     ]);
@@ -197,5 +197,48 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect(r.out).toContain("✓ c0dec0de deleted");
     expect(fake.calls().at(-1)).toStartWith(`-d Ubuntu --cd /home/u -e sh -c`);
     expect(readFileSync(path.join(w.home, "codex-cwd.log"), "utf8").trim().split("\n")).toEqual([path.join(ubuntu, "home", "u"), path.join(ubuntu, "home", "u")]);
+  });
+
+  test("a slow run's line in meme.log has the wait for wsl.exe and the WSL import too", () => {
+    const { w, env } = wslWorld();
+    run(w, ["ls", "-a", "--plain"], { env: { ...env, MEME_SLOW_MS: "0" } });
+    expect(readFileSync(path.join(w.home, ".meme", "logs", "meme.log"), "utf8")).toMatch(/slow: meme ls -a --plain took \d+ms \(start \d+, open \d+, import \d+, wsl\.exe \d+, import WSL \d+, command \d+\)/);
+  });
+
+  test("forget refuses a Windows session open in Claude Code on Windows: tasklist.exe in %SystemRoot%\\System32 says its process runs", () => {
+    const { w, env } = wslWorld();
+    // On Windows, ~/.claude/projects is Windows' own; the world's session 11111111 is there.
+    const sessions = path.join(w.home, ".claude", "sessions");
+    mkdirSync(sessions, { recursive: true });
+    writeFileSync(path.join(sessions, "6000.json"), JSON.stringify({ pid: 6000, sessionId: w.wsl.id, procStart: "133706", version: "2.1.296" }));
+    const system32 = path.join(w.home, "Windows", "System32");
+    mkdirSync(system32, { recursive: true });
+    const listed = path.join(w.home, "tasklist-pids");
+    writeFileSync(path.join(system32, "tasklist.exe"), ["#!/bin/sh", `for p in $(cat "${listed}"); do printf '"node.exe","%s","Console","1","1 K"\\r\\n' "$p"; done`].join("\n"));
+    chmodSync(path.join(system32, "tasklist.exe"), 0o755);
+    const winEnv = { ...env, SystemRoot: path.join(w.home, "Windows") };
+    writeFileSync(listed, "4 6000");
+    const r = run(w, ["forget", "1111", "--yes"], { env: winEnv });
+    expect([r.code, r.err]).toEqual([1, "meme: 11111111 is open in Claude Code (Windows, process 6000). Close it there first. Nothing deleted.\n"]);
+    writeFileSync(listed, "4 7000");
+    expect(run(w, ["forget", "1111"], { env: winEnv }).err).not.toContain("is open");
+  });
+
+  test("forget refuses a WSL session open in Claude Code there: its process is read through \\\\wsl.localhost\\<distro>\\proc (plan §6 ⑧.3)", () => {
+    const { w, ubuntu, env } = wslWorld();
+    const sessions = path.join(ubuntu, "home", "u", ".claude", "sessions");
+    mkdirSync(sessions, { recursive: true });
+    writeFileSync(path.join(sessions, "5088.json"), JSON.stringify({ pid: 5088, sessionId: WSL_ID, procStart: "43704", version: "2.1.296" }));
+    // `pid (comm) state ppid`, fields 5–21, then field 22: the start time.
+    const stat = (start: string) => `5088 (claude (main)) S 1 ${Array.from({ length: 17 }, (_, i) => i + 5).join(" ")} ${start} 0 0 0\n`;
+    mkdirSync(path.join(ubuntu, "proc", "5088"), { recursive: true });
+    writeFileSync(path.join(ubuntu, "proc", "5088", "stat"), stat("43704"));
+    const r = run(w, ["forget", "a5a5", "--yes"], { env });
+    expect([r.code, r.err]).toEqual([1, "meme: a5a5a5a5 is open in Claude Code (WSL: Ubuntu, process 5088). Close it there first. Nothing deleted.\n"]);
+    // WSL restarted since, and pid 5088 is another process now.
+    writeFileSync(path.join(ubuntu, "proc", "5088", "stat"), stat("812"));
+    expect(run(w, ["forget", "a5a5"], { env }).err).not.toContain("is open");
+    rmSync(path.join(ubuntu, "proc", "5088"), { recursive: true });
+    expect(run(w, ["forget", "a5a5"], { env }).err).not.toContain("is open");
   });
 });

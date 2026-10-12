@@ -178,14 +178,15 @@ describe("handoff (plan §4.6.6)", () => {
 
   test("the limits: meme's 15,000 tokens, and the unit of the agent it goes to; the tightest of all when unknown", () => {
     expect(TOKEN_LIMIT).toBe(15_000);
-    expect(limitsIn(claudeCodeProfile)).toEqual({ tokens: 15_000, chars: 25_000 });
+    expect(limitsIn(claudeCodeProfile)).toEqual({ tokens: 15_000, bytes: 27_000 });
     expect(limitsIn(codexProfile)).toEqual({ tokens: 15_000, bytes: 36_000 });
-    expect(limitsIn(null)).toEqual({ tokens: 15_000, chars: 25_000, bytes: 36_000 });
-    // 30,000 English characters: too many for Claude Code, fine for Codex (30,000 bytes).
+    expect(limitsIn(null)).toEqual({ tokens: 15_000, bytes: 27_000 });
+    // 30,000 English characters (30,000 bytes): too many for Claude Code, fine for Codex.
     const en = measure("a".repeat(30_000));
     expect([within(en, limitsIn(claudeCodeProfile)), within(en, limitsIn(codexProfile)), within(en, limitsIn(null))]).toEqual([false, true, false]);
-    // 13,000 CJK characters: 39,000 bytes, too many for Codex; fine for Claude Code (13,000 tokens and characters).
-    const zh = measure("接".repeat(13_000));
-    expect([within(zh, limitsIn(claudeCodeProfile)), within(zh, limitsIn(codexProfile))]).toEqual([true, false]);
+    // 8,000 CJK characters are 24,000 bytes, fine for both; 10,000 are 30,000 bytes, only for Codex.
+    const zh = (n: number) => measure("接".repeat(n));
+    expect([within(zh(8_000), limitsIn(claudeCodeProfile)), within(zh(8_000), limitsIn(codexProfile))]).toEqual([true, true]);
+    expect([within(zh(10_000), limitsIn(claudeCodeProfile)), within(zh(10_000), limitsIn(codexProfile))]).toEqual([false, true]);
   });
 });

@@ -92,8 +92,9 @@ describe.skipIf(process.platform === "win32")("where a session is continued (arc
       `Note: This session ran in ${path.join(work, "meme")} (WSL). You are in ${path.join(work, "notes")}, which is not that repository. ` +
         "Ask the user where to work before changing anything. They can also run `meme continue aaaa0001` in a terminal to open an agent in the right place.",
     );
-    // Right after the Source line.
-    expect(r.out.split("\n")[2]).toStartWith("Note: This session ran in");
+    // Right after the Source line and the line on saved outputs.
+    expect(r.out.split("\n")[2]).toBe("If your tool saved this output to a file, read the whole file before you reply.");
+    expect(r.out.split("\n")[3]).toStartWith("Note: This session ran in");
   });
 
   test("5: another clone of the same repository is another place", () => {

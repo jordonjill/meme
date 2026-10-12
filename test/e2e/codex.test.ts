@@ -58,17 +58,16 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     const claude = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"], { env: { CLAUDECODE: "1" } });
     const inside = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"], { env: { CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-0000000000ff" } });
     const unknown = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bb"]);
-    // Claude Code counts characters: Chinese text may take more than 36,000 bytes there.
-    expect(Buffer.byteLength(claude.out)).toBeGreaterThan(36_000);
-    expect(claude.out.length).toBeLessThanOrEqual(25_000);
+    // Claude Code saves an output over about 30,000 bytes to a file: 27,000 there, 36,000 in Codex.
+    expect(Buffer.byteLength(claude.out)).toBeLessThanOrEqual(27_000);
+    expect(Buffer.byteLength(inside.out)).toBeGreaterThan(27_000);
     expect(Buffer.byteLength(inside.out)).toBeLessThanOrEqual(36_000);
     expect(inside.out).toContain("\n1. 第 1 步：");
     expect(inside.out).toContain("\n60. 第 60 步：");
-    // Not knowing the agent: 25,000 characters and 36,000 bytes both.
-    expect(Buffer.byteLength(unknown.out)).toBeLessThanOrEqual(36_000);
-    expect(unknown.out.length).toBeLessThanOrEqual(25_000);
+    // Not knowing the agent: the tightest, 27,000 bytes.
+    expect(Buffer.byteLength(unknown.out)).toBeLessThanOrEqual(27_000);
 
-    // English text: inside Codex it may go over 25,000 characters, never over 36,000 bytes.
+    // English text: inside Codex it may go over 27,000 bytes, never over 36,000.
     const en = new CodexSession({ id: "c0dec0de-0000-4000-8000-0000000000bc", cwd: demoDir(w) });
     for (let i = 1; i <= 80; i++) {
       en.user(`step ${i}: ` + "keep tidying the import module and say what changed in this step. ".repeat(8));
@@ -76,9 +75,9 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     }
     en.write(path.join(w.home, ".codex"));
     const enCodex = run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bc"], { env: { CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-0000000000ff" } }).out;
-    expect(enCodex.length).toBeGreaterThan(25_000);
+    expect(Buffer.byteLength(enCodex)).toBeGreaterThan(27_000);
     expect(Buffer.byteLength(enCodex)).toBeLessThanOrEqual(36_000);
-    expect(run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bc"], { env: { CLAUDECODE: "1" } }).out.length).toBeLessThanOrEqual(25_000);
+    expect(Buffer.byteLength(run(w, ["continue", "c0dec0de-0000-4000-8000-0000000000bc"], { env: { CLAUDECODE: "1" } }).out)).toBeLessThanOrEqual(27_000);
   });
 
   test("push to Codex: codex starts in the project and is asked to run meme continue itself", () => {
@@ -90,7 +89,7 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     expect(r.out).toBe("Continuing 11111111 (Status line setup) in Codex, in ~/work/demo\n");
     expect(fake.cwd()).toBe(demoDir(w));
     expect(fake.args()).toEqual([
-      "Continue an earlier session: run `meme continue 11111111` (its output can be up to 10,000 tokens; allow that much) and follow the instructions at the top of its output.",
+      "Continue an earlier session: run `meme continue 11111111` exactly as written, with no pipe or other command around it (its output can be up to 10,000 tokens; allow that much), and follow the instructions at the top of its output.",
     ]);
   });
 
@@ -100,6 +99,6 @@ describe.skipIf(process.platform === "win32")("Codex sessions", () => {
     const fake = fakeAgent(w, "claude");
     const r = run(w, ["continue", "c0dec0de", "--in", "claude"], { env: { PATH: `${fake.bin}:/usr/bin:/bin`, MEME_TERMINAL: "1" } });
     expect(r.out).toBe("Continuing c0dec0de (codex lab) in Claude Code, in ~/work/demo\n");
-    expect(fake.args()[0]).toBe("Continue an earlier session: run `meme continue c0dec0de` and follow the instructions at the top of its output.");
+    expect(fake.args()[0]).toBe("Continue an earlier session: run `meme continue c0dec0de` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.");
   });
 });

@@ -517,6 +517,52 @@ describe("A1: the relay chain", () => {
     expect(parseHandoff(handoffA, "dddd4444")!.messages).toEqual([{ n: 1, text: "Port the tests to vitest" }]);
   });
 
+  const LAUNCH = "Continue an earlier session: run `meme continue aaaa1111` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.";
+
+  /** Whether A counts as handed over into B, whose turn began with `prompt` and ran `command`, which printed `output(handoff)`. */
+  function pulledBy(command: string, output: (handoff: string) => string, prompt = LAUNCH) {
+    resetIds();
+    const w = world();
+    const a = new ClaudeSession({ id: "aaaa1111-0000-4000-8000-000000000001", cwd: "/work/relay", start: "2026-10-01T08:00:00.000Z" });
+    a.user("Write a CSV importer for the orders table");
+    a.assistant("Wrote import.py.");
+    w.claude(a);
+    const b = new ClaudeSession({ id: "bbbb2222-0000-4000-8000-000000000002", cwd: "/work/relay", start: "2026-10-02T08:00:00.000Z" });
+    b.user(prompt);
+    b.tool("Bash", { command }, output(w.handoff(a.id).text));
+    b.assistant("Summary of A. Shall I go on?");
+    b.user("Yes, and add a dry-run flag");
+    w.claude(b);
+    return w.handoff(b.id).text.includes("## Earlier session aaaa1111 (handed over into this one)");
+  }
+
+  test("asked by meme's launch message, the agent wrapped the command, or saved its output to a file: still a handoff (plan §6 ⑧.3)", () => {
+    // As B4 of the step 5 checks had it (7373e17e): a command before it, `2>&1 | head` after.
+    const wrapped = "(command -v meme || ls ~/.local/bin/meme dist/ 2>/dev/null); meme continue aaaa1111 2>&1 | head -c 200000";
+    expect(pulledBy(wrapped, (h) => "/home/u/.local/bin/meme\n" + h)).toBe(true);
+    // Claude Code kept a 2KB preview and saved the rest.
+    const saved = (h: string) =>
+      "<persisted-output>\nOutput too large (37.6KB). Full output saved to: /home/u/.claude/projects/-work-relay/bbbb2222/tool-results/b1.txt\n\nPreview (first 2KB):\n" +
+      "/home/u/.local/bin/meme\n" + h.slice(0, 2000) + "\n...\n</persisted-output>";
+    expect(pulledBy(wrapped, saved)).toBe(true);
+    // 39390dea (10-10): the full id is fine too.
+    expect(pulledBy("meme continue aaaa1111-0000-4000-8000-000000000001 2>&1 | head -200", (h) => h)).toBe(true);
+    // The old launch message, before it said "exactly as written".
+    expect(pulledBy("meme continue aaaa1111 | head -50", (h) => h, "Continue an earlier session: run `meme continue aaaa1111` and follow the instructions at the top of its output.")).toBe(true);
+  });
+
+  test("a handoff looked at, not taken over: wrapped outside a launch turn, another session, read from a file, or after more than 5 other lines", () => {
+    // The design window, 10-12 (9580fc64 turn 3): the same command, in a turn the user began.
+    expect(pulledBy("cd /work/notes; meme continue aaaa1111 2>&1 | head -60", (h) => h, "How does meme hand over a session? Look at a real one")).toBe(false);
+    expect(pulledBy("meme continue aaaa1111", (h) => h, "How does meme hand over a session? Look at a real one")).toBe(true);
+    expect(pulledBy("meme continue aaaa | head -60", (h) => h, LAUNCH.replace("aaaa1111", "cccc3333"))).toBe(false);
+    expect(pulledBy("cat /tmp/handoff.md", (h) => h)).toBe(false);
+    expect(pulledBy("meme continue aaaa1111 > /tmp/h.md; wc -c /tmp/h.md", () => "21950 /tmp/h.md")).toBe(false);
+    expect(pulledBy("ls; meme continue aaaa1111", (h) => "a\nb\nc\nd\ne\nf\n" + h)).toBe(false);
+    expect(pulledBy("ls; meme continue aaaa1111", (h) => "a\nb\nc\nd\ne\n" + h)).toBe(true);
+    expect(pulledBy("bun test test/e2e/handover.test.ts", (h) => h)).toBe(false);
+  });
+
   test("meme's commands and launch messages", () => {
     expect(isMemeCommand("! meme continue 2")).toBe(true);
     expect(isMemeCommand("! meme ls -a")).toBe(true);

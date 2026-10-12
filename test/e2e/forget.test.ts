@@ -1,10 +1,11 @@
 /** End to end: meme forget, on synthetic sessions in a temporary HOME. */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { CodexSession, sampleCodex } from "../fixtures/gen-codex";
-import { run, world, type World } from "./world";
+import { statStart } from "../../src/platform/process";
+import { run, runInTerminal, SCRIPT, world, type World } from "./world";
 
 const MINIMAL_PATH = "/usr/bin:/bin";
 const demoDir = (w: World) => path.join(w.home, "work", "demo");
@@ -219,5 +220,88 @@ describe.skipIf(process.platform === "win32")("meme forget: Codex", () => {
     expect(both.code).toBe(0);
     const calls = readFileSync(path.join(w.home, "codex-calls.log"), "utf8").split("\n").filter((l) => l.startsWith("delete --force"));
     expect(calls).toEqual([`delete --force ${forkId}`, `delete --force ${parentId}`]);
+  });
+});
+
+/** Claude Code's list of open sessions (2.1.296): `<home>/sessions/<pid>.json`. */
+function register(claudeDir: string, pid: number, sessionId: string, procStart: string | null): string {
+  const dir = path.join(claudeDir, "sessions");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${pid}.json`);
+  writeFileSync(file, JSON.stringify({ pid, sessionId, cwd: "/home/u/work/demo", startedAt: Date.now(), procStart, version: "2.1.296", kind: "interactive", status: "idle" }));
+  return file;
+}
+
+/** A process that runs until the test ends, and when it started (field 22 of its /proc stat). */
+function liveProcess(): { pid: number; started: string; stop: () => void } {
+  const p = Bun.spawn(["sleep", "60"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  return { pid: p.pid, started: statStart(readFileSync(`/proc/${p.pid}/stat`, "utf8"))!, stop: () => p.kill() };
+}
+
+describe.skipIf(process.platform !== "linux")("meme forget: sessions open in an agent (plan §6 ⑧.3)", () => {
+  test("open in Claude Code here: refused, even with --yes; once its process is gone, deleted", async () => {
+    const w = world();
+    const live = liveProcess();
+    try {
+      register(claudeHome(w), live.pid, w.wsl.id, live.started);
+      const r = run(w, ["forget", "1111", "--yes"]);
+      expect([r.code, r.err]).toEqual([1, `meme: 11111111 is open in Claude Code (WSL, process ${live.pid}). Close it there first. Nothing deleted.\n`]);
+      expect(r.out).toBe("");
+      expect(run(w, ["ls", "-a", "--plain"]).out).toContain("11111111");
+    } finally {
+      live.stop();
+    }
+    await Bun.sleep(50);
+    // It was killed, so its file is still there: the process decides, not the file.
+    const r = run(w, ["forget", "1111", "--yes"]);
+    expect(r.err).not.toContain("is open");
+    expect(r.code).toBe(0);
+    expect(run(w, ["ls", "-a", "--plain"]).out).not.toContain("11111111");
+  });
+
+  test("a pid now used by another process, a broken file, no start time recorded", () => {
+    const w = world();
+    const live = liveProcess();
+    try {
+      const file = register(claudeHome(w), live.pid, w.wsl.id, String(Number(live.started) + 1));
+      expect(run(w, ["forget", "1111"]).err).not.toContain("is open");
+      writeFileSync(file, "{ not json");
+      expect(run(w, ["forget", "1111"]).err).not.toContain("is open");
+      unlinkSync(file);
+      // No start time to compare: the pid alone.
+      register(claudeHome(w), live.pid, w.wsl.id, null);
+      expect(run(w, ["forget", "1111"]).err).toContain("11111111 is open in Claude Code");
+    } finally {
+      live.stop();
+    }
+  });
+
+  test("the list says which sessions are open", () => {
+    if (!SCRIPT) return;
+    const w = world();
+    const live = liveProcess();
+    try {
+      register(claudeHome(w), live.pid, w.wsl.id, live.started);
+      const r = runInTerminal(w, ["forget"], "\x1b");
+      expect(r.out).toContain("open now");
+    } finally {
+      live.stop();
+    }
+  });
+
+  test("a Windows session open in Claude Code on Windows, from WSL: tasklist.exe says whether its process runs", () => {
+    const w = world();
+    const bin = path.join(w.home, "fake-bin");
+    mkdirSync(bin, { recursive: true });
+    const listed = path.join(w.home, "tasklist-pids");
+    writeFileSync(path.join(bin, "tasklist.exe"), ["#!/bin/sh", `for p in $(cat "${listed}"); do printf '"node.exe","%s","Console","1","123,456 K"\\r\\n' "$p"; done`].join("\n"));
+    chmodSync(path.join(bin, "tasklist.exe"), 0o755);
+    register(path.join(w.users, "me", ".claude"), 4343, w.win.id, "999");
+    const env = { PATH: `${bin}:${MINIMAL_PATH}` };
+    writeFileSync(listed, "4 4343");
+    const r = run(w, ["forget", "2222", "--yes"], { env });
+    expect([r.code, r.err]).toEqual([1, "meme: 22222222 is open in Claude Code (Windows, process 4343). Close it there first. Nothing deleted.\n"]);
+    writeFileSync(listed, "4 5000");
+    expect(run(w, ["forget", "2222"], { env }).err).not.toContain("is open");
   });
 });

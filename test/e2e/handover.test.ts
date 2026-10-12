@@ -120,7 +120,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     expect(existsSync(path.join(w.home, ".meme", "handoffs"))).toBe(false);
   });
 
-  test("a long session's handoff stays within 25,000 characters, so Claude Code shows all of it", () => {
+  test("a long session's handoff stays within 27,000 bytes, so Claude Code does not save it to a file", () => {
     const w = world();
     const long = new ClaudeSession({ id: "88888888-0000-4000-8000-000000000008", cwd: demoDir(w) });
     for (let i = 1; i <= 120; i++) {
@@ -129,7 +129,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     }
     long.write(projects(w));
     const r = run(w, ["continue", "8888"]);
-    expect(r.out.length).toBeLessThanOrEqual(25_000);
+    expect(Buffer.byteLength(r.out)).toBeLessThanOrEqual(27_000);
     expect(r.out).toContain("\n1. step 1: ");
     expect(r.out).toContain("\n120. step 120: ");
     expect(r.out).toMatch(/messages left out \(turns \d+–\d+\); find them with `meme search/);
@@ -187,7 +187,7 @@ describe.skipIf(process.platform === "win32")("meme continue at a terminal", () 
     expect(r.out).toBe("Continuing 11111111 (Status line setup) in Claude Code, in ~/work/demo\n");
     expect(claude.cwd()).toBe(demoDir(w));
     expect(claude.args()).toEqual([
-      "Continue an earlier session: run `meme continue 11111111` and follow the instructions at the top of its output.",
+      "Continue an earlier session: run `meme continue 11111111` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.",
       "--allowedTools",
       "Bash(meme:*)",
     ]);
