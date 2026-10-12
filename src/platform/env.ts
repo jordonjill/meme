@@ -4,6 +4,9 @@ export type Env = "win" | "wsl" | "mac" | "linux";
 
 const ENVS: readonly Env[] = ["win", "wsl", "mac", "linux"];
 
+/** How a system is named to the user: "the session ran in /x (Windows)". */
+export const ENV_NAMES: Record<Env, string> = { win: "Windows", wsl: "WSL", mac: "macOS", linux: "Linux" };
+
 export function isEnv(v: unknown): v is Env {
   return typeof v === "string" && (ENVS as readonly string[]).includes(v);
 }

@@ -6,7 +6,7 @@
  */
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
-import type { Env } from "../platform/env";
+import { ENV_NAMES, type Env } from "../platform/env";
 import { isWindowsPath, pathKey, winToWsl, wslToWin, type Platform } from "../platform/paths";
 import { distroMountRoot, toHost, type WslPlace } from "../platform/wsl";
 
@@ -21,8 +21,6 @@ export interface Away {
   /** The session ran in a git repository (else: in a plain directory). */
   repo: boolean;
 }
-
-const ENV_NAMES: Record<Env, string> = { win: "Windows", wsl: "WSL", mac: "macOS", linux: "Linux" };
 
 /**
  * A session's start directory as a path where meme runs (rule 5): a Windows path
