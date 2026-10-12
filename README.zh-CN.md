@@ -57,6 +57,17 @@ Linux x64 和 Windows x64 两个版本实测过；macOS 和 Linux arm64 的版�
 
 ## 接着做一个会话
 
+记住三件事：
+
+1. **范围是一台机器。** Windows 和 WSL 算同一台，互相看得到会话。另一台电脑、SSH 服务器上的会话
+   暂不支持，请在会话所在的机器上接。
+2. **在哪用 Agent，就在哪装 meme。** Agent 里的 `! meme continue` 用的是 Agent 所在系统里的 meme。
+   只用 Windows 就装 Windows；只用 WSL 就装 WSL（也看得到 Windows 的会话）；两边都用就两边都装，
+   在一边删了会话，另一边下次运行时自动跟上。
+3. **默认在会话的项目里接。** 在项目里打开新 Agent，运行 `! meme continue`；或者在终端里运行
+   `meme continue` 选会话，meme 会在会话的目录里打开 Agent。在别的项目里接也行，交接内容开头会提醒，
+   Agent 会先问你在哪做。
+
 **在终端里**
 
 ```sh
@@ -65,7 +76,7 @@ meme continue 2        # 也可以直接指定：列表里的编号、id、last�
 meme continue last --in codex
 ```
 
-meme 在会话的项目目录里启动 Agent，第一条消息让它运行 `meme continue <id>`；
+meme 在会话原来的目录里打开 Agent，第一条消息让它运行 `meme continue <id>`；
 Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 **在 Agent 里**
@@ -77,6 +88,27 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 - 在 **Claude Code** 里，你选好以后，Agent 会自己运行这条命令。
 - 在 **Codex** 里，`!` 命令的输出只显示给你，不会交给模型，所以运行后要再说一句"继续"。
+
+**我想……**
+
+| 我想 | 怎么做 |
+|---|---|
+| 同一个项目换一家 Agent | 在项目里打开新 Agent，`! meme continue` |
+| 找不到会话 | `meme ls -a`，或者在列表里按 Ctrl+A |
+| 接另一个项目的会话 | 终端里 `meme continue -a` 选它，meme 在那个项目里打开 Agent |
+| Windows 上的项目到 WSL 里接 | WSL 终端里 `meme continue` 选它，Agent 在 `/mnt/c/…` 下打开 |
+| WSL 里的项目在 Windows 上接 | 建议回 WSL；在 PowerShell 里 `meme continue` 选它，meme 会在 WSL 里打开 Agent（WSL 里要装 meme） |
+| 另一台电脑、服务器上的会话 | 暂不支持，到那台机器上接 |
+
+**看到这些提醒怎么办**
+
+| 提醒 | 怎么办 |
+|---|---|
+| Agent 说"你不在这个会话的仓库里" | 告诉 Agent 在哪做；或者在终端里 `meme continue` 选它，meme 会在对的目录打开 Agent |
+| "The repository is inside WSL…" | 回 WSL 接 |
+| "meme is not installed in WSL…" | 在 WSL 里也装一份 |
+| "WSL (Ubuntu) is not running…" | 列表里 WSL 的会话是上次看到的样子，启动 WSL 后会更新 |
+| "run git with `-c core.autocrlf=true …`" | 照做 |
 
 选项：`-a` 列出所有项目；`--fresh` 只交接你说过的话，从仓库现状重新开始，
 不沿用上一个 Agent 的做法；`--plain` 只打印交接内容，不启动 Agent。
@@ -132,12 +164,11 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 ## WSL 和 Windows
 
-- **WSL 里的 meme** 通过 `/mnt/c` 读 Windows 上的会话，标为 `Claude·Win` / `Codex·Win`。
-  接着做这样的会话时，Agent 在 WSL 里、项目的 `/mnt/c/...` 路径下启动。
-- **Windows 上的 meme** 通过 `\\wsl.localhost` 读正在运行的 WSL 发行版里的会话，
-  标为 `Claude·WSL` / `Codex·WSL`。它不会去启动停着的发行版：那些会话显示上次同步时的样子，
-  列表顶部会注明。接着做 WSL 的会话时，Agent 在 WSL 里启动，所以 WSL 里也要装 meme 和对应的 Agent。
-- 两边各有各的镜像，互不相干。
+- **WSL 里的 meme** 看得到 Windows 上的会话，标为 `Claude·Win` / `Codex·Win`。接着做这样的会话时，
+  Agent 在 WSL 里、会话目录对应的 `/mnt/c/…` 下打开（`/etc/wsl.conf` 改了挂载位置的，按它来）。
+- **Windows 上的 meme** 看得到正在运行的 WSL 发行版里的会话，标为 `Claude·WSL` / `Codex·WSL`。
+  它不会去启动停着的发行版：那些会话显示上次看到的样子，列表顶部会注明。接着做 WSL 的会话时，
+  Agent 在 WSL 里打开，所以 WSL 里也要装 meme 和对应的 Agent。
 - 在 Windows PowerShell 5.1 里，把输出接到管道上（`meme ls | ...`）时，PowerShell
   按控制台代码页解码，中文会乱码。先运行 `[Console]::OutputEncoding = [Text.Encoding]::UTF8` 即可。
   直接显示在窗口里没有问题。

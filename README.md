@@ -65,6 +65,22 @@ have not been run on real machines yet.
 
 ## Continue a session
 
+Three things to know:
+
+1. **One machine.** Windows and WSL count as one machine: each sees the other's
+   sessions. Sessions on another computer or an SSH server are not supported yet;
+   continue them on the machine they are on.
+2. **Install meme where you use the agent.** `! meme continue` inside an agent
+   runs the meme of the system the agent runs in. Only Windows: install it on
+   Windows. Only WSL: install it in WSL (it sees the Windows sessions too). Both:
+   install it on both; delete a session on one side and the other follows the
+   next time it runs.
+3. **Continue in the session's project.** Open a new agent in the project and run
+   `! meme continue`; or run `meme continue` in a terminal, pick the session, and
+   meme opens the agent in the session's directory. Continuing it from another
+   project works too: the handoff starts with a note, and the agent asks you where
+   to work first.
+
 **In a terminal**
 
 ```sh
@@ -73,9 +89,9 @@ meme continue 2        # or name it: a number from the list, an id, last, codex,
 meme continue last --in codex
 ```
 
-meme starts the agent in the session's project. Its first message asks it to run
-`meme continue <id>`; the agent reads the handoff, sums up where things stand and
-waits for your go-ahead.
+meme opens the agent in the directory the session ran in. Its first message asks
+it to run `meme continue <id>`; the agent reads the handoff, sums up where things
+stand and waits for your go-ahead.
 
 **Inside an agent**
 
@@ -87,6 +103,27 @@ waits for your go-ahead.
 - In **Claude Code**, after you choose, the agent runs the command itself.
 - In **Codex**, the output of a `!` command is shown to you but not passed to
   the model, so say "continue" after it.
+
+**I want to…**
+
+| I want to | Do this |
+|---|---|
+| switch agents in the same project | open the new agent in the project, `! meme continue` |
+| find a session that is not listed | `meme ls -a`, or Ctrl+A in the list |
+| continue a session of another project | `meme continue -a` in a terminal and pick it; meme opens the agent in that project |
+| continue a Windows project in WSL | `meme continue` in a WSL terminal and pick it; the agent opens under `/mnt/c/…` |
+| continue a WSL project on Windows | better in WSL; in PowerShell, `meme continue` and pick it, and meme opens the agent inside WSL (meme must be installed there) |
+| continue a session of another computer or a server | not supported yet; continue it on that machine |
+
+**When you see…**
+
+| You see | Do this |
+|---|---|
+| the agent says you are not in the session's repository | tell it where to work; or run `meme continue` in a terminal and pick the session, and meme opens the agent in the right directory |
+| "the repository is inside WSL…" | continue in WSL |
+| "meme is not installed in WSL…" | install meme in WSL too |
+| "WSL (Ubuntu) is not running…" | the list shows WSL's sessions as they were last seen; start WSL and they update |
+| "run git with `-c core.autocrlf=true …`" | do as it says |
 
 Options: `-a` lists all projects, `--fresh` hands over only your messages (start
 over from the repository, not from the previous agent's approach), `--plain`
@@ -153,15 +190,14 @@ deletion.
 
 ## WSL and Windows
 
-- **meme in WSL** reads your Windows sessions through `/mnt/c` and shows them as
-  `Claude·Win` / `Codex·Win`. Continuing one starts the agent in WSL, in the
-  `/mnt/c/...` path of the project.
-- **meme on Windows** reads the sessions of the WSL distributions that are
-  running, through `\\wsl.localhost`, and shows them as `Claude·WSL` /
-  `Codex·WSL`. It never starts a stopped distribution: their sessions are listed
-  as of the last sync, with a note at the top. Continuing a WSL session starts the
-  agent inside WSL, so meme and the agent need to be installed there too.
-- Each side keeps its own mirror; the two are independent.
+- **meme in WSL** sees your Windows sessions, as `Claude·Win` / `Codex·Win`.
+  Continuing one opens the agent in WSL, at the session's directory under
+  `/mnt/c/…` (or wherever `/etc/wsl.conf` mounts the Windows drives).
+- **meme on Windows** sees the sessions of the WSL distributions that are
+  running, as `Claude·WSL` / `Codex·WSL`. It never starts a stopped distribution:
+  its sessions are listed as they were last seen, with a note at the top.
+  Continuing a WSL session opens the agent inside WSL, so meme and the agent need
+  to be installed there too.
 - In Windows PowerShell 5.1, output piped to another command (`meme ls | ...`)
   is decoded in the console's code page and Chinese text comes out garbled. Run
   `[Console]::OutputEncoding = [Text.Encoding]::UTF8` first. Output shown
