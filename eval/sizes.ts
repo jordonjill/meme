@@ -8,7 +8,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createContext } from "../src/cli/context";
-import { CODEX_BYTES, estimateTokens, LIMITS } from "../src/handoff/budget";
+import { PROFILES } from "../src/adapters/profiles";
+import { estimateTokens, LIMITS, limitsIn } from "../src/handoff/budget";
 import { buildHandoff } from "../src/handoff/build";
 import { allSessions, handedOver, sessionRecords } from "../src/store/queries";
 
@@ -56,6 +57,7 @@ if (!label) {
   console.error("usage: bun eval/sizes.ts <label> | --compare <a> <b>");
   process.exit(2);
 }
+const strictestBytes = PROFILES.map(limitsIn).find((l) => l.bytes)?.bytes;
 const ctx = await createContext();
 const db = ctx.store.db;
 const rows: Row[] = [];
@@ -64,7 +66,9 @@ for (const s of allSessions(db)) {
   const records = sessionRecords(db, s.id);
   const input = { session: s, records, env: ctx.platform.env, now: ctx.now, lookup: (ref: string, before: string | null) => handedOver(db, ref, before) };
   const h = buildHandoff(input, { fresh: false });
-  const c = buildHandoff(input, { fresh: false, limits: { ...LIMITS, bytes: CODEX_BYTES } });
+  // The strictest limits of any agent (bytes, inside Codex).
+  const strictest = PROFILES.map(limitsIn).find((l) => l.bytes) ?? LIMITS;
+  const c = buildHandoff(input, { fresh: false, limits: strictest });
   rows.push({
     id: s.short,
     agent: s.agent,
@@ -82,4 +86,4 @@ writeFileSync(path.join(root, `${label}.json`), JSON.stringify(rows, null, 1) + 
 const t = stats(rows.map((r) => r.tokens));
 const ch = stats(rows.map((r) => r.chars));
 console.log(`${rows.length} sessions · tokens min ${t.min} · median ${t.median} · p90 ${t.p90} · max ${t.max} · chars max ${ch.max} · codex bytes max ${stats(rows.map((r) => r.codexBytes)).max}`);
-console.log(`over the limits: ${rows.filter((r) => r.tokens > LIMITS.tokens || r.chars > LIMITS.chars).length}; over Codex's bytes: ${rows.filter((r) => r.codexBytes > CODEX_BYTES).length}; trimmed: ${rows.filter((r) => r.trimmed).length}`);
+console.log(`over the limits: ${rows.filter((r) => r.tokens > LIMITS.tokens || r.chars > LIMITS.chars).length}; over the byte limit: ${rows.filter((r) => r.codexBytes > (strictestBytes ?? Infinity)).length}; trimmed: ${rows.filter((r) => r.trimmed).length}`);
