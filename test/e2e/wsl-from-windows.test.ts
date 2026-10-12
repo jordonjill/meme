@@ -90,6 +90,24 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect(running.out).not.toContain("a5a5a5a5");
   });
 
+  test("a stopped distribution: ls and status say so in the same words", () => {
+    const { w, env } = wslWorld();
+    run(w, ["ls", "-a"], { env });
+    const off = { ...env, MEME_WSL_RUNNING: "" };
+    const notice = /WSL \(Ubuntu\) is not running; its sessions are as of \d\d-\d\d \d\d:\d\d/;
+    const ls = run(w, ["ls", "-a", "--plain"], { env: off });
+    expect(ls.out.split("\n")[0]).toMatch(new RegExp(`^${notice.source}$`));
+    const status = run(w, ["status"], { env: off });
+    expect(status.code).toBe(0);
+    expect(status.out).toMatch(new RegExp(`\\n {2}${notice.source}\\n`));
+    expect(status.out).toMatch(/\n {2}Claude·WSL .*Ubuntu.* not running {2}1 session\n/);
+    expect(status.out).not.toMatch(/Claude·WSL .* readable/);
+    // Running again: no notice, readable.
+    const back = run(w, ["status"], { env });
+    expect(back.out).not.toContain("is not running");
+    expect(back.out).toMatch(/\n {2}Claude·WSL .*Ubuntu.* readable {2}1 session\n/);
+  });
+
   test("inside \\\\wsl.localhost the current project is the WSL one", () => {
     const { w, env, ubuntu } = wslWorld();
     const r = run(w, ["ls"], { env, cwd: path.join(ubuntu, "home", "u", "work", "app", "src") });
@@ -104,6 +122,27 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     const host = path.join(ubuntu, "home", "u", "work", "app", "src");
     expect(r.out).toContain(`· dir ${host} (/home/u/work/app/src in WSL Ubuntu) ·`);
     expect(r.out).toContain(`Note: the repository is inside WSL (Ubuntu). From Windows it is at ${host}, where git and builds are slow and can fail. Tell the user, and suggest continuing in WSL instead: \`wsl -d Ubuntu --cd /home/u/work/app/src\`, then \`meme continue a5a5a5a5\` there.`);
+  });
+
+  test("a WSL session on a Windows drive: the handoff names the drive path, as the place check does", () => {
+    const { w, env, ubuntu } = wslWorld();
+    const id = (n: number) => `e1e1e1e${n}-0000-4000-8000-0000000000e${n}`;
+    const s = (n: number, cwd: string) => {
+      const x = new ClaudeSession({ id: id(n), cwd, start: `2026-10-09T1${n}:00:00.000Z` });
+      x.user(`work on drive ${n}`);
+      x.assistant("ok");
+      x.write(path.join(ubuntu, "home", "u", ".claude", "projects"));
+    };
+    s(1, "/mnt/c/code/shop");
+    const r = run(w, ["continue", "e1e1e1e1"], { env });
+    expect(r.out).toContain("· dir C:\\code\\shop (/mnt/c/code/shop in WSL Ubuntu) ·");
+    // On Windows' own disk: not the slow \\wsl.localhost path, so no note about it.
+    expect(r.out).not.toContain("the repository is inside WSL");
+    // The distribution's own wsl.conf says where its drives are.
+    mkdirSync(path.join(ubuntu, "etc"), { recursive: true });
+    writeFileSync(path.join(ubuntu, "etc", "wsl.conf"), "[automount]\nroot = /\n");
+    s(2, "/c/code/shop");
+    expect(run(w, ["continue", "e1e1e1e2"], { env }).out).toContain("· dir C:\\code\\shop (/c/code/shop in WSL Ubuntu) ·");
   });
 
   test("pushing a WSL session starts the agent in WSL through the user's login shell", () => {

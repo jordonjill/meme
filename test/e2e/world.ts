@@ -27,16 +27,35 @@ export function world() {
 
 export type World = ReturnType<typeof world>;
 
-export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
-  const env: Record<string, string> = {
+function worldEnv(w: World, extra?: Record<string, string>): Record<string, string> {
+  return {
     PATH: process.env.PATH ?? "",
     HOME: w.home,
     USERPROFILE: w.home,
     MEME_ENV: "wsl",
     MEME_WINDOWS_USERS_DIR: w.users,
     TZ: "UTC",
-    ...o.env,
+    ...extra,
   };
-  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env, stdout: "pipe", stderr: "pipe" });
+}
+
+export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
+  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe" });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+}
+
+/** util-linux `script`, to run meme in a pseudo-terminal; null where there is none (macOS's takes other options). */
+export const SCRIPT = process.platform === "linux" ? Bun.which("script") : null;
+
+/** meme in a pseudo-terminal, as if typed in one, with `input` typed into it. Needs SCRIPT. Output and input echo mixed. */
+export function runInTerminal(w: World, args: string[], input: string) {
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const p = Bun.spawnSync([SCRIPT!, "-qec", [...BIN, ...args].map(quote).join(" "), "/dev/null"], {
+    cwd: w.home,
+    env: worldEnv(w, { TERM: "dumb" }),
+    stdin: Buffer.from(input),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return { code: p.exitCode, out: p.stdout.toString().replace(/\r\n/g, "\n") };
 }

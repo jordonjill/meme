@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
-import { run, world, type World } from "./world";
+import { run, runInTerminal, SCRIPT, world, type World } from "./world";
 
 /** A stand-in program on a PATH of its own. */
 function fakeBin(w: World, name: string, body: string): string {
@@ -259,5 +259,27 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
     expect(readdirSync(projects(w)).length).toBe(1);
     expect(run(w, ["uninstall", "--yes"]).out).toStartWith("Nothing to remove");
+  });
+
+  test.skipIf(!SCRIPT)("in a terminal, uninstall asks [y/N] like forget: Enter alone keeps everything", () => {
+    const w = world();
+    run(w, ["install"]);
+    const kept = runInTerminal(w, ["uninstall"], "\n");
+    expect(kept.out).toContain("Remove them? [y/N] ");
+    expect(kept.out).not.toContain("[y/N]  ");
+    expect(kept.out).toContain("Nothing removed.");
+    expect(kept.code).toBe(1);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(true);
+    expect(runInTerminal(w, ["uninstall"], "n\n").code).toBe(1);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(true);
+    expect(runInTerminal(w, ["uninstall"], "y\n").code).toBe(0);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+    // "yes", the word uninstall asked for before, still works.
+    run(w, ["install"]);
+    const yes = runInTerminal(w, ["uninstall"], "yes\n");
+    expect(yes.out).toContain("Removed.");
+    expect(yes.code).toBe(0);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+    expect(readdirSync(projects(w)).length).toBe(1);
   });
 });
