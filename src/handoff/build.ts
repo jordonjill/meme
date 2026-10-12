@@ -13,6 +13,7 @@ import { ago, numberList, plural, span, trimmedLines, truncate, turnsText, when 
 import type { SessionRow } from "../store/queries";
 import { cutToTokens, estimateTokens, fitSizes, LIMITS, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
+import type { Away } from "./place";
 import { recentCommands, runs } from "./commands";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
@@ -51,6 +52,8 @@ export interface HandoffInput {
   lookup?: Lookup;
   /** The sessions running meme: one of them in the relay chain is left out (S3, switching back). */
   current?: Set<string>;
+  /** The agent asking is not on the session's files (arch.md 6.3): the handoff says so first. */
+  away?: Away | null;
 }
 
 export interface HandoffOptions {
@@ -316,6 +319,13 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     `last turn: ${ending}`,
   ].filter(Boolean);
   const head = [`# Handoff: ${s.title ?? "(untitled)"}`, `Source: ${facts.join(" · ")}`];
+  const away = input.away;
+  if (away) {
+    head.push(
+      `Note: This session ran in ${away.ranIn} (${away.env}). You are in ${away.here}, which is not that ${away.repo ? "repository" : "directory"}. ` +
+        `Ask the user where to work before changing anything. They can also run \`meme continue ${sid}\` in a terminal to open an agent in the right place.`,
+    );
+  }
   const active = lastActive(s.ended_at);
   if (mayBeRunning(active, input.now)) {
     head.push(`Warning: the session was active ${ago(new Date(active!).toISOString(), input.now, true)}; it may still be running in another window. Check with the user before you start.`);
@@ -336,7 +346,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const summary = opts.fresh ? null : (compactions.filter((c) => c.text).at(-1) ?? null);
   const unreadableLater = summary && compactions.at(-1) !== summary ? compactions.at(-1)! : null;
   if (!opts.fresh && compactions.length && !summary) {
-    head.push(`Note: ${agent} compacted its context ${compactions.at(-1)!.when}, and its summary is encrypted; only the records below are included.`);
+    head.push(`Note: ${agent} compacted its context ${compactions.at(-1)!.when}, and its summary cannot be read (encrypted, or written in a way meme does not know); only the records below are included.`);
   }
   const summaryLines = (cap: number): { lines: string[]; cut: boolean } => {
     const c = cutToTokens(summary!.text, cap);
@@ -344,7 +354,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
       `## Summary written by the source agent (${agent} compacted its context ${summary!.when}, ${when(summary!.rec.ts, now)})`,
       "This is the agent's own summary, a hint that may be wrong. The user messages and steps below are verbatim.",
     ];
-    if (unreadableLater) lines.push(`It compacted again ${unreadableLater.when}, but that summary is encrypted; this one covers up to turn ${summary!.covers}.`);
+    if (unreadableLater) lines.push(`It compacted again ${unreadableLater.when}, but that summary cannot be read; this one covers up to turn ${summary!.covers}.`);
     lines.push(quote(c.text) + (c.cut ? `\n> … (cut; \`meme show ${sid} ${summary!.rec.turn} --all --full\` has all of it)` : ""));
     return { lines, cut: c.cut };
   };
