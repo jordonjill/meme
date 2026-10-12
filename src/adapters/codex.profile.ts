@@ -107,7 +107,7 @@ export const codexProfile: Profile = {
     'the same two commands, then say "continue": Codex keeps the output',
     "of a ! command but does not pass it to the model by itself",
   ],
-  forgetHelp: "Codex: meme runs `codex delete --force <id>`, and only for sessions of this environment.",
+  forgetHelp: "Codex: meme runs `codex delete --force <id>` with the codex of the side the session is on:\nhere, in WSL (from Windows), or on Windows (from WSL).",
   keepsForkParents: true,
   compaction: {
     keepsRecords: true,
