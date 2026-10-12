@@ -8,7 +8,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * mismatch deletes the database and rebuilds it from the original sessions
  * (plan §4.4); there are no migrations.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -48,7 +48,28 @@ CREATE TABLE records (
   hash     TEXT NOT NULL,
   PRIMARY KEY (session, seq)
 );
+-- Files meme could not convert (arch.md §6.1, point 2); tried again when the file or meme changes.
+CREATE TABLE failures (
+  path    TEXT PRIMARY KEY,
+  session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  size    INTEGER,
+  mtime   REAL,
+  error   TEXT NOT NULL,
+  version TEXT,
+  as_of   TEXT,
+  meme    TEXT NOT NULL,
+  at      TEXT NOT NULL
+);
+-- Lines of record types an agent's profile does not list (arch.md §6.1, point 4).
+CREATE TABLE unknown_types (
+  session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  type    TEXT NOT NULL,
+  version TEXT NOT NULL,
+  count   INTEGER NOT NULL,
+  PRIMARY KEY (session, type, version)
+);
 CREATE INDEX records_uid ON records(uid);
+CREATE INDEX failures_session ON failures(session);
 CREATE INDEX sessions_project ON sessions(project, ended_at);
 CREATE INDEX files_session ON files(session);
 CREATE INDEX sessions_continued ON sessions(continued_in);

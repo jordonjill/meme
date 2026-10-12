@@ -11,6 +11,7 @@ export function deleteFile(db: Database, path: string): string[] {
     const row = db.query<{ session: string }, [string]>("SELECT session FROM files WHERE path = ?").get(path);
     if (!row) return;
     db.run("DELETE FROM files WHERE path = ?", [path]);
+    db.run("DELETE FROM failures WHERE path = ?", [path]);
     const left = db.query("SELECT 1 FROM files WHERE session = ? LIMIT 1").get(row.session);
     if (left) {
       touched.push(row.session);

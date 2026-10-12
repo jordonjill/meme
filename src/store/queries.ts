@@ -28,6 +28,10 @@ export interface SessionRow {
   talked: number;
   /** `continued_in` points to a session that is still there: hidden behind it in `ls`. */
   superseded: number;
+  /** meme could not convert its file (arch.md §6.1, point 2): listed, marked "can't read". */
+  unreadable: number;
+  /** Unreadable, with an older mirror: when that mirror's content ends. Null when it was never read. */
+  readable_until: string | null;
   /** The start of the id that names this session alone, as meme shows it (see `shortest`). */
   short: string;
 }
@@ -71,6 +75,8 @@ SELECT s.*,
   (SELECT MAX(mtime) FROM files f WHERE f.session = s.id) AS mtime,
   COALESCE((SELECT turn FROM records r WHERE r.session = s.id ORDER BY seq DESC LIMIT 1), 0) AS turns,
   EXISTS (SELECT 1 FROM records r WHERE r.session = s.id AND r.role = 'assistant') AS talked,
+  EXISTS (SELECT 1 FROM failures x WHERE x.session = s.id) AS unreadable,
+  (SELECT MIN(as_of) FROM failures x WHERE x.session = s.id) AS readable_until,
   EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded,
   EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND (${ARCHIVED})) AS archived,
   (SELECT MAX(p.id) FROM sessions p WHERE p.id < s.id) AS prev_id,
@@ -232,4 +238,49 @@ export function handedOver(db: Database, ref: string, before: string | null): { 
   const id = (earlier[0] ?? rows[0]!).id;
   const session = getSession(db, id);
   return session ? { session, records: sessionRecords(db, id) } : null;
+}
+
+export interface FailureRow {
+  path: string;
+  session: string;
+  short: string;
+  agent: Agent;
+  env: Env;
+  error: string;
+  version: string | null;
+  as_of: string | null;
+  at: string;
+}
+
+/** Files meme could not convert (arch.md §6.1, point 2), for `meme status`. */
+export function failures(db: Database): FailureRow[] {
+  return db
+    .query<Omit<FailureRow, "short">, []>(
+      "SELECT x.path, x.session, s.agent, s.env, x.error, x.version, x.as_of, x.at FROM failures x JOIN sessions s ON s.id = x.session ORDER BY s.agent, x.path",
+    )
+    .all()
+    .map((r) => ({ ...r, short: shortId(db, r.session) }));
+}
+
+/** Record types meme does not know, per agent and version: how many lines and sessions (arch.md §6.1, point 4). */
+export function unknownTypes(db: Database): { agent: Agent; version: string; type: string; lines: number; sessions: number }[] {
+  return db
+    .query<{ agent: Agent; version: string; type: string; lines: number; sessions: number }, []>(
+      `SELECT s.agent, u.version, u.type, SUM(u.count) AS lines, COUNT(DISTINCT u.session) AS sessions
+       FROM unknown_types u JOIN sessions s ON s.id = u.session
+       GROUP BY s.agent, u.version, u.type ORDER BY s.agent, u.version, u.type`,
+    )
+    .all();
+}
+
+/** One session's lines of unknown record types, by type. */
+export function unknownIn(db: Database, session: string): { type: string; count: number }[] {
+  return db
+    .query<{ type: string; count: number }, [string]>("SELECT type, SUM(count) AS count FROM unknown_types WHERE session = ? GROUP BY type ORDER BY type")
+    .all(session);
+}
+
+/** Why a session's files cannot be read: the first file's error. */
+export function failureOf(db: Database, session: string): string | null {
+  return db.query<{ error: string }, [string]>("SELECT error FROM failures WHERE session = ? ORDER BY path LIMIT 1").get(session)?.error ?? null;
 }

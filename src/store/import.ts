@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { statSync } from "node:fs";
-import type { Adapter, Converted, SourceRoot } from "../adapters/types";
+import pkg from "../../package.json";
+import type { Adapter, ConvertContext, Converted, SourceRoot } from "../adapters/types";
 import { projectResolver } from "../model/project";
 import { searchText } from "../model/record";
 import type { Logger } from "../platform/log";
@@ -126,13 +127,26 @@ function importRoot(
       return prev !== undefined && prev.session === sessionId && prev.size === s.size && prev.mtime === s.mtime;
     };
     const storedOfSession = [...stored.values()].filter((f) => f.session === sessionId).length;
-    if (states.every(same) && storedOfSession === states.length) continue;
+    // A file that could not be read is tried again only when it or meme changed.
+    const failed = db.query<{ path: string; size: number; mtime: number; meme: string }, [string]>("SELECT path, size, mtime, meme FROM failures WHERE session = ?").all(sessionId);
+    const stillFailing =
+      failed.length === states.length &&
+      failed.every((f) => f.meme === pkg.version) &&
+      states.every((s) => failed.some((f) => f.path === s.path && f.size === s.size && f.mtime === s.mtime));
+    if (failed.length && stillFailing) {
+      result.failed++;
+      continue;
+    }
+    if (!failed.length && states.every(same) && storedOfSession === states.length) continue;
+    const ctx: ConvertContext = { sessionId, root, project, filesOf };
     let converted: Converted;
     try {
-      converted = adapter.convert(files, { sessionId, root, project, filesOf });
+      converted = adapter.convert(files, ctx);
     } catch (err) {
       result.failed++;
       log.error(`read failed, keeping the old mirror: ${files.join(", ")}`, err);
+      recordFailure(db, adapter, ctx, files, states, err);
+      touched.add(sessionId);
       continue;
     }
     writeSession(db, converted, states);
@@ -163,6 +177,54 @@ interface FileState {
   source: string;
   size: number;
   mtime: number;
+}
+
+/**
+ * What went wrong, for `meme status`: the kind of error and the first line of its
+ * message, with anything quoted (which may come from the file) left out.
+ */
+export function describeError(err: unknown): string {
+  const e = (err ?? {}) as { code?: unknown; name?: unknown; message?: unknown };
+  const kind = typeof e.code === "string" ? e.code : typeof e.name === "string" ? e.name : "Error";
+  const first = String(e.message ?? err).split("\n")[0]!.replace(/"[^"]*"|'[^']*'|`[^`]*`/g, "…").trim();
+  const line = first.length > 160 ? first.slice(0, 159) + "…" : first;
+  return redactText(!line ? kind : line.startsWith(kind) ? line : `${kind}: ${line}`);
+}
+
+/**
+ * A session whose files cannot be converted (arch.md §6.1, point 2). With a
+ * mirror from before, that stays, marked as of its last activity; without one,
+ * the session is listed from what can be told without converting it.
+ */
+function recordFailure(db: Database, adapter: Adapter, ctx: ConvertContext, files: string[], states: FileState[], err: unknown): void {
+  const mirror = db
+    .query<{ ended_at: string | null; has: number }, [string]>("SELECT ended_at, EXISTS (SELECT 1 FROM records r WHERE r.session = s.id) AS has FROM sessions s WHERE id = ?")
+    .get(ctx.sessionId);
+  const peeked = adapter.peek(files, ctx);
+  const at = new Date().toISOString();
+  db.transaction(() => {
+    if (!mirror?.has) {
+      db.run(
+        `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, NULL)
+         ON CONFLICT(id) DO UPDATE SET project = excluded.project, title = excluded.title, started_at = excluded.started_at, ended_at = excluded.ended_at`,
+        [ctx.sessionId, adapter.agent, ctx.root.env, ctx.project(peeked.cwd), peeked.title === null ? null : redactText(peeked.title), peeked.startedAt, peeked.endedAt],
+      );
+      for (const f of states) {
+        db.run(
+          `INSERT INTO files (path, session, source, size, mtime) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(path) DO UPDATE SET session = excluded.session, source = excluded.source, size = excluded.size, mtime = excluded.mtime`,
+          [f.path, ctx.sessionId, f.source, f.size, f.mtime],
+        );
+      }
+    }
+    db.run("DELETE FROM failures WHERE session = ?", [ctx.sessionId]);
+    for (const f of states) {
+      db.run("INSERT INTO failures (path, session, size, mtime, error, version, as_of, meme, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        f.path, ctx.sessionId, f.size, f.mtime, describeError(err), peeked.version, mirror?.has ? mirror.ended_at : null, pkg.version, at,
+      ]);
+    }
+  }).immediate();
 }
 
 /** Cheap pre-check so most strings skip the redaction regexes. */
@@ -226,5 +288,11 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
       upsertRecord.run(s.id, row.seq, r.uid, r.part, r.turn, r.injected, r.role, r.ts, row.body, row.text, row.hash);
     }
     db.run("DELETE FROM records WHERE session = ? AND seq >= ?", [s.id, rows.length]);
+    // Read again: no longer unreadable; and the record types it does not know, as of now.
+    db.run("DELETE FROM failures WHERE session = ?", [s.id]);
+    db.run("DELETE FROM unknown_types WHERE session = ?", [s.id]);
+    for (const u of converted.unknown) {
+      db.run("INSERT INTO unknown_types (session, type, version, count) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET count = count + excluded.count", [s.id, u.type, u.version ?? "", u.count]);
+    }
   }).immediate();
 }
