@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { isCompaction } from "../model/injected";
 import { callsOf, contentOf, promptText, shellOutput, type Rec } from "../model/record";
 import { firstLine } from "../model/title";
 import { describeCall, oneLine, resultFailed, resultText } from "../model/tools";
@@ -101,9 +102,12 @@ export function separatorLine(from: Ancestor, o: ShowOptions): string {
   return o.st.dim(`  ── ${from.link} from ${from.short} ──`);
 }
 
+/** Where the agent compacted its context (handoff.md §7.3). */
+const COMPACTED = "── compacted here ──";
+
 const RESULT_LINES = 3;
 
-function stepFacts(t: Turn): string[] {
+export function stepFacts(t: Turn): string[] {
   const facts: string[] = [];
   if (t.steps) facts.push(plural(t.steps, "step"));
   if (t.commands) facts.push(plural(t.commands, "command"));
@@ -135,6 +139,7 @@ export function foldedTurn(t: Turn, numW: number, o: ShowOptions, selected = fal
     const tail = cut === r && trimmedLines(t.reply).length > 1 ? "…" : "";
     out.push(indent + "● " + cut + tail);
   }
+  if (t.compactions.length) out.push(o.st.dim("  " + COMPACTED));
   return out;
 }
 
@@ -166,6 +171,12 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
     if (shown.has(rec)) continue;
     const body = rec.body;
     const kind = kindOf(rec);
+    if (isCompaction(rec.injected)) {
+      out.push(indent + o.st.dim(COMPACTED));
+      // The summary is the agent's, not the AI speaking in this turn: only with --all.
+      if (o.all && rec.injected === "compact_summary") push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
+      continue;
+    }
     if (rec === t.prompt) {
       const text = trimmedLines(promptOf(t));
       const head = `  ${selected ? o.st.inverse(num) : o.st.bold(num)} ${o.st.cyan("❯")} `;

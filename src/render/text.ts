@@ -175,3 +175,25 @@ export function day(iso: string | null, now = new Date()): string {
 export function plural(n: number, word: string, many = word + "s"): string {
   return `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 }
+
+/**
+ * Numbers in a sentence: `3`, `3 and 6`, `5–12`, `3, 5–7 and 9`. Only a run of
+ * three or more is a range, so turns 3 and 6 never read as `3–6`.
+ */
+export function numberList(ns: number[]): string {
+  const sorted = [...new Set(ns)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j++;
+    if (j - i >= 2) parts.push(`${sorted[i]}–${sorted[j]}`);
+    else for (let k = i; k <= j; k++) parts.push(String(sorted[k]));
+    i = j + 1;
+  }
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** `turn 3`, `turns 3 and 6`. */
+export function turnsText(ns: number[]): string {
+  return `${new Set(ns).size === 1 ? "turn" : "turns"} ${numberList(ns)}`;
+}

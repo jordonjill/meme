@@ -1,4 +1,4 @@
-import { userKind, type UserKind } from "./injected";
+import { isCompaction, userKind, type UserKind } from "./injected";
 import { callsOf, contentOf, type Rec } from "./record";
 import { commandOf, editedFiles, resultFailed } from "./tools";
 
@@ -27,7 +27,15 @@ export interface Turn {
   edited: string[];
   /** The last thing the AI said in this turn. */
   reply: string | null;
+  /**
+   * The AI's final reply: what it said after its last step, not a note before a
+   * step ("let me check…"). Codex marks it `final_answer`; this rule finds the same
+   * message without that mark, for every agent. Null when the turn ended on a step.
+   */
+  final: string | null;
   interrupted: boolean;
+  /** Records where the agent compacted its context (a summary or a marker). */
+  compactions: Rec[];
 }
 
 export function groupTurns(records: Rec[]): { before: Rec[]; turns: Turn[] } {
@@ -41,7 +49,7 @@ export function groupTurns(records: Rec[]): { before: Rec[]; turns: Turn[] } {
     }
     let t = turns[turns.length - 1];
     if (!t || t.n !== rec.turn) {
-      t = { n: rec.turn, records: [], prompt: null, steps: 0, commands: 0, failed: 0, edited: [], reply: null, interrupted: false };
+      t = { n: rec.turn, records: [], prompt: null, steps: 0, commands: 0, failed: 0, edited: [], reply: null, final: null, interrupted: false, compactions: [] };
       turns.push(t);
     }
     t.records.push(rec);
@@ -56,15 +64,17 @@ function summarize(t: Turn): void {
     const kind = kindOf(rec);
     if (kind === "prompt" && !t.prompt) t.prompt = rec;
     if (kind === "interrupt") t.interrupted = true;
-    if (rec.body.role === "assistant") {
+    if (isCompaction(rec.injected)) t.compactions.push(rec);
+    if (rec.body.role === "assistant" && !rec.injected) {
       const calls = callsOf(rec.body);
       for (const call of calls) {
         t.steps++;
         if (commandOf(call) !== null) t.commands++;
         for (const f of editedFiles(call)) edited.add(f);
       }
+      if (calls.length) t.final = null;
       const text = contentOf(rec.body);
-      if (text && text.trim()) t.reply = text;
+      if (text && text.trim()) t.reply = t.final = text;
     }
     if (rec.body.role === "tool" && resultFailed(rec.body.ok, rec.body.content)) t.failed++;
   }
