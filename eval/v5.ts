@@ -18,7 +18,7 @@ import { estimateTokens } from "../src/handoff/budget";
 import { callsOf, contentOf, promptText } from "../src/model/record";
 import { editedFiles } from "../src/model/tools";
 import { groupTurns } from "../src/model/turns";
-import { resolveSession, sessionRecords } from "../src/store/queries";
+import { handedOver, resolveSession, sessionRecords } from "../src/store/queries";
 
 const QUESTIONS = `---
 You are taking over an earlier coding session; the text above is about it. Answer only from the text above, and say you do not know rather than guess:
@@ -47,7 +47,7 @@ for (const c of cases) {
   const kept = all.filter((r) => r.turn <= k);
   const last = kept.filter((r) => r.ts).at(-1)?.ts ?? session.ended_at;
   const handoff = buildHandoff(
-    { session: { ...session, ended_at: last, mtime: null }, records: kept, env: ctx.platform.env, now: ctx.now },
+    { session: { ...session, ended_at: last, mtime: null }, records: kept, env: ctx.platform.env, now: ctx.now, lookup: (ref, before) => handedOver(db, ref, before) },
     { fresh: false },
   );
 
