@@ -1,16 +1,18 @@
 import { statSync } from "node:fs";
 import pkg from "../../../package.json";
 import { displayPath } from "../../platform/paths";
-import { label } from "../../render/labels";
+import { agentName, label } from "../../render/labels";
 import { ago, padEnd, plural, size, when } from "../../render/text";
 import { getMeta } from "../../store/db";
-import { counts, sources } from "../../store/queries";
+import { counts, failures, sources, unknownTypes } from "../../store/queries";
 import { parse, UsageError } from "../args";
 import { createContext, write } from "../context";
 
 export const statusHelp = `Usage: meme status
 
-Show the version, where the data lives, and which session sources can be read.
+Show the version, where the data lives, which session sources can be read,
+which sessions meme cannot read, and record types it does not know. Attach this
+when you report a problem: it has the agents' versions.
 `;
 
 export async function status(argv: string[]): Promise<number> {
@@ -46,6 +48,28 @@ export async function status(argv: string[]): Promise<number> {
     lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${r.reachable ? "readable" : "NOT READABLE (nothing deleted)"}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");
+
+  // Agent upgrades (arch.md §6.1): files meme cannot convert, and record types it does not know.
+  const failed = failures(db);
+  lines.push(failed.length ? `Can't read:   ${plural(new Set(failed.map((f) => f.session)).size, "session")}; meme lists them, with what it read before if anything` : "Can't read:   none");
+  const fw = Math.max(0, ...failed.map((f) => displayPath(f.path, home).length));
+  for (const f of failed) {
+    const extra = [f.version ? `${agentName(f.agent)} ${f.version}` : null, f.as_of ? `shown as of ${when(f.as_of, new Date(ctx.now))}` : "never read"].filter(Boolean).join("; ");
+    lines.push(`  ${padEnd(label(f.agent, f.env), lw)}  ${padEnd(f.short, 8)}  ${padEnd(displayPath(f.path, home), fw)}  ${f.error} (${extra})`);
+  }
+  const unknown = unknownTypes(db);
+  if (!unknown.length) lines.push("Record types: all known");
+  else {
+    lines.push("Record types: some that meme doesn't know (a new agent version?):");
+    const groups = new Map<string, typeof unknown>();
+    for (const u of unknown) {
+      const k = `${agentName(u.agent)} ${u.version || "(version unknown)"}`;
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push(u);
+    }
+    for (const [who, list] of groups) {
+      lines.push(`  ${who} writes record types meme doesn't know: ${list.map((u) => `${u.type} (${plural(u.sessions, "session")})`).join(", ")}`);
+    }
+  }
   write(lines.join("\n") + "\n");
   return 0;
 }

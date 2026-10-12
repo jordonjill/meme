@@ -1,7 +1,7 @@
 import { buildShow, showText } from "../../render/show";
-import { resolveSession } from "../../store/queries";
+import { failureOf, resolveSession } from "../../store/queries";
 import { runViewer } from "../../tui/viewer";
-import { intOption, parse, UsageError } from "../args";
+import { CommandError, intOption, parse, UsageError } from "../args";
 import { createContext, output, write } from "../context";
 
 export const showHelp = `Usage: meme show <session> [<turn>] [--full] [--all] [--plain]
@@ -32,7 +32,10 @@ export async function show(argv: string[]): Promise<number> {
   if (positionals.length > 2) throw new UsageError(`too many arguments: ${positionals.slice(2).join(" ")}`);
   const turn = intOption(positionals[1], "turn", 1);
   const ctx = await createContext();
-  const model = buildShow(ctx.store.db, resolveSession(ctx.store.db, positionals[0]!));
+  const session = resolveSession(ctx.store.db, positionals[0]!);
+  // Never read: nothing to show but why (arch.md §6.1, point 2).
+  if (session.unreadable && !session.readable_until) throw new CommandError(unreadableMessage(session.short, failureOf(ctx.store.db, session.id)));
+  const model = buildShow(ctx.store.db, session, ctx.now);
   const out = output(Boolean(values.plain));
   const opts = { st: out.st, width: out.width, home: ctx.platform.home, now: ctx.now, full: Boolean(values.full), all: Boolean(values.all), wrap: false };
   if (out.interactive && !values.full) {
@@ -41,4 +44,9 @@ export async function show(argv: string[]): Promise<number> {
   }
   write(showText(model, opts, turn ?? (values.full ? "all" : "none")));
   return 0;
+}
+
+/** For a session meme has never been able to read. */
+export function unreadableMessage(short: string, error: string | null): string {
+  return `meme can't read session ${short} (${error ?? "unknown error"}); see \`meme status\``;
 }

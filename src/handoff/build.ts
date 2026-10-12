@@ -320,6 +320,9 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   if (mayBeRunning(active, input.now)) {
     head.push(`Warning: the session was active ${ago(new Date(active!).toISOString(), input.now, true)}; it may still be running in another window. Check with the user before you start.`);
   }
+  if (s.unreadable && s.readable_until) {
+    head.push(`Note: meme can't read this session's file any more; this handoff is the session as of ${when(s.readable_until, now)}, and what came after is missing. Tell the user; \`meme status\` says why.`);
+  }
   if (input.env === "wsl" && s.env === "win") {
     head.push("Note: the repository is on the Windows side. In WSL, run git with `-c core.autocrlf=true -c core.filemode=false`, or every file looks modified.");
   }

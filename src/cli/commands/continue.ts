@@ -9,13 +9,14 @@ import { runAttached } from "../../platform/spawn";
 import { findInWsl, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
 import { agentName } from "../../render/labels";
 import { listing, numberedText, type ListFilter, type Listing } from "../../render/ls";
-import { allSessions, getSession, handedOver, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
+import { allSessions, failureOf, getSession, handedOver, sessionFiles, sessionRecords, type SessionRow } from "../../store/queries";
 import { chooseHandover, type AgentChoice, type Launchable } from "../../tui/handover";
 import { CommandError, parse, UsageError } from "../args";
 import { createContext, output, write, type Context } from "../context";
 import { isListNumber, resolveTarget } from "../target";
 import { HOW_TO_CONTINUE } from "../usage";
 import { parseAgent } from "./ls";
+import { unreadableMessage } from "./show";
 
 export const continueHelp = `Usage: meme continue [<target>] [-a] [--in ${agentWords("|")}] [--fresh] [--plain]
 
@@ -139,6 +140,8 @@ export async function continueSession(argv: string[]): Promise<number> {
     else problem = r.message;
   }
   if (picked) picked = chainHead(ctx, picked);
+  // Never read: there is no handoff to give (arch.md §6.1, point 2).
+  if (picked?.unreadable && !picked.readable_until) throw new CommandError(unreadableMessage(picked.short, failureOf(db, picked.id)));
 
   if (!terminal) {
     if (picked) {
@@ -202,6 +205,7 @@ export async function continueSession(argv: string[]): Promise<number> {
     if (!chosen) return 0;
     if ("problem" in chosen) throw new CommandError(chosen.problem);
     ({ session, agent } = chosen);
+    if (session.unreadable && !session.readable_until) throw new CommandError(unreadableMessage(session.short, failureOf(db, session.id)));
   }
 
   const dir = session.project;
