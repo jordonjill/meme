@@ -5,13 +5,13 @@ import { currentPlatform, displayPath } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { size } from "../../render/text";
 import { parse, UsageError } from "../args";
-import { write } from "../context";
+import { agreed, write } from "../context";
 
 export const uninstallHelp = `Usage: meme uninstall [--yes]
 
 Remove the ~/.meme folder: the mirror of your sessions and the logs.
-Your original sessions are not touched. Asks you to type yes first; --yes
-skips the question.
+Your original sessions are not touched. Asks first ([y/N]); --yes skips
+the question.
 `;
 
 function folderSize(dir: string): number {
@@ -70,8 +70,7 @@ export async function uninstall(argv: string[]): Promise<number> {
       process.stderr.write("meme: nothing removed; run `meme uninstall --yes` to go ahead\n");
       return 1;
     }
-    const answer = prompt("Type yes to remove them:");
-    if (answer?.trim().toLowerCase() !== "yes") {
+    if (!agreed("Remove them?")) {
       write("Nothing removed.\n");
       return 1;
     }

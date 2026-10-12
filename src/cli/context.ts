@@ -145,3 +145,12 @@ export function output(plain: boolean): Output {
 export function write(text: string): void {
   process.stdout.write(text);
 }
+
+/**
+ * y/N, for every command that deletes: only y or yes goes ahead; Enter alone
+ * does not (the list's Enter must not run on into a delete).
+ */
+export function agreed(question: string): boolean {
+  // prompt() adds the space after the question itself.
+  return ["y", "yes"].includes((prompt(`${question} [y/N]`) ?? "").trim().toLowerCase());
+}

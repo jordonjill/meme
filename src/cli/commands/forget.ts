@@ -13,7 +13,7 @@ import { ancestors, getSession, resolveSession, sessionFiles, type SessionRow } 
 import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
-import { createContext, insideAgent, output, write, type Context } from "../context";
+import { agreed, createContext, insideAgent, output, write, type Context } from "../context";
 
 export const forgetHelp = `Usage: meme forget [<session>...] [--yes] [--chain]
 
@@ -53,15 +53,6 @@ function forksOf(ctx: Context, id: string): SessionRow[] {
     .all(id)
     .map((r) => getSession(ctx.store.db, r.id)!)
     .filter(Boolean);
-}
-
-function ask(question: string): string {
-  return (prompt(question) ?? "").trim().toLowerCase();
-}
-
-/** y/N: only y or yes deletes; Enter alone does not (the list's Enter must not run on into a delete). */
-function agreed(question: string): boolean {
-  return ["y", "yes"].includes(ask(`${question} [y/N] `));
 }
 
 export async function forget(argv: string[]): Promise<number> {
