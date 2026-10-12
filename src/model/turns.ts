@@ -29,8 +29,8 @@ export interface Turn {
   reply: string | null;
   /**
    * The AI's final reply: what it said after its last step, not a note before a
-   * step ("let me check…"). Codex marks it `final_answer`; this rule finds the same
-   * message without that mark, for every agent. Null when the turn ended on a step.
+   * step ("let me check…"). Some agents mark it; this rule finds the same message
+   * without a mark, for every agent. Null when the turn ended on a step.
    */
   final: string | null;
   interrupted: boolean;

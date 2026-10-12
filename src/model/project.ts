@@ -5,8 +5,8 @@ import type { Platform } from "../platform/paths";
 import { toHost, toLinux, type WslPlace } from "../platform/wsl";
 
 /**
- * D12: the project is the git repository above the start directory, the same way
- * Claude Code groups sessions. A worktree belongs to its main repository. Without
+ * D12: the project is the git repository above the start directory, the way the
+ * agents themselves group sessions. A worktree belongs to its main repository. Without
  * `.git` anywhere above, the start directory itself is the project.
  */
 export function findProject(cwd: string, mapPath: (p: string) => string = (p) => p, top?: string): string {
