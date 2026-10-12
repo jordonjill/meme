@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { detectEnv, type Env } from "./env";
@@ -21,14 +22,56 @@ export function currentPlatform(): Platform {
   const env = detectEnv();
   const home = homedir();
   const vars = process.env;
+  // WSL mounts the Windows drives where /etc/wsl.conf says (plan §6 ⑧, arch.md 6.3 rule 5).
+  if (env === "wsl") useMountRoot(wslMountRoot(vars.MEME_WSL_CONF || "/etc/wsl.conf"));
   return {
     env,
     home,
     dataDir: vars.MEME_HOME || path.join(home, ".meme"),
-    windowsUsersDir: env === "wsl" ? vars.MEME_WINDOWS_USERS_DIR || "/mnt/c/Users" : null,
+    windowsUsersDir: env === "wsl" ? vars.MEME_WINDOWS_USERS_DIR || `${mountRoot()}c/Users` : null,
     wsl: [],
     vars,
   };
+}
+
+let MOUNT_ROOT = "/mnt/";
+
+/** Where WSL mounts the Windows drives: `/mnt/` unless its wsl.conf says otherwise; always ends with `/`. */
+export function mountRoot(): string {
+  return MOUNT_ROOT;
+}
+
+export function useMountRoot(root: string): void {
+  MOUNT_ROOT = root.endsWith("/") ? root : root + "/";
+}
+
+/** `[automount] root` of a wsl.conf, or `/mnt/` when the file or the setting is not there. */
+export function wslMountRoot(confFile: string): string {
+  let text: string;
+  try {
+    text = readFileSync(confFile, "utf8");
+  } catch {
+    return "/mnt/";
+  }
+  return parseMountRoot(text) ?? "/mnt/";
+}
+
+export function parseMountRoot(conf: string): string | null {
+  let section = "";
+  for (const raw of conf.split(/\r?\n/)) {
+    const line = raw.replace(/[#;].*$/, "").trim();
+    const head = /^\[(.+)\]$/.exec(line);
+    if (head) {
+      section = head[1]!.trim().toLowerCase();
+      continue;
+    }
+    const kv = /^root\s*=\s*(.+)$/i.exec(line);
+    if (section === "automount" && kv) {
+      const value = kv[1]!.trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+      if (value.startsWith("/")) return value.endsWith("/") ? value : value + "/";
+    }
+  }
+  return null;
 }
 
 const WIN_DRIVE = /^([A-Za-z]):[\\/]?(.*)$/;
@@ -37,24 +80,28 @@ export function isWindowsPath(p: string): boolean {
   return WIN_DRIVE.test(p);
 }
 
-/** `C:\x\y` → `/mnt/c/x/y`. Other paths are returned unchanged. */
-export function winToWsl(p: string): string {
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** `/mnt/c/x` (under the mount root): drive letter, then the rest. */
+const mounted = (root: string) => new RegExp(`^${escape(root)}([a-z])(\\/.*)?$`, "i");
+
+/** `C:\x\y` → `/mnt/c/x/y` (under the mount root). Other paths are returned unchanged. */
+export function winToWsl(p: string, root = MOUNT_ROOT): string {
   const m = WIN_DRIVE.exec(p);
   if (!m) return p;
   const rest = m[2]!.replace(/\\/g, "/").replace(/\/+$/, "");
-  return `/mnt/${m[1]!.toLowerCase()}${rest ? "/" + rest : ""}`;
+  return `${root}${m[1]!.toLowerCase()}${rest ? "/" + rest : ""}`;
 }
 
 /** `/mnt/c/x/y` → `C:\\x\\y`. Other paths are returned unchanged. */
-export function wslToWin(p: string): string {
-  const m = /^\/mnt\/([a-z])(\/.*)?$/i.exec(p);
+export function wslToWin(p: string, root = MOUNT_ROOT): string {
+  const m = mounted(root).exec(p);
   return m ? `${m[1]!.toUpperCase()}:${(m[2] ?? "/").replace(/\//g, "\\")}` : p;
 }
 
-/** Paths on Windows drives compare case-insensitively, everything else exactly. */
+/** Paths on Windows drives (and Windows drives mounted in WSL) compare case-insensitively, everything else exactly. */
 export function pathKey(p: string): string {
   const unified = p.replace(/[\\/]+$/, "") || p;
-  if (isWindowsPath(unified) || /^\/mnt\/[a-z](\/|$)/i.test(unified)) return unified.replace(/\\/g, "/").toLowerCase();
+  if (isWindowsPath(unified) || mounted(MOUNT_ROOT).test(unified)) return unified.replace(/\\/g, "/").toLowerCase();
   return unified;
 }
 

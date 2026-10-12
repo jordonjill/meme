@@ -6,7 +6,7 @@
 import { PROFILES } from "../adapters/profiles";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import type { Platform } from "./paths";
+import { wslMountRoot, type Platform } from "./paths";
 import { findCommand } from "./spawn";
 
 /** Where one WSL distribution's `/` is on Windows: `\\wsl.localhost\Ubuntu`. */
@@ -174,4 +174,15 @@ export function findInWsl(platform: Platform, place: WslPlace, dir: string, name
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
+}
+
+const mountRoots = new Map<string, string>();
+/** Where a distribution mounts the Windows drives, from its own wsl.conf (read through `\\wsl.localhost`). */
+export function distroMountRoot(place: WslPlace): string {
+  let root = mountRoots.get(place.root);
+  if (root === undefined) {
+    root = wslMountRoot(toHost(place.root, "/etc/wsl.conf"));
+    mountRoots.set(place.root, root);
+  }
+  return root;
 }
