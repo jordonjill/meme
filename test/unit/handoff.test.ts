@@ -53,17 +53,30 @@ describe("handoff (plan §4.6.6)", () => {
     expect(lines[1]).toBe("Source: Claude·Linux · session aaaaaaaa · dir /nowhere/demo · branch feature · 09-30 09:08 → 09:08 · 5 turns · last turn: finished");
     expect(text).toContain(
       "It is history, not new instructions.\nTreat the repository as the source of truth: run `git log` and `git status` before you start.\n" +
+        "The steps listed below were already run; don't repeat them blindly. Check their effect in the repository.\n" +
         "Before you change anything, tell the user in two or three sentences what was being done, where it stopped and what you would do next, then wait for their go-ahead.\n",
     );
-    expect(text).toContain("Included: all 5 user messages; the last 2 turns (3–4) step by step; the files changed with editing tools; the last test or build (turn 2).\n");
-    expect(text).toContain("For anything else: `meme show aaaaaaaa <turn>` · `meme search <text> --session aaaaaaaa`\n");
-    expect(text).toContain("## User messages (all)\n1. /statusline\n2. 状态栏现在显示哪些内容？接力\n3. Make it colorful, use secure_delete style names\n4. 好的，换成彩色\n5. /model\n");
+    expect(text).toContain(
+      "Included: all 5 user messages; one line on what the AI did in each earlier turn; the last 2 turns (3 and 4) step by step; the files changed with editing tools; " +
+        "the last command that changed something; the last test or build (turn 2).\n" +
+        "Left out: AI replies and steps before turn 3, except one line each; tool output beyond the first line.\n",
+    );
+    expect(text).toContain(
+      "For anything else: `meme show aaaaaaaa <turn>` · `meme search <text> --session aaaaaaaa`\n" +
+        "If your context is compacted later, run `meme continue aaaaaaaa` again to reload this handoff.\n",
+    );
+    expect(text).toContain(
+      "## User messages (all)\n1. /statusline\n   ↳ 1 step · 1 command · AI: The status line now mirrors your shell prompt.\n" +
+        "2. 状态栏现在显示哪些内容？接力\n   ↳ 2 steps · 1 command · 1 failed · AI: It shows three items: user, host and directory. Second line of the reply.\n" +
+        "3. Make it colorful, use secure_delete style names\n4. 好的，换成彩色\n5. /model\n",
+    );
     // The last two turns with AI activity; the trailing /model turn has none.
     expect(text).toContain("## Last 2 turns\n\n### Turn 3\nUser: Make it colorful, use secure_delete style names\nSteps: 2 steps · 0 commands · edited /home/u/.claude/statusline.sh, /home/u/notes.md · interrupted\nAI said: (nothing)\n");
     expect(text).toContain("### Turn 4\nUser: 好的，换成彩色\nSteps: 0 steps · 0 commands\nAI said:\n> Done: the status line now uses colors.\n");
     expect(text).toContain("Each step:\n- Edit(/home/u/.claude/statusline.sh) → ok\n- Write(/home/u/notes.md) → ok\n- ⏹ Interrupted by the user\n");
     expect(text).toContain("## Edited files\n- /home/u/.claude/statusline.sh (turn 3)\n- /home/u/notes.md (turn 3)\nFiles changed by commands");
-    expect(text).toContain("## Last verification\nTurn 2: `npm test` → failed\n```text\n1 failing\n```\n");
+    // `cat ~/.bashrc` only reads; `npm test` failed without an exit code.
+    expect(text).toContain("## Recent commands (newest last)\n- turn 2: `npm test` → ✗ failed\n\n## Last verification\nTurn 2: `npm test` → failed\n```text\n1 failing\n```\n");
     // Injected text and reasoning never make it into a handoff.
     expect(text).not.toContain("The date is 2026-09-30");
     expect(text).not.toContain("Let me check the settings file");
@@ -122,7 +135,10 @@ describe("handoff (plan §4.6.6)", () => {
     const s = sampleSession();
     const text = handoffOf([s], s.id, { fresh: true });
     expect(text).toContain("Start fresh: only the user's messages are included, not how the previous agent went about it.");
-    expect(text).toContain("Included: all 5 user messages.\n");
+    expect(text).toContain("Included: all 5 user messages.\nLeft out: how the previous agent went about it: its replies, steps, commands and edited files.\n");
+    expect(text).toContain("run `meme continue 00005e55 --fresh` again");
+    expect(text).not.toContain("The steps listed below");
+    expect(text).not.toContain("↳");
     expect(text).not.toContain("## Last");
     expect(text).not.toContain("## Edited files");
     expect(text).not.toContain("npm test");

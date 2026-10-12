@@ -88,6 +88,40 @@ export class ClaudeSession {
     return this.user(text, { isCompactSummary: true, isVisibleInTranscriptOnly: true });
   }
 
+  /**
+   * A compaction as Claude Code 2.1.296 writes it (handoff.md §7.8): `/compact`
+   * as typed, a boundary with no parent, the summary, then the command line again
+   * with its output. An automatic one has only the boundary and the summary.
+   */
+  compact(summary: string, trigger: "manual" | "auto" = "manual"): void {
+    const promptId = fakeUuid("9909");
+    const before = this.parent;
+    if (trigger === "manual") this.user("/compact", { promptId });
+    this.parent = null;
+    this.push(
+      this.base("system", {
+        subtype: "compact_boundary",
+        content: "Conversation compacted",
+        level: "info",
+        logicalParentUuid: before,
+        compactMetadata: { trigger, preTokens: 37840, postTokens: 2557 },
+      }),
+    );
+    this.user(
+      "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n" +
+        `Summary:\n${summary}\n\n` +
+        `If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/u/.claude/projects/x/${this.id}.jsonl\n` +
+        "Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary.\n\n" +
+        "The messages after this summary are the most recent messages from before compaction, kept verbatim.",
+      { isCompactSummary: true, isVisibleInTranscriptOnly: true, promptId },
+    );
+    if (trigger === "manual") {
+      this.user("<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request.</local-command-caveat>", { isMeta: true, promptId });
+      this.user("<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>", { promptId });
+      this.user("<local-command-stdout>\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m</local-command-stdout>", { promptId });
+    }
+  }
+
   reminder(text: string): string {
     return this.user(`<system-reminder>\n${text}\n</system-reminder>`);
   }
@@ -227,5 +261,34 @@ export function sampleSession(o: SessionOptions = {}): ClaudeSession {
   s.assistant("Done: the status line now uses colors.");
   s.localCommand("model", "Kept model as `Opus`");
   s.aiTitle("Status line setup");
+  return s;
+}
+
+/**
+ * The 10-12 manual compaction test (handoff.md §7.8 point 6) in Claude Code's
+ * format, with made-up content: three turns, `/compact`, one more turn.
+ */
+export function compactedClaude(o: SessionOptions = {}): ClaudeSession {
+  const s = new ClaudeSession({ cwd: "/work/compact-lab", ...o });
+  s.noise();
+  s.user("Create hello.py that prints hello");
+  s.tool("Write", { file_path: "/work/compact-lab/hello.py", content: 'print("hello")\n' }, "File created successfully at: /work/compact-lab/hello.py");
+  s.tool("Bash", { command: "python3 /work/compact-lab/hello.py", description: "Run hello.py" }, "hello");
+  s.assistant('I created hello.py with one line, print("hello"). Running it printed hello.');
+  s.user("Run it");
+  s.tool("Bash", { command: "python3 /work/compact-lab/hello.py", description: "Run hello.py" }, "hello");
+  s.assistant("Ran it: the output is hello.");
+  s.user("Make it print the current time, then run it again");
+  s.tool("Write", { file_path: "/work/compact-lab/hello.py", content: "from datetime import datetime\nprint(datetime.now())\n" }, "The file /work/compact-lab/hello.py has been updated successfully.");
+  s.tool("Bash", { command: "python3 /work/compact-lab/hello.py", description: "Run updated hello.py" }, "2026-10-12 11:21:25");
+  s.thinking("The run printed the time.");
+  s.assistant("hello.py now prints the current time; the run printed 2026-10-12 11:21:25.");
+  s.compact("1. Primary Request and Intent:\n   - The user asked for hello.py, then to run it, then to print the current time.\n2. Files and Code Sections:\n   - /work/compact-lab/hello.py prints datetime.now().\n3. Pending Tasks:\n   - None.");
+  s.user("Add a --name option");
+  s.thinking("Use argparse.");
+  s.tool("Write", { file_path: "/work/compact-lab/hello.py", content: "import argparse\n" }, "The file /work/compact-lab/hello.py has been updated successfully.");
+  s.tool("Bash", { command: "python3 hello.py && python3 hello.py --name ada", description: "Run with and without --name" }, "2026-10-12 11:22:08\nhello, ada! 2026-10-12 11:22:08");
+  s.assistant("hello.py now takes an optional --name; I ran it both ways.");
+  s.aiTitle("Hello script with time");
   return s;
 }

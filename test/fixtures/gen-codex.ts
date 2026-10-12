@@ -68,8 +68,8 @@ export class CodexSession {
     return this.lines.length - 1;
   }
 
-  private message(role: string, text: string): number {
-    return this.push("response_item", { type: "message", role, content: [{ type: role === "assistant" ? "output_text" : "input_text", text }] });
+  private message(role: string, text: string, phase?: string): number {
+    return this.push("response_item", { type: "message", role, content: [{ type: role === "assistant" ? "output_text" : "input_text", text }], ...(phase ? { phase } : {}) });
   }
 
   /** A user turn: task_started, the message; returns the line index the turn starts at. */
@@ -88,8 +88,34 @@ export class CodexSession {
   }
 
   assistant(text: string): void {
-    this.message("assistant", text);
+    this.message("assistant", text, "final_answer");
     this.push("event_msg", { type: "task_complete", turn_id: fakeUuid(), last_agent_message: text });
+  }
+
+  /** A note before a step ("I will check…"), which Codex marks `commentary`. */
+  commentary(text: string): void {
+    this.message("assistant", text, "commentary");
+  }
+
+  /**
+   * `/compact` as Codex 0.161 writes it (handoff.md §7.8): a turn with no user
+   * message; the summary as an ordinary AI message, then a `compacted` item with
+   * the summary behind Codex's prefix and the history it kept. A server-side
+   * compaction is encrypted: no AI message, an empty `message`.
+   */
+  compact(summary: string, o: { encrypted?: boolean } = {}): void {
+    this.push("event_msg", { type: "task_started", turn_id: fakeUuid() });
+    if (!o.encrypted) this.message("assistant", summary, "final_answer");
+    const prefix =
+      "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n";
+    const kept = this.lines.filter((l) => l.type === "response_item" && (l.payload as Line).type === "message" && (l.payload as Line).role === "user").map((l) => l.payload);
+    this.push("compacted", {
+      message: o.encrypted ? "" : prefix + summary,
+      replacement_history: [...kept, o.encrypted ? { type: "compaction", encrypted_content: "gAAAA" + "x".repeat(40) } : { type: "message", role: "user", content: [{ type: "input_text", text: prefix + summary }] }],
+      window_number: 1,
+    });
+    this.push("event_msg", { type: "item_completed", item: { type: "ContextCompaction", id: fakeUuid() } });
+    this.push("event_msg", { type: "task_complete", turn_id: fakeUuid(), last_agent_message: null });
   }
 
   /** The `exec` code-mode tool with a script, then its output. */
@@ -166,5 +192,41 @@ export function sampleCodex(o: CodexOptions = {}): CodexSession {
   s.patch([{ add: `${s.cwd}/subtract.js` }, { update: `${s.cwd}/test.js` }]);
   s.command("node test.js", "all tests passed");
   s.assistant("Added subtract(a, b); the tests pass.");
+  return s;
+}
+
+/**
+ * The 10-12 manual compaction test (handoff.md §7.8 point 6) in Codex's format,
+ * with made-up content: three turns, `/compact`, one more turn, `/compact` again.
+ */
+export function compactedCodex(o: CodexOptions = {}): CodexSession {
+  const s = new CodexSession({ cwd: "/work/compact-lab", ...o });
+  s.developer("You are Codex.");
+  s.environment();
+  s.user("Create hello.py that prints hello");
+  s.commentary("I will create hello.py, then run it.");
+  s.patch([{ add: "hello.py" }]);
+  s.command("python hello.py", "/bin/bash: line 1: python: command not found");
+  s.commentary("There is no python here; trying python3.");
+  s.command("python3 hello.py", "hello");
+  s.assistant("Created hello.py; running it prints hello.");
+  s.user("Run it");
+  s.commentary("Running it with python3.");
+  s.command("python3 hello.py", "hello");
+  s.assistant("It ran and printed hello.");
+  s.user("Print the current time instead, and run it again");
+  s.commentary("I will change the script and run it.");
+  s.patch([{ update: "hello.py" }]);
+  s.command("python3 hello.py", "2026-10-12 11:35:39.453748");
+  s.assistant("Updated hello.py; it printed 2026-10-12 11:35:39.453748.");
+  s.compact("## Handoff Summary\n\n- Workspace: `/work/compact-lab`\n- hello.py prints the current time.\n- Use python3, not python.");
+  s.user("Add a --name option");
+  s.commentary("I will look at the script first.");
+  s.command("pwd && rg --files", "/work/compact-lab\nhello.py");
+  s.commentary("Making --name optional.");
+  s.patch([{ update: "/work/compact-lab/hello.py" }]);
+  s.command("python3 hello.py --name Codex", "Codex, current time is 2026-10-12 11:36:28.933977");
+  s.assistant("Added --name; it printed: Codex, current time is 2026-10-12 11:36:28.933977.");
+  s.compact("## Handoff Summary\n\n- Workspace: `/work/compact-lab`\n- hello.py takes an optional --name.\n- Verified with python3 hello.py --name Codex.");
   return s;
 }

@@ -38,7 +38,7 @@ test("assignTurns counts prompts only", () => {
   expect(assignTurns([null, "prompt", null, "injected", "prompt", "interrupt", null, "prompt"])).toEqual([0, 1, 1, 1, 2, 2, 2, 3]);
 });
 
-const rec = (seq: number, turn: number, body: Rec["body"], injected = false): Rec => ({
+const rec = (seq: number, turn: number, body: Rec["body"], injected: Rec["injected"] = null): Rec => ({
   seq, uid: `u${seq}`, part: 0, turn, injected, copied: false, role: body.role, ts: null, body,
 });
 const ts = "2026-01-01T00:00:00.000Z";
@@ -69,7 +69,7 @@ describe("turn summaries and endings", () => {
     expect(endingOf([...records, rec(9, 2, { role: "user", content: "/exit", timestamp: ts })])).toBe("finished");
     expect(endingOf([...records, rec(9, 2, { role: "user", content: "and then?", timestamp: ts })])).toBe("unfinished");
     // Injected records at the end do not count.
-    expect(endingOf([...records, rec(9, 1, { role: "user", content: "<system-reminder>x</system-reminder>", timestamp: ts }, true)])).toBe("finished");
+    expect(endingOf([...records, rec(9, 1, { role: "user", content: "<system-reminder>x</system-reminder>", timestamp: ts }, "harness")])).toBe("finished");
   });
 
   test("a recently written file may still be running", () => {
