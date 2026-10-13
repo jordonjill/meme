@@ -23,9 +23,9 @@ and meme on Windows also sees the sessions in your running WSL distributions.
 - **Read and search.** `meme show` folds each turn into one line and expands the
   ones you pick; `meme search` works like `rg` over what you and the AI said.
 - **Continue anywhere.** `meme continue` starts Claude Code or Codex in the
-  session's project and lets it fetch the handoff: your messages, each with a line
-  on what the AI did, the last turns step by step, the files that were edited, the
-  recent commands and the last test or build run. A session that was itself
+  directory the session started in and lets it fetch the handoff: your messages,
+  each with a line on what the AI did, the last turns step by step, the files that
+  were edited, the recent commands and the last test or build run. A session that was itself
   handed over brings the messages of the sessions before it, and one the agent
   compacted brings the agent's own summary. meme makes no LLM summary and writes
   nothing to disk.
