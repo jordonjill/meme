@@ -1,0 +1,133 @@
+/**
+ * Plan §6 ⑩ end to end: OpenCode and Pi sessions in the list, shown, searched,
+ * handed over from and pushed into, and deleted, through the command line.
+ */
+import { describe, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
+import { samplePi } from "../fixtures/gen-pi";
+import { run, world, type World } from "./world";
+
+const PI = "9a9a9a9a";
+const OC = "ecbbcc1d";
+const MINIMAL_PATH = "/usr/bin:/bin";
+
+/** The world, with a Pi and an OpenCode session that started in ~/work/demo. */
+function withBoth() {
+  const w = world();
+  resetOpenCodeIds();
+  const demo = path.join(w.home, "work", "demo");
+  mkdirSync(demo, { recursive: true });
+  const piFile = samplePi({ cwd: demo }).write(path.join(w.home, ".pi", "agent", "sessions"));
+  const db = new OpenCodeDb(path.join(w.home, ".local", "share", "opencode", "opencode.db"));
+  sampleOpenCode(db, { directory: demo });
+  db.close();
+  return { w, demo, piFile };
+}
+
+/** A fake agent command that records where it started and its arguments; `extra` runs first. */
+function fakeAgent(w: World, name: string, extra = "") {
+  const bin = path.join(w.home, "fake-bin");
+  mkdirSync(bin, { recursive: true });
+  const record = path.join(w.home, `${name}-was-called`);
+  writeFileSync(path.join(bin, name), `#!/bin/sh\n${extra}\npwd > "${record}.cwd"\nfor a in "$@"; do printf '%s\\n' "$a"; done > "${record}.args"\nexit 7\n`);
+  chmodSync(path.join(bin, name), 0o755);
+  const read = (ext: string) => readFileSync(`${record}.${ext}`, "utf8");
+  return { bin, cwd: () => read("cwd").trim(), args: () => read("args").trimEnd().split("\n"), called: () => existsSync(`${record}.args`) };
+}
+
+describe("OpenCode and Pi through the command line (plan §6 ⑩)", () => {
+  test("ls lists them with their labels; status names their sources", () => {
+    const { w } = withBoth();
+    const ls = run(w, ["ls", "-a"]).out;
+    expect(ls).toMatch(new RegExp(`  ${PI}  Pi·WSL +\\S.* ~/work/demo +Create notes.md with one line: hello\\n`));
+    expect(ls).toMatch(new RegExp(`  ${OC}  OpenCode·WSL +\\S.* ~/work/demo +Create notes.md with one line: hello\\n`));
+    expect(run(w, ["ls", "-a", "--agent", "pi"]).out).not.toContain("OpenCode");
+    const status = run(w, ["status"]).out;
+    expect(status).toMatch(/ {2}OpenCode·WSL +~\/\.local\/share\/opencode\/opencode\.db +readable +1 session\n/);
+    expect(status).toMatch(/ {2}Pi·WSL +~\/\.pi\/agent\/sessions +readable +1 session\n/);
+    expect(status).toContain("Record types: all known and read\n");
+  });
+
+  test("show reads `!`, the stop and the compaction; search finds both", () => {
+    const { w } = withBoth();
+    for (const id of [PI, OC]) {
+      const show = run(w, ["show", id]).out;
+      expect(show).toContain("❯ ! git status --short");
+      expect(show).toContain("interrupted");
+    }
+    expect(run(w, ["show", PI]).out).toContain("── compacted here ──");
+    expect(run(w, ["show", OC]).out).toContain("── compacted here ──");
+    const found = run(w, ["search", "zebra"]).out;
+    expect(found).toContain("Pi·WSL");
+    expect(found).toContain("OpenCode·WSL");
+  });
+
+  test("a handoff printed inside them: their sessions, and each agent's limits", () => {
+    const { w } = withBoth();
+    const inOpenCode = run(w, ["continue", PI], { env: { OPENCODE: "1" } }).out;
+    expect(inOpenCode).toStartWith("# Handoff: Create notes.md with one line: hello\nSource: Pi·WSL · session 9a9a9a9a");
+    expect(inOpenCode).toContain("## Summary written by the source agent (Pi compacted its context");
+    const inPi = run(w, ["continue", OC], { env: { PI_CODING_AGENT: "true" } }).out;
+    expect(inPi).toStartWith("# Handoff: Create notes.md with one line: hello\nSource: OpenCode·WSL · session ecbbcc1d");
+    expect(inPi).toContain("! git status --short");
+  });
+
+  test("pushed into Pi: started in the session's folder, the message after `--`", () => {
+    const { w, demo } = withBoth();
+    const agent = fakeAgent(w, "pi");
+    const r = run(w, ["continue", OC, "--in", "pi"], { env: { PATH: `${agent.bin}:${MINIMAL_PATH}`, MEME_TERMINAL: "1" } });
+    expect(r.code).toBe(7);
+    expect(r.out).toBe("Continuing ecbbcc1d (Create notes.md with one line: hello) in Pi, in ~/work/demo\n");
+    expect(agent.cwd()).toBe(demo);
+    expect(agent.args()).toEqual(["--", "Continue an earlier session: run `meme continue ecbbcc1d` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output."]);
+  });
+
+  test("pushed into OpenCode: the message as its --prompt", () => {
+    const { w, demo } = withBoth();
+    const agent = fakeAgent(w, "opencode");
+    const r = run(w, ["continue", PI, "--in", "opencode"], { env: { PATH: `${agent.bin}:${MINIMAL_PATH}`, MEME_TERMINAL: "1" } });
+    expect(r.code).toBe(7);
+    expect(agent.cwd()).toBe(demo);
+    expect(agent.args()).toEqual(["--prompt", "Continue an earlier session: run `meme continue 9a9a9a9a` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output."]);
+  });
+
+  test("forget deletes a Pi session's file itself, and an OpenCode session with `opencode session delete`", () => {
+    const { w, piFile } = withBoth();
+    const pi = run(w, ["forget", PI, "--yes"]);
+    expect(pi.out).toContain("the session");
+    expect(pi.out).toContain(`✓ ${PI} deleted`);
+    expect(existsSync(piFile)).toBe(false);
+    expect(run(w, ["ls", "-a"]).out).not.toContain("Pi·WSL");
+
+    const opencode = fakeAgent(w, "opencode", '[ "$3" = "--help" ] && { echo "delete a session"; exit 0; }');
+    const r = run(w, ["forget", OC, "--yes"], { env: { PATH: `${opencode.bin}:${MINIMAL_PATH}` } });
+    // The fake one records the command and fails, as a missing session would: nothing of meme's goes.
+    expect(opencode.args()).toEqual(["session", "delete", "ses_ecbbcc1dcffeAbCdEfGhIjKlMn"]);
+    expect(r.out).toContain("runs: opencode session delete ses_ecbbcc1dcffeAbCdEfGhIjKlMn");
+    expect(r.out).toContain("OpenCode keeps what you typed in its own prompt history (~/.local/state/opencode/prompt-history.jsonl).");
+    expect(r.out).toContain(`✗ ${OC}: \`session delete ses_ecbbcc1dcffeAbCdEfGhIjKlMn\` failed`);
+    expect(run(w, ["ls", "-a"]).out).toContain("OpenCode·WSL");
+  });
+
+  test("from Windows: their sessions in a running WSL distribution; OpenCode's database is read from a copy, and nothing is written next to it", () => {
+    const w = world();
+    resetOpenCodeIds();
+    const ubuntu = path.join(w.home, "wsl", "Ubuntu");
+    const linux = (p: string) => path.join(ubuntu, ...p.split("/").filter(Boolean));
+    samplePi({ cwd: "/home/u/work/app" }).write(linux("/home/u/.pi/agent/sessions"));
+    const db = new OpenCodeDb(linux("/home/u/.local/share/opencode/opencode.db"));
+    sampleOpenCode(db, { directory: "/home/u/work/app" });
+    db.close();
+    const tmp = path.join(w.home, "tmp");
+    mkdirSync(tmp);
+    const env = { MEME_ENV: "win", MEME_WSL_DIR: path.join(w.home, "wsl"), MEME_WSL_RUNNING: "Ubuntu", TMPDIR: tmp };
+    const ls = run(w, ["ls", "-a"], { env }).out;
+    expect(ls).toMatch(new RegExp(`  ${PI}  Pi·WSL +.* /home/u/work/app `));
+    expect(ls).toMatch(new RegExp(`  ${OC}  OpenCode·WSL +.* /home/u/work/app `));
+    expect(readdirSync(linux("/home/u/.local/share/opencode"))).toEqual(["opencode.db"]);
+    expect(readdirSync(path.join(tmp, "meme-opencode")).length).toBe(1);
+    expect(run(w, ["show", OC], { env }).out).toContain("❯ ! git status --short");
+  });
+});

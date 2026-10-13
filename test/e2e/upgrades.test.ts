@@ -27,7 +27,7 @@ describe.skipIf(process.platform === "win32")("agent upgrades", () => {
 
     const status = run(w, ["status"]).out;
     expect(status).toContain("Can't read:   1 session; meme lists them, with what it read before if anything\n");
-    expect(status).toMatch(/ {2}Codex·WSL {3}c0deba0d {2}~\/\.codex\/sessions\/2026\/10\/10\/rollout-2026-10-10T08-00-00-c0deba0d-0000-4000-8000-0000000000b1\.jsonl\.zst {2}\S+.* \(never read\)\n/);
+    expect(status).toMatch(/ {2}Codex·WSL +c0deba0d {2}~\/\.codex\/sessions\/2026\/10\/10\/rollout-2026-10-10T08-00-00-c0deba0d-0000-4000-8000-0000000000b1\.jsonl\.zst {2}\S+.* \(never read\)\n/);
     expect(status).not.toContain("this is not zstd");
 
     for (const args of [["show", BROKEN], ["continue", BROKEN]]) {

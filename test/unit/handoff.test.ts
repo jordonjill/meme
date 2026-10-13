@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { cutToTokens, estimateTokens, fitMessages, limitsIn, measure, TOKEN_LIMIT, within, type Limits } from "../../src/handoff/budget";
 import { claudeCodeProfile } from "../../src/adapters/claude-code.profile";
 import { codexProfile } from "../../src/adapters/codex.profile";
+import { openCodeProfile } from "../../src/adapters/opencode.profile";
+import { piProfile } from "../../src/adapters/pi.profile";
 import { buildHandoff } from "../../src/handoff/build";
 import { getSession, sessionRecords } from "../../src/store/queries";
 import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
@@ -180,7 +182,9 @@ describe("handoff (plan §4.6.6)", () => {
     expect(TOKEN_LIMIT).toBe(15_000);
     expect(limitsIn(claudeCodeProfile)).toEqual({ tokens: 15_000, bytes: 27_000 });
     expect(limitsIn(codexProfile)).toEqual({ tokens: 15_000, bytes: 36_000 });
-    expect(limitsIn(null)).toEqual({ tokens: 15_000, bytes: 27_000 });
+    expect(limitsIn(openCodeProfile)).toEqual({ tokens: 15_000, bytes: 46_080, lines: 1_800 });
+    expect(limitsIn(piProfile)).toEqual({ tokens: 15_000, bytes: 46_080, lines: 1_800 });
+    expect(limitsIn(null)).toEqual({ tokens: 15_000, bytes: 27_000, lines: 1_800 });
     // 30,000 English characters (30,000 bytes): too many for Claude Code, fine for Codex.
     const en = measure("a".repeat(30_000));
     expect([within(en, limitsIn(claudeCodeProfile)), within(en, limitsIn(codexProfile)), within(en, limitsIn(null))]).toEqual([false, true, false]);

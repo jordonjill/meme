@@ -220,7 +220,7 @@ describe.skipIf(process.platform === "win32")("meme continue at a terminal", () 
     const w = world();
     const claude = fakeClaude(w);
     const r = run(w, ["continue", "1111"], { env: terminal(claude.bin) });
-    expect([r.code, r.err]).toEqual([2, "meme continue: choosing needs a terminal; name the session and add --in claude|codex\nRun `meme continue --help` for usage.\n"]);
+    expect([r.code, r.err]).toEqual([2, "meme continue: choosing needs a terminal; name the session and add --in claude|codex|opencode|pi\nRun `meme continue --help` for usage.\n"]);
   });
 });
 
