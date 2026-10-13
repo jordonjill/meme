@@ -382,7 +382,8 @@ export const openCode: Adapter = {
       for (const out of fullOutputs(openDb(db, local), id, path.dirname(db))) steps.push({ kind: "remove", path: out, dir: false, what: "the full output of a long command" });
     } catch {}
     steps.push({ kind: "run", cmd: r.line(["session", "delete", id]), cwd: r.cwd, shown: r.where ? `opencode session delete ${id} ${r.where}` : undefined, what: "OpenCode removes the session from its database" });
-    const state = path.join(path.dirname(path.dirname(path.dirname(path.dirname(db)))), ".local", "state", "opencode", "prompt-history.jsonl");
+    // On this side, where its state folder is (XDG_STATE_HOME moves it); on the other, where it is by default.
+    const state = path.join(platform.vars.XDG_STATE_HOME || path.join(platform.home, ".local", "state"), "opencode", "prompt-history.jsonl");
     const history = r.where ? `~/.local/state/opencode/prompt-history.jsonl ${r.where}` : displayPath(state, platform.home);
     // A session in a database leaves no file of its own to check: the command's exit code says.
     return { steps, gone: [], notes: [`OpenCode keeps what you typed in its own prompt history (${history}).`] };

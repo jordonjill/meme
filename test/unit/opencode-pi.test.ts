@@ -298,6 +298,9 @@ describe("OpenCode (opencode.db, 1.19)", () => {
     expect(plan.blocked).toBeUndefined();
     expect(plan.steps.map((s) => (s.kind === "remove" ? s.path : s.cmd.slice(1).join(" ")))).toEqual([full, `session delete ${OC}`]);
     expect(plan.notes).toEqual(["OpenCode keeps what you typed in its own prompt history (~/.local/state/opencode/prompt-history.jsonl)."]);
+    // Its state folder moved: the history is there.
+    const moved = openCode.forgetPlan({ id: OC_ID, env: "linux", files: [file] }, { ...p, vars: { PATH: bin, XDG_STATE_HOME: "/data/state" } });
+    expect(moved.notes).toEqual(["OpenCode keeps what you typed in its own prompt history (/data/state/opencode/prompt-history.jsonl)."]);
     // Without opencode here it says where to delete it instead.
     expect(openCode.forgetPlan({ id: OC_ID, env: "linux", files: [file] }, { ...m.p, vars: { PATH: "/nonexistent" } }).blocked).toStartWith("`opencode` is not available here; delete it in OpenCode");
   });
