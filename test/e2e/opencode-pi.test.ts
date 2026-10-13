@@ -127,10 +127,13 @@ describe("OpenCode and Pi through the command line (plan §6 ⑩)", () => {
     expect(ls).toMatch(new RegExp(`  ${PI}  Pi·WSL +.* /home/u/work/app `));
     expect(ls).toMatch(new RegExp(`  ${OC}  OpenCode·WSL +.* /home/u/work/app `));
     expect(readdirSync(linux("/home/u/.local/share/opencode"))).toEqual(["opencode.db"]);
-    const copies = readdirSync(path.join(tmp, "meme-opencode"));
+    // The copy is in meme's own folder, which `meme uninstall` removes; none in the temporary folder (plan §6 ⑩.1).
+    expect(readdirSync(tmp)).toEqual([]);
+    const cache = path.join(w.home, ".meme", "cache", "opencode");
+    const copies = readdirSync(cache);
     expect(copies.length).toBe(1);
     // The next run uses the copy again: the database did not change.
-    const copy = path.join(tmp, "meme-opencode", copies[0]!, "opencode.db");
+    const copy = path.join(cache, copies[0]!, "opencode.db");
     const before = statSync(copy).mtimeMs;
     expect(run(w, ["show", OC], { env }).out).toContain("❯ ! git status --short");
     expect(statSync(copy).mtimeMs).toBe(before);

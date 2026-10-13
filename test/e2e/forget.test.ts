@@ -92,7 +92,10 @@ describe.skipIf(process.platform === "win32")("meme forget: Claude Code", () => 
     // No ~/.claude/sessions: an older Claude Code, which does not list its open sessions.
     const r = run(w, ["forget", "9999", "--yes"]);
     expect([r.code, r.out]).toEqual([1, ""]);
-    expect(r.err).toMatch(/^meme: 99999999 was active (a minute|\d+ seconds) ago and may still be open in Claude Code\. Close it there first, or delete it in a few minutes\. Nothing deleted\.\n$/);
+    // It says when it can go: 5 minutes after it was last written, from the minute after (plan §6 ⑩.1).
+    const last = Date.parse(live.lines.at(-1)!.timestamp as string);
+    const after = new Date(Math.ceil((last + 5 * 60_000) / 60_000) * 60_000).toISOString().slice(11, 16);
+    expect(r.err).toMatch(new RegExp(`^meme: 99999999 was written (a minute|\\d+ seconds) ago and may still be open in Claude Code; you can delete it after ${after}\\. Nothing deleted\\.\\n$`));
     if (SCRIPT) expect(runInTerminal(w, ["forget", "9999"], "y\n").out).toContain("may still be open in Claude Code");
     expect(run(w, ["ls", "-a"]).out).toContain("99999999");
     // A day old: deleted as usual.
@@ -360,14 +363,14 @@ describe.skipIf(process.platform !== "linux" || !Bun.which("flock"))("meme forge
   test("no lock for it while Codex keeps locks: closed; no lock folder at all (an older Codex): refused while recent", () => {
     const w = world();
     const env = recentCodex(w);
-    expect(run(w, ["forget", "c0de", "--yes"], { env }).err).toContain("c0dec0de was active");
+    expect(run(w, ["forget", "c0de", "--yes"], { env }).err).toContain("c0dec0de was written");
     mkdirSync(path.dirname(lockFile(w)), { recursive: true });
     expect(run(w, ["forget", "c0de", "--yes"], { env }).code).toBe(0);
   });
 });
 
 describe.skipIf(process.platform !== "linux")("meme forget: step 9 (plan §6 ⑨)", () => {
-  test("R10: marked open where meme cannot check (a Windows Codex lock, seen from WSL): refused whatever its age", () => {
+  test("R10, changed in ⑩.1: marked open where meme cannot check (a Windows Codex lock, seen from WSL): judged by its age", () => {
     const w = world();
     const id = "c0dec0de-0000-4000-8000-0000000000ce";
     sampleCodex({ id, cwd: "C:\\Users\\me\\work\\demo-app", start: "2026-09-01T08:00:00.000Z" }).write(path.join(w.users, "me", ".codex"));
@@ -378,21 +381,27 @@ describe.skipIf(process.platform !== "linux")("meme forget: step 9 (plan §6 ⑨
     mkdirSync(bin, { recursive: true });
     writeFileSync(path.join(bin, "codex.exe"), readFileSync(path.join(fakeCodex(w), "codex"), "utf8").replace('"$HOME/.codex"', `"${w.users}"`));
     chmodSync(path.join(bin, "codex.exe"), 0o755);
+    // Written in September: a lock left by a Codex that was killed; it goes as usual.
     const r = run(w, ["forget", "c0de", "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}` } });
-    expect(r.code).toBe(1);
-    expect(r.err).toBe(
-      "meme: c0dec0de is marked open in Codex, and meme cannot check from here whether it still is. Close it there first; if Codex was killed, start it once and quit, then run meme forget again. Nothing deleted.\n",
-    );
-    expect(run(w, ["ls", "-a", "--plain"]).out).toContain("c0dec0de");
+    expect([r.code, r.err]).toEqual([0, ""]);
+    expect(r.out).toContain("✓ c0dec0de deleted");
   });
 
-  test("R10: a Claude Code session on Windows whose process meme cannot check from WSL: run forget on Windows", () => {
+  test("R10, changed in ⑩.1: a Claude Code session on Windows whose process meme cannot check from WSL: refused while recent, saying where it can be checked", () => {
     const w = world();
-    register(path.join(w.users, "me", ".claude"), 4343, w.win.id, null);
+    const recent = new ClaudeSession({ id: "23232323-0000-4000-8000-000000000023", cwd: "C:\\Users\\me\\work\\demo-app", start: new Date(Date.now() - 60_000).toISOString() });
+    recent.user("still working");
+    recent.assistant("on it");
+    recent.write(path.join(w.users, "me", ".claude", "projects"));
+    register(path.join(w.users, "me", ".claude"), 4343, recent.id, null);
+    register(path.join(w.users, "me", ".claude"), 4344, w.win.id, null);
     // No tasklist.exe anywhere WSL could find it: not on the PATH, and the drives mounted where there are none.
     writeFileSync(path.join(w.home, "wsl.conf"), `[automount]\nroot = ${w.home}/no-drives/\n`);
-    const r = run(w, ["forget", "2222", "--yes"], { env: { PATH: MINIMAL_PATH, MEME_WSL_CONF: path.join(w.home, "wsl.conf") } });
-    expect(r.err).toBe("meme: 22222222 is marked open in Claude Code, and meme cannot check from here whether it still is. Run `meme forget 22222222` on Windows, where it can. Nothing deleted.\n");
+    const env = { PATH: MINIMAL_PATH, MEME_WSL_CONF: path.join(w.home, "wsl.conf") };
+    const r = run(w, ["forget", "2323", "--yes"], { env });
+    expect(r.err).toMatch(/^meme: 23232323 was written .* ago and may still be open in Claude Code; you can delete it after \d\d:\d\d \(or run `meme forget 23232323` on Windows, where meme can check\)\. Nothing deleted\.\n$/);
+    // The one written in September goes.
+    expect(run(w, ["forget", "2222", "--yes"], { env }).out).toContain("✓ 22222222 deleted");
   });
 
   test("R19: a session opened while the user was answering [y/N] is not deleted", async () => {

@@ -183,3 +183,41 @@ describe("step 9 (plan §6 ⑨)", () => {
     expect([old.code, old.err]).toEqual([2, "meme show: --all is now --hidden: also injected messages and reasoning\nRun `meme show --help` for usage.\n"]);
   });
 });
+
+describe("plan §6 ⑩.1: the width off a terminal, and long titles", () => {
+  /** About 420 characters, all of them two columns wide. */
+  const LONG = "把导入模块的错误处理补完整，再跑一遍测试。".repeat(20);
+  const withTitle = (first: string, id = "33333333-0000-4000-8000-000000000003") => {
+    const w = world();
+    const s = new ClaudeSession({ id, cwd: path.join(w.home, "work", "demo"), start: "2026-10-12T08:00:00.000Z" });
+    s.user(first);
+    s.assistant("好的。");
+    s.write(path.join(w.home, ".claude", "projects"));
+    return w;
+  };
+
+  test("off a terminal, lines are at most 119 columns (PowerShell folds a full 120)", () => {
+    const w = withTitle(LONG);
+    const widths = run(w, ["ls", "-a"]).out.split("\n").map((l) => Bun.stringWidth(l));
+    // The title is two-column characters: the widest line stops at 118 or 119, never 120.
+    expect(Math.max(...widths)).toBeLessThanOrEqual(119);
+    expect(Math.max(...widths)).toBeGreaterThanOrEqual(118);
+  });
+
+  test("show puts the title on one line, cut with …; --full shows it all", () => {
+    const w = withTitle(LONG);
+    const top = run(w, ["show", "33333333"]).out.split("\n")[0]!;
+    expect(Bun.stringWidth(top)).toBeLessThanOrEqual(119);
+    expect(top).toMatch(/^把导入模块.*…  \[Claude·WSL\]$/);
+    const full = run(w, ["show", "33333333", "--full"]).out.split("\n")[0]!;
+    expect(full).toBe(`${[...LONG].slice(0, 199).join("")}…  [Claude·WSL]`);
+  });
+
+  test("the handoff keeps the title whole up to 200 characters, then cuts it with …", () => {
+    const w = withTitle(LONG);
+    expect(run(w, ["continue", "33333333", "--plain"]).out.split("\n")[0]).toBe(`# Handoff: ${[...LONG].slice(0, 199).join("")}…`);
+    const hundred = LONG.slice(0, 100);
+    const w2 = withTitle(hundred);
+    expect(run(w2, ["continue", "33333333", "--plain"]).out.split("\n")[0]).toBe(`# Handoff: ${hundred}`);
+  });
+});

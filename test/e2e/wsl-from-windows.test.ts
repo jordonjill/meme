@@ -6,10 +6,11 @@
  * and bash.
  */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { sampleCodex } from "../fixtures/gen-codex";
+import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { run, world, type World } from "./world";
 
 const WSL_ID = "a5a5a5a5-0000-4000-8000-0000000000a5";
@@ -69,6 +70,26 @@ function fakeWsl(w: World, wsl: string, tools: string[], scripts: Record<string,
 }
 
 describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () => {
+  test("forget of an OpenCode session in WSL runs opencode there, then removes meme's copy of its database (plan §6 ⑩.1)", () => {
+    const { w, wsl, ubuntu, env } = wslWorld();
+    resetOpenCodeIds();
+    const db = new OpenCodeDb(path.join(ubuntu, "home", "u", ".local", "share", "opencode", "opencode.db"));
+    sampleOpenCode(db, { directory: "/home/u/work/app" });
+    db.close();
+    const args = path.join(w.home, "opencode-args");
+    const fake = fakeWsl(w, wsl, ["opencode"], { opencode: `#!/bin/sh\n[ "$3" = "--help" ] && { echo "delete a session"; exit 0; }\nprintf '%s\\n' "$@" > "${args}"\n` });
+    run(w, ["ls", "-a"], { env });
+    const cache = path.join(w.home, ".meme", "cache", "opencode");
+    expect(readdirSync(cache).length).toBe(1);
+    const r = run(w, ["forget", "ecbbcc1d", "--yes"], { env: { ...env, ...fake.env } });
+    expect(r.out).toContain("runs: opencode session delete ses_ecbbcc1dcffeAbCdEfGhIjKlMn in WSL (Ubuntu)");
+    expect(r.out).toContain("meme's copy of OpenCode's database, made again when needed");
+    expect(r.out).toContain("✓ ecbbcc1d deleted");
+    expect(readFileSync(args, "utf8")).toBe("session\ndelete\nses_ecbbcc1dcffeAbCdEfGhIjKlMn\n");
+    // No copy of the database is left holding the session.
+    expect(readdirSync(cache)).toEqual([]);
+  });
+
   test("ls lists the running distribution's sessions as WSL, with the project as a WSL path", () => {
     const { w, env } = wslWorld();
     const r = run(w, ["ls", "-a"], { env });

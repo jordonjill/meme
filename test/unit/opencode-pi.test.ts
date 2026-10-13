@@ -4,7 +4,7 @@
  * a stop, a compaction; then what only these two do.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { openCode } from "../../src/adapters/opencode";
 import { openCodeProfile } from "../../src/adapters/opencode.profile";
@@ -368,8 +368,17 @@ describe("both", () => {
     const check = openCheck(p);
     expect(check.open.get(PI)).toEqual({ agent: "pi", pid: 4242, where: "WSL: Ubuntu", maybe: true });
     expect(check.open.get(OC_ID)).toEqual({ agent: "opencode", pid: 4343, where: "WSL: Ubuntu", maybe: true });
-    // In no folder they run in: meme cannot tell, and judges it by its age.
-    expect(check.open.has("9a9a9a9a-0000-4000-8000-000000000003")).toBe(false);
-    expect(check.stateOf("9a9a9a9a-0000-4000-8000-000000000003", [linux("/home/u/.pi/agent/sessions/x.jsonl")])).toBe("unknown");
+    // In none of the folders they run in, and every folder is known: closed (plan §6 ⑩.1).
+    const other = "9a9a9a9a-0000-4000-8000-000000000003";
+    const files = [linux("/home/u/.pi/agent/sessions/x.jsonl")];
+    expect(check.open.has(other)).toBe(false);
+    expect(check.stateOf(other, files)).toBe("closed");
+    // A process of Pi whose folder meme cannot see: it cannot tell.
+    proc(4545, "pi\0", "");
+    writeFileSync(path.join(distro, "proc", "4545", "environ"), "HOME=/home/u\0");
+    expect(openCheck(p).stateOf(other, files)).toBe("unknown");
+    // No process of Pi at all: closed.
+    for (const pid of [4242, 4545]) rmSync(path.join(distro, "proc", String(pid)), { recursive: true });
+    expect(openCheck(p).stateOf(PI, files)).toBe("closed");
   });
 });

@@ -253,7 +253,7 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     run(w, ["install"]);
     const asked = run(w, ["uninstall"]);
     expect(asked.code).toBe(1);
-    expect(asked.out).toContain("  ~/.meme   the mirror and the logs (");
+    expect(asked.out).toContain("  ~/.meme   the mirror, the logs and copies (");
     expect(asked.out).toContain("Your original sessions are not touched.");
     expect(asked.err).toBe("meme: nothing removed. Removing needs the user's confirmation: run it in a terminal, or add --yes only if the user has explicitly asked to remove meme's data.\n");
     expect(existsSync(path.join(w.home, ".meme"))).toBe(true);
@@ -305,11 +305,15 @@ describe.skipIf(process.platform === "win32")("step 9 (plan §6 ⑨)", () => {
     symlinkSync(real, path.join(w.home, ".meme"));
     run(w, ["ls"]);
     expect(existsSync(path.join(real, "meme.sqlite"))).toBe(true);
+    // Copies of agents' databases meme keeps there go too (plan §6 ⑩.1).
+    mkdirSync(path.join(real, "cache", "opencode", "0123456789abcdef"), { recursive: true });
+    writeFileSync(path.join(real, "cache", "opencode", "0123456789abcdef", "opencode.db"), "copy");
     const r = run(w, ["uninstall", "--yes"]);
     expect(r.out).toContain("~/.meme -> ~/elsewhere/meme-data");
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
     expect(existsSync(path.join(real, "meme.sqlite"))).toBe(false);
     expect(existsSync(path.join(real, "logs"))).toBe(false);
+    expect(existsSync(path.join(real, "cache"))).toBe(false);
     expect(readFileSync(path.join(real, "notes.txt"), "utf8")).toBe("mine");
   });
 
