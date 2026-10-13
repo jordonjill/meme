@@ -67,12 +67,16 @@ export function openCheck(platform: Platform): OpenCheck {
     for (const root of adapter.roots(platform)) {
       const where = placeOf(platform, root);
       if (byFolder) {
-        // A session in no such folder may be open all the same: judged by its age.
-        roots.push({ root, known: false });
-        if (!where) continue;
+        if (!where) {
+          roots.push({ root, known: false });
+          continue;
+        }
         const key = where.kind === "wsl" ? `wsl:${where.place.distro}` : where.kind;
         if (!listed.has(key)) listed.set(key, processesWhere(platform, where, byFolder.isProcess));
-        for (const proc of listed.get(key) ?? []) {
+        const procs = listed.get(key) ?? null;
+        // Closed for sure when none of its processes runs there, or each runs in a folder meme can see (plan §6 ⑩.1).
+        roots.push({ root, known: procs !== null && procs.every((p) => p.cwd !== null) });
+        for (const proc of procs ?? []) {
           if (!proc.cwd) continue;
           for (const session of byFolder.sessionsIn(root, proc.cwd)) {
             if (!open.has(session)) open.set(session, { agent: adapter.agent, pid: proc.pid, where: label(root), maybe: true });

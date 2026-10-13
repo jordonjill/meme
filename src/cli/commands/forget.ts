@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { adapterFor } from "../../adapters";
+import { ADAPTERS, adapterFor } from "../../adapters";
 import { PROFILES, profileOf } from "../../adapters/profiles";
 import type { ForgetPlan } from "../../adapters/types";
-import { lastActive, mayBeRunning } from "../../model/turns";
+import { lastActive, mayBeRunning, quietAfter } from "../../model/turns";
 import { removeDir, removeFile } from "../../platform/fs";
 import { displayPath } from "../../platform/paths";
 import { commandLine } from "../../platform/spawn";
@@ -33,6 +33,12 @@ The session that runs meme cannot be deleted, nor one open in an agent. Where
 meme cannot tell whether a session is open, it does not delete one active in
 the last few minutes.
 `;
+
+/** A time of day, rounded up to the minute: the session can go from then on. */
+function clock(ms: number): string {
+  const d = new Date(Math.ceil(ms / 60_000) * 60_000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 interface Item {
   session: SessionRow;
@@ -105,17 +111,15 @@ export async function forget(argv: string[]): Promise<number> {
     const o = c.open.get(s.id);
     if (o?.maybe) return `${s.short} may be open: ${name} is running in its folder (${o.where}, process ${o.pid}). Close ${name} there first.`;
     if (o) return `${s.short} is open in ${name} (${o.where}, process ${o.pid}). Close it there first.`;
-    const state = c.stateOf(s.id, sessionFiles(ctx.store.db, s.id));
-    // Marked open, and nothing here can tell whether it still is: refused whatever its age (R10).
-    const u = c.unsure.get(s.id);
-    if (state === "unsure" && u) {
-      const how = u.checkable
-        ? `Run \`meme forget ${s.short}\` ${u.checkable}, where it can.`
-        : `Close it there first; if ${name} was killed, start it once and quit, then run meme forget again.`;
-      return `${s.short} is marked open in ${name}, and meme cannot check from here whether it still is. ${how}`;
-    }
-    if (state === "unknown" && mayBeRunning(lastActive(s.ended_at), now)) {
-      return `${s.short} was active ${ago(s.ended_at, now, true)} and may still be open in ${name}. Close it there first, or delete it in a few minutes.`;
+    // Open or closed, meme cannot tell (an agent that keeps no list, a process it
+    // cannot check from here): refused only while it was written in the last few
+    // minutes, and it says when it can go (plan §6 ⑩.1).
+    if (c.stateOf(s.id, sessionFiles(ctx.store.db, s.id)) === "closed") return null;
+    const last = lastActive(s.ended_at);
+    if (last !== null && mayBeRunning(last, now)) {
+      const there = c.unsure.get(s.id)?.checkable;
+      const elsewhere = there ? ` (or run \`meme forget ${s.short}\` ${there}, where meme can check)` : "";
+      return `${s.short} was written ${ago(s.ended_at, now, true)} and may still be open in ${name}; you can delete it after ${clock(quietAfter(last))}${elsewhere}.`;
     }
     return null;
   };
@@ -208,6 +212,8 @@ export async function forget(argv: string[]): Promise<number> {
   const late = deletable.map((i) => stillOpen(i.session, again, Date.now())).filter((w): w is string => w !== null);
   if (late.length) throw new CommandError(`${late.join(" ")} Nothing deleted.`);
 
+  // Files meme itself holds open (a copy of an agent's database) would not go on Windows.
+  for (const a of ADAPTERS) a.closeFiles?.();
   // The original first; only once it is gone, the mirror.
   let failed = 0;
   const touched = new Set<string>();

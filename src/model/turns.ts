@@ -113,6 +113,11 @@ export function lastActive(endedAt: string | null): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+/** When a session written at `mtimeMs` no longer counts as maybe running. */
+export function quietAfter(mtimeMs: number): number {
+  return mtimeMs + RUNNING_WINDOW_MS;
+}
+
 export function mayBeRunning(mtimeMs: number | null, now = Date.now()): boolean {
   if (mtimeMs === null) return false;
   // A little in the future is clock skew (Windows files seen from WSL); far in the future is not "now".
