@@ -1,5 +1,5 @@
 import { isCompaction, userKind, type UserKind } from "./injected";
-import { callsOf, contentOf, type Rec } from "./record";
+import { callsOf, contentOf, shellOutput, type Rec } from "./record";
 import { commandOf, editedFiles, resultFailed } from "./tools";
 
 /**
@@ -95,6 +95,8 @@ export function endingOf(records: Rec[]): Ending {
       const kind = kindOf(rec);
       if (kind === "interrupt") return "interrupted";
       if (kind === "output") return "finished";
+      // A `!` command recorded together with its output: nothing more to come (R26).
+      if (shellOutput(rec.body.content) !== null) return "finished";
       // A `/command` that got no reply is a local command such as /exit or /model.
       return (contentOf(rec.body) ?? "").trimStart().startsWith("/") ? "finished" : "unfinished";
     }

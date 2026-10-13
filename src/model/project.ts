@@ -66,6 +66,8 @@ export function projectResolver(platform: Platform, wsl?: WslPlace): (cwd: strin
   return (cwd) => {
     if (!cwd) return null;
     const local = toLocal(cwd);
+    // Not a path here (\\wsl.localhost\… read on Linux): kept as written, never resolved against meme's own directory (R28).
+    if (!path.isAbsolute(local)) return cwd;
     let project = cache.get(local);
     if (project === undefined) {
       project = findProject(local, toLocal);
