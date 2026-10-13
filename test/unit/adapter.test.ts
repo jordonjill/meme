@@ -98,7 +98,9 @@ describe("claude-code adapter", () => {
     const s = new ClaudeSession();
     s.localCommand("model", "Kept model");
     const { records } = convert(s.text(), s.id);
-    expect(records.map((r) => contentOf(r.body))).toEqual(["/model"]);
+    // Read as a partial transcript (plan §6 ⑨, R13): its meta record, with the start directory, is kept.
+    expect(records.filter((r) => r.role !== "meta").map((r) => contentOf(r.body))).toEqual(["/model"]);
+    expect(records.some((r) => r.role === "meta")).toBe(true);
   });
 
   test("continued-in links to the next session", () => {

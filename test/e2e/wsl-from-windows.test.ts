@@ -189,7 +189,7 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
       `find "${ubuntu}" -name "*$3*" -type f -delete`,
     ].join("\n");
     const without = run(w, ["forget", "c0dec0de", "--yes"], { env: { ...env, ...fakeWsl(w, wsl, ["meme"]).env } });
-    expect(without.out).toContain("cannot be deleted from here: `codex delete` is not available in WSL (Ubuntu); delete it in Codex with /delete, or with `codex delete c0dec0de-0000-4000-8000-0000000000c5` there.");
+    expect(without.out).toContain("cannot be deleted from here: `codex delete` is not available in WSL (Ubuntu); delete it in Codex with /delete there.");
     const fake = fakeWsl(w, wsl, ["codex"], { codex: codexFake });
     const r = run(w, ["forget", "c0dec0de", "--yes"], { env: { ...env, ...fake.env } });
     expect(r.out).toContain(`    runs: codex delete --force ${CODEX_ID} in WSL (Ubuntu)\n`);
@@ -203,6 +203,24 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     const { w, env } = wslWorld();
     run(w, ["ls", "-a", "--plain"], { env: { ...env, MEME_SLOW_MS: "0" } });
     expect(readFileSync(path.join(w.home, ".meme", "logs", "meme.log"), "utf8")).toMatch(/slow: meme ls -a --plain took \d+ms \(start \d+, open \d+, import \d+, wsl\.exe \d+, import WSL \d+, command \d+\)/);
+  });
+
+  test("R6: pulling a session of a stopped distribution does not open it (which would start it): no wsl.conf, no git", () => {
+    const { w, wsl, env } = wslWorld();
+    const debian = path.join(wsl, "Debian");
+    // Debian mounts the drives at /x/; reading its wsl.conf would turn /x/c/code/shop into C:\code\shop.
+    mkdirSync(path.join(debian, "etc"), { recursive: true });
+    writeFileSync(path.join(debian, "etc", "wsl.conf"), "[automount]\nroot = /x/\n");
+    const s = new ClaudeSession({ id: "e1e1e1e1-0000-4000-8000-0000000000e1", cwd: "/x/c/code/shop", start: "2026-10-09T11:00:00.000Z" });
+    s.user("fix the shop's cart");
+    s.assistant("Fixed.");
+    s.write(path.join(debian, "home", "u", ".claude", "projects"));
+    run(w, ["ls", "-a"], { env: { ...env, MEME_WSL_RUNNING: "Ubuntu,Debian" } });
+    const r = run(w, ["continue", "e1e1"], { env });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("# Handoff: fix the shop's cart");
+    expect(r.out).not.toContain("C:\\code\\shop");
+    expect(r.out).not.toContain("Note: This session ran in");
   });
 
   test("forget refuses a Windows session open in Claude Code on Windows: tasklist.exe in %SystemRoot%\\System32 says its process runs", () => {

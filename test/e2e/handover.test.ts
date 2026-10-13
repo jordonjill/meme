@@ -1,6 +1,6 @@
 /** End to end: continue, install and uninstall in a temporary HOME. */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { run, runInTerminal, SCRIPT, world, type World } from "./world";
@@ -45,11 +45,15 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     const lines = r.out.split("\n");
     expect(lines[0]).toBe("Sessions in ~/work/demo (newest first):");
     expect(lines[1]).toMatch(/^ {2}1 {2}Claude·WSL {2}\S+ ago {2}Status line setup {2}11111111$/);
-    expect(r.out).toEndWith("+1 session in other projects (meme continue -a)\nThis list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue <number>\n");
+    // Not inside an agent: the last line is for a person (plan §6 ⑨); inside one, see below.
+    expect(r.out).toEndWith("+1 session in other projects (meme continue -a)\nRun `meme continue <number>` to continue one.\n");
     const all = run(w, ["continue", "-a"], { cwd: demoDir(w) });
     expect(all.out).toStartWith("Sessions in all projects (newest first):\n");
     expect(all.out).toContain("22222222");
-    expect(all.out).toEndWith("This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue -a <number>\n");
+    expect(all.out).toEndWith("Run `meme continue -a <number>` to continue one.\n");
+    expect(run(w, ["continue", "-a"], { cwd: demoDir(w), env: { CODEX_THREAD_ID: "c0dec0de-0000-4000-8000-000000000001" } }).out).toEndWith(
+      "This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue -a <number>\n",
+    );
   });
 
   test("a number is counted again the same way: the n-th session of the same list", () => {
@@ -106,7 +110,7 @@ describe.skipIf(process.platform === "win32")("meme continue in an agent (output
     expect(many.out).toStartWith('Sessions matching "claude" (newest first):\n');
     // Matches are named by id: a number would be counted against the plain list.
     expect(many.out.split("\n")[1]).toMatch(/^ {2}Claude·WSL /);
-    expect(many.out).toEndWith("This list is for the user. Ask which one to continue and wait; do not pick one yourself. The user can also type: ! meme continue <id>\n");
+    expect(many.out).toEndWith("Run `meme continue <id>` to continue one.\n");
     const none = run(w, ["continue", "codex"], { cwd: demoDir(w) });
     expect(none.out).toStartWith('meme: no session matches "codex". Pick from the list instead:\nSessions in ~/work/demo');
   });
@@ -251,7 +255,7 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     expect(asked.code).toBe(1);
     expect(asked.out).toContain("  ~/.meme   the mirror and the logs (");
     expect(asked.out).toContain("Your original sessions are not touched.");
-    expect(asked.err).toBe("meme: nothing removed; run `meme uninstall --yes` to go ahead\n");
+    expect(asked.err).toBe("meme: nothing removed. Removing needs the user's confirmation: run it in a terminal, or add --yes only if the user has explicitly asked to remove meme's data.\n");
     expect(existsSync(path.join(w.home, ".meme"))).toBe(true);
     const done = run(w, ["uninstall", "--yes"]);
     expect(done.code).toBe(0);
@@ -281,5 +285,44 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     expect(yes.code).toBe(0);
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
     expect(readdirSync(projects(w)).length).toBe(1);
+  });
+});
+
+describe.skipIf(process.platform === "win32")("step 9 (plan §6 ⑨)", () => {
+  test("R4: uninstall removes ~/.meme for good, also when the run counts as slow", () => {
+    const w = world();
+    run(w, ["ls"]);
+    const r = run(w, ["uninstall", "--yes"], { env: { MEME_SLOW_MS: "0" } });
+    expect(r.code).toBe(0);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+  });
+
+  test("R22: ~/.meme as a link: meme's files where it points are removed, then the link; nothing else there", () => {
+    const w = world();
+    const real = path.join(w.home, "elsewhere", "meme-data");
+    mkdirSync(real, { recursive: true });
+    writeFileSync(path.join(real, "notes.txt"), "mine");
+    symlinkSync(real, path.join(w.home, ".meme"));
+    run(w, ["ls"]);
+    expect(existsSync(path.join(real, "meme.sqlite"))).toBe(true);
+    const r = run(w, ["uninstall", "--yes"]);
+    expect(r.out).toContain("~/.meme -> ~/elsewhere/meme-data");
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+    expect(existsSync(path.join(real, "meme.sqlite"))).toBe(false);
+    expect(existsSync(path.join(real, "logs"))).toBe(false);
+    expect(readFileSync(path.join(real, "notes.txt"), "utf8")).toBe("mine");
+  });
+
+  test("R32: a push when meme does not know where the session started says so", () => {
+    const w = world();
+    // No directory in any line: written where Claude Code would keep it, by hand.
+    const s = new ClaudeSession({ id: "f00df00d-0000-4000-8000-000000000001", cwd: "" });
+    s.user("hello");
+    s.assistant("hi");
+    mkdirSync(path.join(projects(w), "-unknown"), { recursive: true });
+    writeFileSync(path.join(projects(w), "-unknown", "f00df00d-0000-4000-8000-000000000001.jsonl"), s.text());
+    const bin = fakeBin(w, "claude", "exit 0");
+    const r = run(w, ["continue", "f00d", "--in", "claude"], { env: { PATH: `${bin}:${MINIMAL_PATH}`, MEME_TERMINAL: "1" } });
+    expect(r.err).toBe("meme: meme does not know which directory f00df00d started in. To continue it, open the agent where you want to work and run `! meme continue f00df00d`.\n");
   });
 });

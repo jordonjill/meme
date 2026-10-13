@@ -155,3 +155,98 @@ describe("the list's filter rows (plan §3.1)", () => {
     ]);
   });
 });
+
+describe("step 9 (plan §6 ⑨)", () => {
+  /** A session of five turns in a mirror, and a context to show it with. */
+  function fiveTurns(elsewhere = false) {
+    resetIds();
+    const home = tempDir();
+    const p = testPlatform(home);
+    const { ClaudeSession } = require("../fixtures/gen-claude") as typeof import("../fixtures/gen-claude");
+    if (elsewhere) sampleSession({ id: "e5e5e5e5-0000-4000-8000-000000000001", cwd: "/work/other" }).write(projectsDir(home));
+    const s = new ClaudeSession({ id: "f1f1f1f1-0000-4000-8000-000000000001", cwd: "/work/demo" });
+    for (const [q, a] of [["set up the parser", "Parser set up."], ["add tests", "Added tests."], ["fix the tokenizer bug", "Fixed the tokenizer."], ["rename files", "Renamed."], ["update the docs", "Docs updated."]]) {
+      s.user(q!);
+      s.tool("Bash", { command: "bun test" }, "ok");
+      s.assistant(a!);
+    }
+    s.write(projectsDir(home));
+    const { store } = importInto(p);
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), wslStopped: [], now: Date.now() } as Context;
+    return { ctx, store, id: s.id };
+  }
+  const stackOf = (tui: Tui) => (tui as unknown as { stack: unknown[] }).stack;
+
+  test("in the list, Space previews the session and Enter opens it", () => {
+    const { ctx } = fiveTurns();
+    const { PreviewView } = require("../../src/tui/picker") as typeof import("../../src/tui/picker");
+    const { SessionView } = require("../../src/tui/viewer") as typeof import("../../src/tui/viewer");
+    const tui = new Tui();
+    const view = new PickerView(tui, ctx, out, { all: false, project: "/work/demo" });
+    tui.push(view);
+    view.render(20, 80);
+    view.key({ name: "space" });
+    expect(stackOf(tui).at(-1)).toBeInstanceOf(PreviewView);
+    tui.pop();
+    view.key({ name: "enter" });
+    expect(stackOf(tui).at(-1)).toBeInstanceOf(SessionView);
+  });
+
+  test("the session viewer: starts at the end, Enter expands a turn, / finds a turn and n goes on", () => {
+    const { ctx, store, id } = fiveTurns();
+    const { SessionView } = require("../../src/tui/viewer") as typeof import("../../src/tui/viewer");
+    const { buildShow } = require("../../src/render/show") as typeof import("../../src/render/show");
+    const { getSession } = require("../../src/store/queries") as typeof import("../../src/store/queries");
+    const tui = new Tui();
+    const m = buildShow(store.db, getSession(store.db, id)!, ctx.now);
+    const view = new SessionView(tui, m, { st, home: "/home/u", now: ctx.now, full: false, hidden: false });
+    let screen = view.render(20, 80);
+    // Where the session stopped is in view, and no turn is open yet.
+    expect(screen.join("\n")).toContain("update the docs");
+    expect(screen.join("\n")).not.toContain("bun test");
+    view.key({ name: "up" });
+    view.key({ name: "enter" });
+    screen = view.render(20, 80);
+    // Turn 4 expanded: its step, with the command.
+    expect(screen.join("\n")).toMatch(/Bash +bun test/);
+    for (const k of [{ name: "char", ch: "/" }, ..."tokenizer".split("").map((ch) => ({ name: "char", ch })), { name: "enter" }] as Parameters<typeof view.key>[0][]) view.key(k);
+    screen = view.render(20, 80);
+    expect(screen.join("\n")).toContain('"tokenizer" in turn 3');
+    view.key({ name: "char", ch: "/" });
+    for (const ch of "nothing like this") view.key(ch === " " ? { name: "space" } : { name: "char", ch });
+    view.key({ name: "enter" });
+    expect(view.render(20, 80).join("\n")).toContain('no match for "nothing like this"');
+  });
+
+  test("R14: a view that fails gives the terminal back, and the error reaches the caller", async () => {
+    const written: string[] = [];
+    const raw: boolean[] = [];
+    const listeners: Record<string, unknown> = {};
+    const fakeOut = { rows: 5, columns: 20, write: (s: string) => written.push(s), on: (e: string, f: unknown) => (listeners[e] = f), off() {} } as unknown as NodeJS.WriteStream;
+    const fakeIn = { setRawMode: (b: boolean) => raw.push(b), setEncoding() {}, on() {}, off() {}, resume() {}, pause() {} } as unknown as NodeJS.ReadStream;
+    const tui = new Tui(fakeOut, fakeIn);
+    const failing = { render(): string[] { throw new RangeError("Invalid array length"); }, key() {} };
+    expect(tui.run(failing)).rejects.toThrow("Invalid array length");
+    expect(raw).toEqual([true, false]);
+    expect(written.at(-1)).toContain("\x1b[?1049l");
+  });
+
+  test("R14: the list in a window five rows high, with the other projects' line above the keys", () => {
+    const { ctx } = fiveTurns(true);
+    const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" });
+    expect(() => view.render(5, 20)).not.toThrow();
+  });
+
+  test("R15: an emoji with a variation selector is two columns when cutting and wrapping", () => {
+    const { clip, wrapLine } = require("../../src/tui/screen") as typeof import("../../src/tui/screen");
+    const { truncate, width, wrap } = require("../../src/render/text") as typeof import("../../src/render/text");
+    const s = "yes ⚠️ no ⚠️ maybe ✔️ ok";
+    for (const n of [5, 6, 7, 9, 12]) {
+      expect(width(clip(s, n)), `clip ${n}`).toBeLessThanOrEqual(n);
+      expect(width(truncate(s, n)), `truncate ${n}`).toBeLessThanOrEqual(n);
+      for (const l of wrap(s, n)) expect(width(l), `wrap ${n}`).toBeLessThanOrEqual(n);
+      for (const l of wrapLine(s, n)) expect(width(l), `wrapLine ${n}`).toBeLessThanOrEqual(n);
+    }
+    expect(clip("⚠️⚠️⚠️", 4)).toBe("⚠️⚠️");
+  });
+});

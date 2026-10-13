@@ -222,3 +222,124 @@ describe("store files and modes", () => {
     }
   });
 });
+
+describe("store fixes of step 9 (plan §6 ⑨)", () => {
+  const ROOT_DIR = path.resolve(import.meta.dir, "../..");
+
+  test.skipIf(isRoot || process.platform === "win32")("R3: opened read-write but writes refused (a Landlock sandbox): an in-memory copy, imported afresh", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    importInto(p).store.db.close();
+    sampleSession({ id: "99999999-0000-4000-8000-000000000001" }).write(projects);
+    const file = path.join(p.dataDir, "meme.sqlite");
+    const store = openStore(p.dataDir);
+    // The open went through; only now does writing fail (no journal can be made).
+    chmodSync(p.dataDir, 0o555);
+    try {
+      const before = statSync(file);
+      const { result } = importInto(p, store);
+      expect([store.readonly, store.memory]).toEqual([true, true]);
+      expect(result.changed).toBe(1);
+      expect(counts(store.db).sessions).toBe(2);
+      const after = statSync(file);
+      expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
+    } finally {
+      chmodSync(p.dataDir, 0o700);
+    }
+  });
+
+  test.skipIf(isRoot || process.platform === "win32")("R8: the in-memory copy is taken through SQLite, so another meme's unfinished write never shows in it", async () => {
+    const { p, projects } = setup();
+    for (let i = 0; i < 40; i++) sampleSession({ id: `${String(i).padStart(8, "0")}-0000-4000-8000-000000000001` }).write(projects);
+    importInto(p).store.db.close();
+    const file = path.join(p.dataDir, "meme.sqlite");
+    const script = path.join(tempDir(), "writer.ts");
+    writeFileSync(
+      script,
+      [
+        `import { Database } from "bun:sqlite";`,
+        `const db = new Database(${JSON.stringify(file)});`,
+        `db.run("PRAGMA cache_size = 2"); db.run("BEGIN IMMEDIATE");`,
+        `db.run("UPDATE records SET body = body || ?", ["x".repeat(3000)]); db.run("DELETE FROM sessions WHERE rowid % 2 = 0");`,
+        `console.log("ready"); await Bun.sleep(1500); db.run("ROLLBACK");`,
+      ].join("\n"),
+    );
+    const writer = Bun.spawn([process.execPath, script], { stdout: "pipe", cwd: ROOT_DIR });
+    const reader = writer.stdout.getReader();
+    let said = "";
+    while (!said.includes("ready")) said += new TextDecoder().decode((await reader.read()).value);
+    // This meme may not write the file; the other one, which opened it before, still can.
+    chmodSync(file, 0o444);
+    try {
+      const store = openStore(p.dataDir);
+      expect(store.memory).toBe(true);
+      expect(store.db.query("PRAGMA integrity_check").all()).toEqual([{ integrity_check: "ok" }]);
+      expect(counts(store.db).sessions).toBe(40);
+    } finally {
+      chmodSync(file, 0o600);
+      await writer.exited;
+    }
+  });
+
+  test("R7: several meme processes starting at once on a new data folder all get it", async () => {
+    const home = tempDir();
+    const dir = path.join(home, ".meme");
+    const script = path.join(tempDir(), "open.ts");
+    writeFileSync(
+      script,
+      [
+        `import { openStore } from ${JSON.stringify(path.join(ROOT_DIR, "src/store/db.ts"))};`,
+        `const at = Number(process.argv[2]); while (Date.now() < at) {}`,
+        `try { const s = openStore(${JSON.stringify(dir)}); console.log("ok", s.memory); } catch (e) { console.log("FAIL", (e as Error).message); }`,
+      ].join("\n"),
+    );
+    for (let round = 0; round < 3; round++) {
+      const at = String(Date.now() + 400);
+      const runs = [0, 1, 2, 3].map(() => Bun.spawn([process.execPath, script, at], { stdout: "pipe" }));
+      const outs = await Promise.all(runs.map((r) => new Response(r.stdout).text()));
+      expect(outs.map((o) => o.trim())).toEqual(["ok false", "ok false", "ok false", "ok false"]);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("R7: a database from a newer meme is left alone; this one works in memory", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    importInto(p).store.db.close();
+    const file = path.join(p.dataDir, "meme.sqlite");
+    const { Database } = require("bun:sqlite") as typeof import("bun:sqlite");
+    const raw = new Database(file);
+    raw.run("UPDATE meta SET value = ? WHERE key = 'schema_version'", [String(SCHEMA_VERSION + 1)]);
+    raw.close();
+    const before = readFileSync(file);
+    const store = openStore(p.dataDir);
+    expect([store.readonly, store.memory]).toEqual([true, true]);
+    importInto(p, store);
+    expect(counts(store.db).sessions).toBe(1);
+    expect(readFileSync(file).equals(before)).toBe(true);
+  });
+
+  test("R16: the same folder reached by two paths (a symlinked ~/.claude) is read once", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    const users = path.join(p.home, "users");
+    const { symlinkSync, mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(path.join(users, "me"), { recursive: true });
+    symlinkSync(path.join(p.home, ".claude"), path.join(users, "me", ".claude"));
+    const wsl = { ...p, env: "wsl" as const, windowsUsersDir: users };
+    expect(importInto(wsl).result.changed).toBe(1);
+    expect(importInto(wsl).result.changed).toBe(0);
+    expect(importInto(wsl).result.changed).toBe(0);
+  });
+
+  test("R30: a run with nothing new writes nothing to the database file", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    importInto(p).store.db.close();
+    const file = path.join(p.dataDir, "meme.sqlite");
+    utimesSync(file, new Date(0), new Date(0));
+    const { store } = importInto(p);
+    store.db.close();
+    expect(statSync(file).mtimeMs).toBe(0);
+  });
+});

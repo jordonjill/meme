@@ -140,6 +140,17 @@ export class ClaudeSession {
     return this.user(`<system-reminder>\n${text}\n</system-reminder>`);
   }
 
+  /**
+   * A message sent while the agent works (2.1.296): an `attachment` line with a
+   * `queued_command`. `origin` is "human" for the user, "task-notification" or "peer" otherwise.
+   */
+  queued(prompt: string, origin: string | null = "human"): string {
+    const attachment: Line = { type: "queued_command", prompt, source_uuid: fakeUuid(), commandMode: "prompt", timestamp: new Date(this.clock).toISOString() };
+    if (origin) attachment.origin = { kind: origin };
+    if (origin === "human") attachment.humanTurn = true;
+    return this.push(this.base("attachment", { attachment, renderedRole: "system" }));
+  }
+
   taskNotification(text: string): string {
     return this.user(`<task-notification>\n<task-id>t1</task-id>\n<summary>${text}</summary>\n</task-notification>`);
   }

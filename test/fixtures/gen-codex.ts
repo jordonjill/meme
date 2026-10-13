@@ -141,6 +141,18 @@ export class CodexSession {
     this.push("event_msg", { type: "task_complete", turn_id: fakeUuid(), last_agent_message: null });
   }
 
+  /**
+   * The user stops a turn (Codex 0.162): a `turn_aborted` event, and a user message
+   * in `<turn_aborted>` telling the model so, as in Codex's source.
+   */
+  aborted(): void {
+    this.push("event_msg", { type: "turn_aborted", reason: "interrupted", turn_id: fakeUuid() });
+    this.message(
+      "user",
+      "<turn_aborted>\nThe user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.\n</turn_aborted>",
+    );
+  }
+
   /** Housekeeping Codex appends to old files when it starts: not activity. */
   settingsApplied(at: string): void {
     this.lines.push({ timestamp: at, type: "event_msg", payload: { type: "thread_settings_applied", thread_id: this.id }, ordinal: this.lines.length });

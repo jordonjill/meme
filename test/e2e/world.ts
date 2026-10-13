@@ -35,6 +35,8 @@ function worldEnv(w: World, extra?: Record<string, string>): Record<string, stri
     MEME_ENV: "wsl",
     MEME_WINDOWS_USERS_DIR: w.users,
     TZ: "UTC",
+    // Run from sources, Bun would cache its transpiled files in the fake HOME.
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     ...extra,
   };
 }

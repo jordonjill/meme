@@ -1,7 +1,8 @@
 /** End to end: ls, show, search and status (see world.ts for the setup). */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
+import { ClaudeSession } from "../fixtures/gen-claude";
 import { run, world } from "./world";
 
 describe("meme CLI", () => {
@@ -82,17 +83,23 @@ describe("meme CLI", () => {
     expect(r.out).toMatch(/Claude·Win +.*mnt-c-Users\/me\/\.claude\/projects +readable +1 session/);
   });
 
-  test("an agent not installed is said so, and not logged on every run; installed but unreadable is NOT READABLE (plan §6 ⑧.3)", () => {
+  test("an agent not installed, or installed with no sessions yet, is said so and not logged on every run (plan §6 ⑧.3, ⑨ R9)", () => {
     const w = world();
     const log = path.join(w.home, ".meme", "logs", "meme.log");
     const r = run(w, ["status"]);
     expect(r.out).toMatch(/Codex·WSL +~\/\.codex +not installed +0 sessions\n/);
     expect(readFileSync(log, "utf8")).not.toContain("source unreachable");
     expect(run(w, ["install", "--dry-run"]).out).toMatch(/Codex·WSL +~\/\.codex +not installed\n/);
-    // Its home is there, its sessions folder is not.
+    // Just installed: its home is there, its sessions folder not yet.
     mkdirSync(path.join(w.home, ".codex"));
-    expect(run(w, ["status"]).out).toMatch(/Codex·WSL +~\/\.codex +NOT READABLE \(nothing deleted\) +0 sessions\n/);
-    expect(readFileSync(log, "utf8")).toContain("source unreachable, nothing deleted: " + path.join(w.home, ".codex"));
+    expect(run(w, ["status"]).out).toMatch(/Codex·WSL +~\/\.codex +no sessions yet +0 sessions\n/);
+    expect(run(w, ["install", "--dry-run"]).out).toMatch(/Codex·WSL +~\/\.codex +no sessions yet\n/);
+    expect(readFileSync(log, "utf8")).not.toContain("source unreachable");
+    // Sessions mirrored, then the folder that held them cannot be read: something is wrong, nothing is deleted.
+    const projects = path.join(w.home, ".claude", "projects");
+    renameSync(projects, projects + ".away");
+    expect(run(w, ["status"]).out).toMatch(/Claude·WSL +~\/\.claude\/projects +NOT READABLE \(nothing deleted\) +1 session\n/);
+    expect(readFileSync(log, "utf8")).toContain("source unreachable, nothing deleted: " + projects);
   });
 
   test("a slow run leaves a line in meme.log with how long each part took (plan §6 ⑧.3)", () => {
@@ -121,5 +128,58 @@ describe("meme CLI", () => {
     const v = run(w, ["--version"]);
     expect(v.out).toMatch(/^meme \d+\.\d+\.\d+\n$/);
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+  });
+});
+
+describe("step 9 (plan §6 ⑨)", () => {
+  function withLines(w: ReturnType<typeof world>) {
+    const s = new ClaudeSession({ id: "5ea5c400-0000-4000-8000-000000000001", cwd: path.join(w.home, "work", "demo") });
+    s.user("why does the build fail?");
+    s.assistant("first line\r\nerror: boom\r\nthird line\nfourth line");
+    s.write(path.join(w.home, ".claude", "projects"));
+  }
+
+  test("R17: ^ and $ match at the start and end of each line", () => {
+    const w = world();
+    withLines(w);
+    expect(run(w, ["search", "^error", "-a", "--plain"]).out).toContain("error: boom");
+    expect(run(w, ["search", "boom$", "-a", "--plain"]).out).toContain("error: boom");
+    expect(run(w, ["search", "^boom", "-a", "--plain"]).out).toContain("No matches");
+  });
+
+  test("search -C shows lines around each match", () => {
+    const w = world();
+    withLines(w);
+    const out = run(w, ["search", "boom", "-a", "-C", "1", "--plain"]).out;
+    expect(out).toContain("first line");
+    expect(out).toContain("third line");
+    expect(out).not.toContain("fourth line");
+  });
+
+  test("ls --env takes win and windows, mac and macos; anything else is a usage error", () => {
+    const w = world();
+    expect(run(w, ["ls", "-a", "--env", "windows", "--plain"]).out).toContain("22222222");
+    expect(run(w, ["ls", "-a", "--env", "win", "--plain"]).out).not.toContain("11111111");
+    expect(run(w, ["ls", "-a", "--env", "macos", "--plain"]).out).toContain("No sessions");
+    const bad = run(w, ["ls", "--env", "beos"]);
+    expect([bad.code, bad.err]).toEqual([2, "meme ls: unknown env: beos (use wsl, win or windows, mac or macos, linux)\nRun `meme ls --help` for usage.\n"]);
+  });
+
+  test("an unknown option is one line of meme's; help for a command that does not exist exits 2", () => {
+    const w = world();
+    expect(run(w, ["ls", "--bogus"]).err).toBe("meme ls: unknown option --bogus\nRun `meme ls --help` for usage.\n");
+    const help = run(w, ["help", "bogus"]);
+    expect(help.code).toBe(2);
+    expect(help.err).toStartWith("meme: unknown command: bogus\n");
+  });
+
+  test("-a and --all mean all projects everywhere; search --tools and show --hidden", () => {
+    const w = world();
+    withLines(w);
+    expect(run(w, ["search", "boom", "--all", "--plain"], { cwd: w.home }).out).toContain("error: boom");
+    expect(run(w, ["search", "Get-ChildItem", "-a", "--tools", "--plain"]).out).toContain("Get-ChildItem");
+    expect(run(w, ["show", "1111", "--hidden", "--plain"]).code).toBe(0);
+    const old = run(w, ["show", "1111", "--all"]);
+    expect([old.code, old.err]).toEqual([2, "meme show: --all is now --hidden: also injected messages and reasoning\nRun `meme show --help` for usage.\n"]);
   });
 });

@@ -130,7 +130,7 @@ describe.skipIf(process.platform === "win32")("meme forget: continuation chains"
     const w = world();
     chain(w);
     const only = run(w, ["forget", "bbbb", "--yes"]);
-    expect(only.out).toStartWith("bbbbbbbb was continued from aaaaaaaa. aaaaaaaa still holds the first part of this conversation; if only bbbbbbbb is deleted, aaaaaaaa shows up in the list again.\n");
+    expect(only.out).toStartWith("bbbbbbbb was continued from aaaaaaaa. aaaaaaaa still holds the first part of this conversation; if only bbbbbbbb is deleted, aaaaaaaa shows up in the list again. Add --chain to delete it too.\n");
     expect(only.out).toContain("✓ bbbbbbbb deleted");
     expect(run(w, ["ls", "-a"]).out).toContain("aaaaaaaa");
 
@@ -363,5 +363,106 @@ describe.skipIf(process.platform !== "linux" || !Bun.which("flock"))("meme forge
     expect(run(w, ["forget", "c0de", "--yes"], { env }).err).toContain("c0dec0de was active");
     mkdirSync(path.dirname(lockFile(w)), { recursive: true });
     expect(run(w, ["forget", "c0de", "--yes"], { env }).code).toBe(0);
+  });
+});
+
+describe.skipIf(process.platform !== "linux")("meme forget: step 9 (plan §6 ⑨)", () => {
+  test("R10: marked open where meme cannot check (a Windows Codex lock, seen from WSL): refused whatever its age", () => {
+    const w = world();
+    const id = "c0dec0de-0000-4000-8000-0000000000ce";
+    sampleCodex({ id, cwd: "C:\\Users\\me\\work\\demo-app", start: "2026-09-01T08:00:00.000Z" }).write(path.join(w.users, "me", ".codex"));
+    const locks = path.join(w.users, "me", ".codex", "thread-writer-locks");
+    mkdirSync(locks, { recursive: true });
+    writeFileSync(path.join(locks, `${id}.lock`), "");
+    const bin = path.join(w.home, "win-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, "codex.exe"), readFileSync(path.join(fakeCodex(w), "codex"), "utf8").replace('"$HOME/.codex"', `"${w.users}"`));
+    chmodSync(path.join(bin, "codex.exe"), 0o755);
+    const r = run(w, ["forget", "c0de", "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}` } });
+    expect(r.code).toBe(1);
+    expect(r.err).toBe(
+      "meme: c0dec0de is marked open in Codex, and meme cannot check from here whether it still is. Close it there first; if Codex was killed, start it once and quit, then run meme forget again. Nothing deleted.\n",
+    );
+    expect(run(w, ["ls", "-a", "--plain"]).out).toContain("c0dec0de");
+  });
+
+  test("R10: a Claude Code session on Windows whose process meme cannot check from WSL: run forget on Windows", () => {
+    const w = world();
+    register(path.join(w.users, "me", ".claude"), 4343, w.win.id, null);
+    // No tasklist.exe anywhere WSL could find it: not on the PATH, and the drives mounted where there are none.
+    writeFileSync(path.join(w.home, "wsl.conf"), `[automount]\nroot = ${w.home}/no-drives/\n`);
+    const r = run(w, ["forget", "2222", "--yes"], { env: { PATH: MINIMAL_PATH, MEME_WSL_CONF: path.join(w.home, "wsl.conf") } });
+    expect(r.err).toBe("meme: 22222222 is marked open in Claude Code, and meme cannot check from here whether it still is. Run `meme forget 22222222` on Windows, where it can. Nothing deleted.\n");
+  });
+
+  test("R19: a session opened while the user was answering [y/N] is not deleted", async () => {
+    if (!SCRIPT) return;
+    const w = world();
+    const quote = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`;
+    const bin = process.env.MEME_BIN ? [path.resolve(process.env.MEME_BIN)] : [process.execPath, path.resolve(import.meta.dir, "../../src/cli/main.ts")];
+    const p = Bun.spawn([SCRIPT, "-qec", [...bin, "forget", "1111"].map(quote).join(" "), "/dev/null"], {
+      cwd: w.home,
+      env: { PATH: process.env.PATH ?? "", HOME: w.home, USERPROFILE: w.home, MEME_ENV: "wsl", MEME_WINDOWS_USERS_DIR: w.users, TZ: "UTC", TERM: "dumb", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+      stdin: "pipe",
+      stdout: "pipe",
+    });
+    const reader = p.stdout.getReader();
+    let out = "";
+    while (!out.includes("[y/N]")) out += new TextDecoder().decode((await reader.read()).value);
+    const live = liveProcess();
+    try {
+      register(claudeHome(w), live.pid, w.wsl.id, live.started);
+      p.stdin.write("y\n");
+      p.stdin.end();
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        out += new TextDecoder().decode(chunk.value);
+      }
+      await p.exited;
+    } finally {
+      live.stop();
+    }
+    expect(out).toContain(`11111111 is open in Claude Code (WSL, process ${live.pid})`);
+    expect(out).not.toContain("deleted\r\n✓");
+    expect(run(w, ["ls", "-a", "--plain"]).out).toContain("11111111");
+  });
+
+  test("R20: --yes does not ask, in a terminal too", () => {
+    if (!SCRIPT) return;
+    const w = world();
+    const r = runInTerminal(w, ["forget", "1111", "--yes"], "");
+    expect(r.out).not.toContain("[y/N]");
+    expect(r.out).toMatch(/✓\S* 11111111 deleted/);
+  });
+
+  test("forget: Enter alone deletes nothing, in a terminal", () => {
+    if (!SCRIPT) return;
+    const w = world();
+    const r = runInTerminal(w, ["forget", "1111"], "\n");
+    expect(r.out).toContain("Delete this session? [y/N]");
+    expect(r.out).toContain("Nothing deleted.");
+    expect(run(w, ["ls", "-a", "--plain"]).out).toContain("11111111");
+  });
+});
+
+describe.skipIf(process.platform === "win32")("meme forget: what Claude Code keeps elsewhere (plan §6 ⑨, R29)", () => {
+  test("its background job folder goes too, only when the job is this session's; its input history is named", () => {
+    const w = world();
+    const short = w.wsl.id.slice(0, 8);
+    const job = path.join(claudeHome(w), "jobs", short);
+    mkdirSync(job, { recursive: true });
+    writeFileSync(path.join(job, "state.json"), JSON.stringify({ sessionId: w.wsl.id, state: "done" }));
+    writeFileSync(path.join(job, "timeline.jsonl"), '{"text":"what the job did"}\n');
+    const other = path.join(claudeHome(w), "jobs", "22222222");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(path.join(other, "state.json"), JSON.stringify({ sessionId: "22222222-ffff-4000-8000-000000000000" }));
+    const r = run(w, ["forget", "1111", "--yes"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`~/.claude/jobs/${short}/`);
+    expect(r.out).toContain("Claude Code keeps what you typed in its own input history (~/.claude/history.jsonl).");
+    expect(existsSync(job)).toBe(false);
+    expect(existsSync(other)).toBe(true);
+    expect(run(w, ["forget", "2222", "--yes"]).out).not.toContain("jobs/");
   });
 });
