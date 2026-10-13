@@ -110,7 +110,7 @@ stand and waits for your go-ahead.
 |---|---|
 | switch agents in the same project | open the new agent in the project, `! meme continue` |
 | find a session that is not listed | `meme ls -a`, or Ctrl+A in the list |
-| continue a session of another project | `meme continue -a` in a terminal and pick it; meme opens the agent in that project |
+| continue a session of another project | `meme continue -a` in a terminal and pick it; meme opens the agent in the directory that session started in |
 | continue a Windows project in WSL | `meme continue` in a WSL terminal and pick it; the agent opens under `/mnt/c/…` |
 | continue a WSL project on Windows | better in WSL; in PowerShell, `meme continue` and pick it, and meme opens the agent inside WSL (meme must be installed there) |
 | continue a session of another computer or a server | not supported yet; continue it on that machine |
@@ -132,9 +132,15 @@ prints the handoff instead of starting an agent.
 The handoff stays under 15,000 tokens and under what the agent keeps of a
 command's output, so it arrives whole: 27,000 bytes in Claude Code (a longer
 output is saved to a file there), 36,000 bytes in Codex, and the tighter of the
-two when meme cannot tell which agent will read it (a pipe, `--plain`). When a session is longer, the one-line notes go first (oldest first), then the agent's compaction
-summary, then the AI's words in the last turns, and last of all messages from
-the middle. The handoff says what it left out, and `meme show` or
+two when meme cannot tell which agent will read it (a pipe, or `--plain` outside an
+agent; inside one, `--plain` keeps to that agent's limit). When a session is
+longer, these go, in this order: the one-line notes (oldest first), the agent's
+compaction summary (cut to 1,000 tokens, then dropped), the middle of the step
+lists in the last turns, the AI's words in the last turns, the files edited
+earliest, the last test or build's output, the recent commands, the last turns'
+repeated user messages (pointed to instead), the last turns' remaining steps, and
+last of all messages from the middle. If that is still too long, the handoff is
+cut at a line and says so. The handoff says what it left out, and `meme show` or
 `meme search --session` finds it.
 
 ## Commands
@@ -142,10 +148,10 @@ the middle. The handoff says what it left out, and `meme show` or
 | Command | What it does |
 |---|---|
 | `meme ls [-a]` | List sessions: the current project, or all projects with `-a` (and when the current one has none). |
-| `meme show <id> [<turn>]` | Show a session, a turn per line; a turn number shows that turn in full. |
-| `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`). `--all` also lists matches in tool calls and output. |
+| `meme show <id> [<turn>]` | Show a session, a turn per line; a turn number expands that turn (`--full`: nothing cut). `--hidden` also shows injected messages and reasoning. |
+| `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`; `-a` all projects). `--tools` also lists matches in tool calls and output. |
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
-| `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme. |
+| `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
 | `meme status` | Version, data location, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). Attach it when you report a problem. |
 | `meme install` / `uninstall` | Mirror everything once / remove meme's data. |
 
@@ -179,10 +185,14 @@ matches too, it says how many (`-a` lists them).
 deletes nothing. It refuses the session that is running it and a session open in
 Claude Code or Codex (meme checks the process that has it open). Where it cannot
 tell (an older agent, Codex on Windows), it refuses a session active in the last
-few minutes.
+5 minutes; where an agent marks a session open but meme cannot check the process
+from here, it refuses it whatever its age and says where to run `meme forget`
+instead.
 
 - **Claude Code**: the session file and its folders (subagents and large tool
-  output, `file-history`, `session-env`).
+  output, `file-history`, `session-env`, and the session's background job under
+  `jobs/`). Claude Code keeps what you typed in its own input history
+  (`~/.claude/history.jsonl`).
 - **Codex**: meme runs `codex delete --force <id>` with the codex of the side the
   session is on, and never edits Codex's files itself. Codex refuses to delete a
   session while a fork of it exists; name the fork too and meme deletes it first.
@@ -197,8 +207,10 @@ deletion.
   Continuing one opens the agent in WSL, at the session's directory under
   `/mnt/c/…` (or wherever `/etc/wsl.conf` mounts the Windows drives).
 - **meme on Windows** sees the sessions of the WSL distributions that are
-  running, as `Claude·WSL` / `Codex·WSL`. It never starts a stopped distribution:
-  its sessions are listed as they were last seen, with a note at the top.
+  running, as `Claude·WSL` / `Codex·WSL`. Listing, showing, searching and pulling a
+  handoff never start a stopped distribution: its sessions are listed as they were
+  last seen, with a note at the top. Continuing one in a terminal, or deleting one,
+  does start it.
   Continuing a WSL session opens the agent inside WSL, so meme and the agent need
   to be installed there too.
 - In Windows PowerShell 5.1, output piped to another command (`meme ls | ...`)
@@ -234,4 +246,6 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # end-to-end tests against a bu
 Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_HOME` (data directory), `MEME_ENV` (force `win`, `wsl`, `mac` or `linux`),
 `MEME_WINDOWS_USERS_DIR` (where WSL finds the Windows user folders),
-`MEME_WSL_DIR`, `MEME_WSL_RUNNING` and `MEME_WSL_EXE` (WSL as seen from Windows).
+`MEME_WSL_CONF` (another `/etc/wsl.conf`), `MEME_WSL_DIR`, `MEME_WSL_RUNNING` and
+`MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal)
+and `MEME_SLOW_MS` (log runs slower than this; 0 logs every run).

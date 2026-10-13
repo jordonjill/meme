@@ -95,7 +95,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 |---|---|
 | 同一个项目换一家 Agent | 在项目里打开新 Agent，`! meme continue` |
 | 找不到会话 | `meme ls -a`，或者在列表里按 Ctrl+A |
-| 接另一个项目的会话 | 终端里 `meme continue -a` 选它，meme 在那个项目里打开 Agent |
+| 接另一个项目的会话 | 终端里 `meme continue -a` 选它，meme 在那个会话开始的目录里打开 Agent |
 | Windows 上的项目到 WSL 里接 | WSL 终端里 `meme continue` 选它，Agent 在 `/mnt/c/…` 下打开 |
 | WSL 里的项目在 Windows 上接 | 建议回 WSL；在 PowerShell 里 `meme continue` 选它，meme 会在 WSL 里打开 Agent（WSL 里要装 meme） |
 | 另一台电脑、服务器上的会话 | 暂不支持，到那台机器上接 |
@@ -105,7 +105,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 | 提醒 | 怎么办 |
 |---|---|
 | Agent 说"你不在这个会话的仓库里" | 告诉 Agent 在哪做；或者在终端里 `meme continue` 选它，meme 会在对的目录打开 Agent |
-| "The repository is inside WSL…" | 回 WSL 接 |
+| "the repository is inside WSL…" | 回 WSL 接 |
 | "meme is not installed in WSL…" | 在 WSL 里也装一份 |
 | "WSL (Ubuntu) is not running…" | 列表里 WSL 的会话是上次看到的样子，启动 WSL 后会更新 |
 | "run git with `-c core.autocrlf=true …`" | 照做 |
@@ -114,19 +114,21 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 不沿用上一个 Agent 的做法；`--plain` 只打印交接内容，不启动 Agent。
 
 交接内容不超过 15,000 token，也不超过所在 Agent 对命令输出的上限，保证完整读到：
-在 Claude Code 里是 27,000 字节（更长的输出会被它存成文件），在 Codex 里是 36,000 字节，认不出是哪家（接到管道、`--plain`）时取紧的那条。会话太长时，依次删减：先删每句后面那一行（从最早的删起），
-再删 Agent 的压缩摘要，再截短最后几轮里 AI 说的话，最后才省掉中间的消息。
-交接内容会写明省掉了什么，用 `meme show` 或 `meme search --session` 能找回来。
+在 Claude Code 里是 27,000 字节（更长的输出会被它存成文件），在 Codex 里是 36,000 字节，认不出是哪家（接到管道，或在 Agent 外用 `--plain`）时取紧的那条；在 Agent 里用 `--plain`，守的是那家的上限。
+会话太长时，依次删减：每句后面那一行（从最早的删起）、Agent 的压缩摘要（先截到 1,000 token，再去掉）、
+最后几轮中间的步骤、最后几轮里 AI 说的话、最早改的文件、最后一次测试或构建的输出、最近的命令、
+最后几轮里重复的用户原话（改成指向上面那一条）、最后几轮剩下的步骤，最后才省掉中间的消息。
+还超的话，在整行处截断并写明。交接内容会写明省掉了什么，用 `meme show` 或 `meme search --session` 能找回来。
 
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
 | `meme ls [-a]` | 列出会话：默认当前项目，`-a` 列出全部项目（当前项目没有会话时也会列出全部）。 |
-| `meme show <id> [<轮次>]` | 查看会话，每轮一行；给出轮次时完整显示那一轮。 |
-| `meme search <模式>` | 像 `rg` 一样搜说过的话（`-F`、`-i`、`-C`）；`--all` 连工具调用和输出里的匹配也列出。 |
+| `meme show <id> [<轮次>]` | 查看会话，每轮一行；给出轮次时展开那一轮（加 `--full` 什么都不截）。`--hidden` 连注入的消息和推理一起显示。 |
+| `meme search <模式>` | 像 `rg` 一样搜说过的话（`-F`、`-i`、`-C`；`-a` 搜全部项目）；`--tools` 连工具调用和输出里的匹配也列出。 |
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
-| `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话。 |
+| `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话（`-a`：从全部项目里选）。 |
 | `meme status` | 版本、数据位置、会话来源，以及 Agent 升级后 meme 读不了的东西（读不了的会话、不认识的记录类型和 Agent 的版本）。报问题时请附上。 |
 | `meme install` / `uninstall` | 把会话全部镜像一遍 / 删除 meme 的数据。 |
 
@@ -153,9 +155,10 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ### 删除
 
 `meme forget` 列出要删的每一个文件，然后问 `[y/N]`，只按回车不会删除。
-它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。查不到的时候（老版本的 Agent、Windows 上的 Codex），最近几分钟还在写的会话也不删。
+它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。查不到的时候（老版本的 Agent、Windows 上的 Codex），最近 5 分钟还在写的会话也不删；Agent 标着开着、但这里查不了那个进程的，不管多久都不删，并说明该到哪一边运行 `meme forget`。
 
-- **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`）。
+- **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`，以及 `jobs/` 下这个会话的后台任务）。
+  Claude Code 自己的输入历史（`~/.claude/history.jsonl`）里还会留着你输入过的话。
 - **Codex**：meme 用会话所在那一边的 codex 运行 `codex delete --force <id>`，
   自己从不改 Codex 的文件。会话还有分叉时 Codex 不让删；把分叉一起写上，meme 会先删分叉。
   Codex 自己的输入历史（`~/.codex/history.jsonl`）里还会留着你输入过的话。
@@ -167,7 +170,8 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 - **WSL 里的 meme** 看得到 Windows 上的会话，标为 `Claude·Win` / `Codex·Win`。接着做这样的会话时，
   Agent 在 WSL 里、会话目录对应的 `/mnt/c/…` 下打开（`/etc/wsl.conf` 改了挂载位置的，按它来）。
 - **Windows 上的 meme** 看得到正在运行的 WSL 发行版里的会话，标为 `Claude·WSL` / `Codex·WSL`。
-  它不会去启动停着的发行版：那些会话显示上次看到的样子，列表顶部会注明。接着做 WSL 的会话时，
+  列出、查看、搜索和拉取交接都不会启动停着的发行版：那些会话显示上次看到的样子，列表顶部会注明；
+  在终端里接着做、或者删除它的会话，会启动它。接着做 WSL 的会话时，
   Agent 在 WSL 里打开，所以 WSL 里也要装 meme 和对应的 Agent。
 - 在 Windows PowerShell 5.1 里，把输出接到管道上（`meme ls | ...`）时，PowerShell
   按控制台代码页解码，中文会乱码。先运行 `[Console]::OutputEncoding = [Text.Encoding]::UTF8` 即可。
@@ -196,5 +200,6 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 
 测试数据都是编造的，从不提交真实的会话。测试用的环境变量：`MEME_HOME`（数据目录）、
 `MEME_ENV`（强制为 `win`、`wsl`、`mac` 或 `linux`）、`MEME_WINDOWS_USERS_DIR`
-（WSL 在哪里找 Windows 的用户目录）、`MEME_WSL_DIR`、`MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`
-（从 Windows 看到的 WSL）。
+（WSL 在哪里找 Windows 的用户目录）、`MEME_WSL_CONF`（换一份 `/etc/wsl.conf`）、`MEME_WSL_DIR`、
+`MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`（从 Windows 看到的 WSL）、`MEME_TERMINAL`（当作在终端里）、
+`MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）。
