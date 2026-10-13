@@ -1,28 +1,42 @@
+import { graphemes } from "../render/text";
 import { parseKeys, type Key } from "./keys";
 
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/y;
 
-/** Cut a styled line to `cols` columns without breaking its escape codes. */
-export function clip(line: string, cols: number): string {
-  let out = "";
-  let w = 0;
-  let i = 0;
-  while (i < line.length) {
+/** A styled line as cells: escape codes (no width) and what the terminal draws as one character. */
+function cells(line: string): { text: string; w: number; esc: boolean }[] {
+  const out: { text: string; w: number; esc: boolean }[] = [];
+  let run = "";
+  const flush = () => {
+    for (const g of graphemes(run)) out.push({ text: g, w: Bun.stringWidth(g), esc: false });
+    run = "";
+  };
+  for (let i = 0; i < line.length; ) {
     if (line[i] === "\x1b") {
       ANSI.lastIndex = i;
       const m = ANSI.exec(line);
       if (m) {
-        out += m[0];
+        flush();
+        out.push({ text: m[0], w: 0, esc: true });
         i += m[0].length;
         continue;
       }
     }
-    const ch = String.fromCodePoint(line.codePointAt(i)!);
-    const cw = Bun.stringWidth(ch);
-    if (w + cw > cols) break;
-    out += ch;
-    w += cw;
-    i += ch.length;
+    run += line[i];
+    i++;
+  }
+  flush();
+  return out;
+}
+
+/** Cut a styled line to `cols` columns without breaking its escape codes, nor a character (R15). */
+export function clip(line: string, cols: number): string {
+  let out = "";
+  let w = 0;
+  for (const c of cells(line)) {
+    if (!c.esc && w + c.w > cols) break;
+    out += c.text;
+    w += c.w;
   }
   return out;
 }
@@ -34,29 +48,14 @@ export function clip(line: string, cols: number): string {
  */
 export function wrapLine(line: string, cols: number, indent = ""): string[] {
   if (cols <= 0 || Bun.stringWidth(line) <= cols) return [line];
-  // Cells: an escape code (no width) or one character.
-  const cells: { text: string; w: number; esc: boolean }[] = [];
-  for (let i = 0; i < line.length; ) {
-    if (line[i] === "\x1b") {
-      ANSI.lastIndex = i;
-      const m = ANSI.exec(line);
-      if (m) {
-        cells.push({ text: m[0], w: 0, esc: true });
-        i += m[0].length;
-        continue;
-      }
-    }
-    const ch = String.fromCodePoint(line.codePointAt(i)!);
-    cells.push({ text: ch, w: Bun.stringWidth(ch), esc: false });
-    i += ch.length;
-  }
+  const all = cells(line);
   const out: string[] = [];
   let styles = "";
-  let cur: typeof cells = [];
+  let cur: typeof all = [];
   let w = 0;
-  const flush = (part: typeof cells, start: string) => out.push(start + part.map((c) => c.text).join(""));
+  const flush = (part: typeof all, start: string) => out.push(start + part.map((c) => c.text).join(""));
   let start = "";
-  for (const cell of cells) {
+  for (const cell of all) {
     if (!cell.esc && w + cell.w > cols && cur.some((c) => !c.esc)) {
       // Break at the last space when there is one, else in the word.
       const space = cur.map((c) => c.text).lastIndexOf(" ");
@@ -95,22 +94,33 @@ export class Tui {
   private stack: View[] = [];
   private prev: string[] = [];
   private prevCursor = "";
-  private done: (() => void) | null = null;
-  private readonly onData = (data: string) => {
-    for (const key of parseKeys(data)) {
-      if (key.name === "ctrl" && key.ch === "c") {
-        this.stack = [];
-        break;
+  private done: ((err?: unknown) => void) | null = null;
+  private readonly onData = (data: string) =>
+    this.safely(() => {
+      for (const key of parseKeys(data)) {
+        if (key.name === "ctrl" && key.ch === "c") {
+          this.stack = [];
+          break;
+        }
+        this.top()?.key(key);
+        if (!this.top()) break;
       }
-      this.top()?.key(key);
-      if (!this.top()) break;
+      this.draw();
+    });
+  private readonly onResize = () =>
+    this.safely(() => {
+      this.prev = [];
+      this.draw();
+    });
+
+  /** An error in a view: the terminal is given back first, then `run` fails with it (R14). */
+  private safely(f: () => void): void {
+    try {
+      f();
+    } catch (err) {
+      this.cleanup(err);
     }
-    this.draw();
-  };
-  private readonly onResize = () => {
-    this.prev = [];
-    this.draw();
-  };
+  }
   private readonly restore = () => this.cleanup();
 
   constructor(
@@ -146,8 +156,8 @@ export class Tui {
 
   run(first: View): Promise<void> {
     this.push(first);
-    return new Promise((resolve) => {
-      this.done = resolve;
+    return new Promise((resolve, reject) => {
+      this.done = (err) => (err === undefined ? resolve() : reject(err));
       this.out.write("\x1b[?1049h\x1b[?25l");
       this.inp.setRawMode?.(true);
       this.inp.setEncoding("utf8");
@@ -155,7 +165,7 @@ export class Tui {
       this.inp.resume();
       this.out.on("resize", this.onResize);
       process.on("exit", this.restore);
-      this.draw();
+      this.safely(() => this.draw());
     });
   }
 
@@ -181,7 +191,7 @@ export class Tui {
     this.prevCursor = cursor;
   }
 
-  private cleanup(): void {
+  private cleanup(err?: unknown): void {
     if (!this.done) return;
     const done = this.done;
     this.done = null;
@@ -191,6 +201,6 @@ export class Tui {
     this.inp.setRawMode?.(false);
     this.inp.pause();
     this.out.write("\x1b[?25h\x1b[?1049l");
-    done();
+    done(err);
   }
 }
