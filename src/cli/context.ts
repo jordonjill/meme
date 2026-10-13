@@ -150,13 +150,20 @@ export interface Output {
   width: number;
 }
 
+/**
+ * The width of output that does not go to a terminal (a pipe, a file, an agent's
+ * tool). PowerShell folds a line that fills its 120 columns, so the last character
+ * of such a line went to a line of its own (plan §6 ⑩.1).
+ */
+export const PIPE_WIDTH = 119;
+
 export function output(plain: boolean): Output {
   const tty = Boolean(process.stdout.isTTY);
   const color = tty && !plain && !process.env.NO_COLOR && !insideAgent();
   return {
     interactive: tty && Boolean(process.stdin.isTTY) && !plain && !insideAgent(),
     st: makeStyle(color),
-    width: tty ? Math.max(40, process.stdout.columns || 100) : 120,
+    width: tty ? Math.max(40, process.stdout.columns || 100) : PIPE_WIDTH,
   };
 }
 
