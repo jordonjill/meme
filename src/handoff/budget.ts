@@ -17,20 +17,24 @@ export interface Limits {
   chars?: number;
   /** Bytes of UTF-8, where the agent counts those. */
   bytes?: number;
+  /** Line breaks, where the agent also keeps only so many lines. */
+  lines?: number;
 }
+
+type Unit = "chars" | "bytes" | "lines";
 
 /**
  * The limits inside an agent: meme's own and that agent's. Not knowing which
  * agent will read it (`--plain`, a pipe, an agent without a profile), the tightest
  * of every profile, each in its unit.
  */
-export function limitsIn(agent: { outputLimit: { chars?: number; bytes?: number } } | null): Limits {
+export function limitsIn(agent: { outputLimit: Partial<Record<Unit, number>> } | null): Limits {
   if (agent) return { tokens: TOKEN_LIMIT, ...agent.outputLimit };
-  const tightest = (unit: "chars" | "bytes") => {
+  const tightest = (unit: Unit) => {
     const all = PROFILES.map((p) => p.outputLimit[unit]).filter((n): n is number => n !== undefined);
     return all.length ? { [unit]: Math.min(...all) } : {};
   };
-  return { tokens: TOKEN_LIMIT, ...tightest("chars"), ...tightest("bytes") };
+  return { tokens: TOKEN_LIMIT, ...tightest("chars"), ...tightest("bytes"), ...tightest("lines") };
 }
 
 const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
@@ -41,29 +45,37 @@ export function estimateTokens(s: string): number {
   return cjk + Math.ceil((s.length - cjk) / 4);
 }
 
-/** The three things the limits count; they add up exactly over pieces of text. */
+/** The four things the limits count; they add up exactly over pieces of text (lines as line breaks). */
 export interface Size {
   chars: number;
   tokens: number;
   bytes: number;
+  lines: number;
 }
 
-export const ZERO: Size = { chars: 0, tokens: 0, bytes: 0 };
+export const ZERO: Size = { chars: 0, tokens: 0, bytes: 0, lines: 0 };
 
 export function measure(s: string): Size {
-  return { chars: s.length, tokens: estimateTokens(s), bytes: Buffer.byteLength(s, "utf8") };
+  let lines = 0;
+  for (let i = s.indexOf("\n"); i >= 0; i = s.indexOf("\n", i + 1)) lines++;
+  return { chars: s.length, tokens: estimateTokens(s), bytes: Buffer.byteLength(s, "utf8"), lines };
 }
 
 export function plus(...sizes: Size[]): Size {
-  return sizes.reduce((a, b) => ({ chars: a.chars + b.chars, tokens: a.tokens + b.tokens, bytes: a.bytes + b.bytes }), ZERO);
+  return sizes.reduce((a, b) => ({ chars: a.chars + b.chars, tokens: a.tokens + b.tokens, bytes: a.bytes + b.bytes, lines: a.lines + b.lines }), ZERO);
 }
 
 export function minus(a: Size, b: Size): Size {
-  return { chars: a.chars - b.chars, tokens: a.tokens - b.tokens, bytes: a.bytes - b.bytes };
+  return { chars: a.chars - b.chars, tokens: a.tokens - b.tokens, bytes: a.bytes - b.bytes, lines: a.lines - b.lines };
 }
 
 export function within(s: Size, limits: Limits): boolean {
-  return s.tokens <= limits.tokens && (limits.chars === undefined || s.chars <= limits.chars) && (limits.bytes === undefined || s.bytes <= limits.bytes);
+  return (
+    s.tokens <= limits.tokens &&
+    (limits.chars === undefined || s.chars <= limits.chars) &&
+    (limits.bytes === undefined || s.bytes <= limits.bytes) &&
+    (limits.lines === undefined || s.lines <= limits.lines)
+  );
 }
 
 /** Cut text to about `max` tokens on a line or character boundary. */
@@ -87,7 +99,7 @@ export function cutToTokens(s: string, max: number): { text: string; cut: boolea
  * what is left out is one stretch in the middle.
  */
 export function fitMessages(costs: number[], budget: number): Set<number> {
-  const sizes = costs.map((c) => ({ chars: c, tokens: 0, bytes: 0 }));
+  const sizes = costs.map((c) => ({ chars: c, tokens: 0, bytes: 0, lines: 0 }));
   return fitSizes(sizes, (s) => s.chars <= budget);
 }
 

@@ -451,10 +451,10 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   // turn: the `↳` lines, oldest first; the compaction summary, first down to 1,000
   // tokens; the middle of the step lists in the last turns; the AI's words in the
   // last turns; the edited files edited earliest; user messages in the middle.
-  // Characters, tokens and bytes are added up separately, each against its own limit.
+  // Characters, tokens, bytes and lines are added up separately, each against its own limit.
   const line = (t: string) => measure(t + "\n");
   // 1% for rounding, and room for a "… left out" note in each section.
-  const slack = { chars: Math.ceil((limits.chars ?? 0) * 0.01), tokens: Math.ceil(limits.tokens * 0.01), bytes: Math.ceil((limits.bytes ?? 0) * 0.01) };
+  const slack = { chars: Math.ceil((limits.chars ?? 0) * 0.01), tokens: Math.ceil(limits.tokens * 0.01), bytes: Math.ceil((limits.bytes ?? 0) * 0.01), lines: Math.ceil((limits.lines ?? 0) * 0.01) };
   const note = line(`… 9,999 messages left out (turns 9999–9999); find them with \`meme search <text> --session 0123456789ab\` or \`meme show 0123456789ab\``);
   const reserve = plus(line([...head, "", ...preamble(sid, opts, WORST_INCLUDED, WORST_LEFT_OUT), ""].join("\n")), slack, ...sections.map(() => note));
   const items = sections.flatMap((sec) => sec.items);
