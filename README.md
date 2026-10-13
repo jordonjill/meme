@@ -4,8 +4,8 @@
 
 Your coding-agent sessions in one place, ready to continue in any agent.
 
-meme reads the sessions of **Claude Code** and **Codex**, mirrors them into one
-local SQLite file, and lets you list, read and search them together. When you
+meme reads the sessions of **Claude Code**, **Codex**, **OpenCode** (1.x) and
+**Pi**, mirrors them into one local SQLite file, and lets you list, read and search them together. When you
 want to go on with a session in another agent (or in a fresh session of the same
 one), meme hands it over: the new agent runs `meme continue <id>` and gets a
 handoff built word for word from the old session.
@@ -18,11 +18,11 @@ and meme on Windows also sees the sessions in your running WSL distributions.
 
 ## What it does
 
-- **One list.** `meme ls` lists the sessions of the current project from both
-  agents and both sides, newest first, with a full-screen picker in a terminal.
+- **One list.** `meme ls` lists the sessions of the current project from every
+  agent and both sides, newest first, with a full-screen picker in a terminal.
 - **Read and search.** `meme show` folds each turn into one line and expands the
   ones you pick; `meme search` works like `rg` over what you and the AI said.
-- **Continue anywhere.** `meme continue` starts Claude Code or Codex in the
+- **Continue anywhere.** `meme continue` starts Claude Code, Codex, OpenCode or Pi in the
   directory the session started in and lets it fetch the handoff: your messages,
   each with a line on what the AI did, the last turns step by step, the files that
   were edited, the recent commands and the last test or build run. A session that was itself
@@ -103,6 +103,8 @@ stand and waits for your go-ahead.
 - In **Claude Code**, after you choose, the agent runs the command itself.
 - In **Codex**, the output of a `!` command is shown to you but not passed to
   the model, so say "continue" after it.
+- In **OpenCode** and **Pi**, as in Claude Code. (In OpenCode, `!` switches the
+  input to shell mode; the rest of the line is the command.)
 
 **I want to…**
 
@@ -131,8 +133,9 @@ prints the handoff instead of starting an agent.
 
 The handoff stays under 15,000 tokens and under what the agent keeps of a
 command's output, so it arrives whole: 27,000 bytes in Claude Code (a longer
-output is saved to a file there), 36,000 bytes in Codex, and the tighter of the
-two when meme cannot tell which agent will read it (a pipe, or `--plain` outside an
+output is saved to a file there), 36,000 bytes in Codex, 46,080 bytes and 1,800
+lines in OpenCode and Pi (both keep only the end of a longer output), and the
+tightest of them when meme cannot tell which agent will read it (a pipe, or `--plain` outside an
 agent; inside one, `--plain` keeps to that agent's limit). When a session is
 longer, these go, in this order: the one-line notes (oldest first), the agent's
 compaction summary (cut to 1,000 tokens, then dropped), the middle of the step
@@ -166,7 +169,7 @@ every option.
 - `↑` `↓` select, `Enter` open (or choose), `Space` preview, `Esc` quit
 - type to search titles, projects, branches and ids (`meme search` searches what
   was said)
-- `←` `→` filter by platform (WSL, Win) or agent (Claude, Codex), `Tab` switch
+- `←` `→` filter by platform (WSL, Win) or agent (Claude, Codex, OpenCode, Pi), `Tab` switch
   between those two rows; with all platforms shown, sessions are grouped by
   platform
 - `Ctrl+A` this project / all projects
@@ -183,8 +186,10 @@ matches too, it says how many (`-a` lists them).
 
 `meme forget` lists every file it will delete and asks `[y/N]`; Enter alone
 deletes nothing. It refuses the session that is running it and a session open in
-Claude Code or Codex (meme checks the process that has it open). Where it cannot
-tell (an older agent, Codex on Windows), it refuses a session active in the last
+Claude Code or Codex (meme checks the process that has it open). OpenCode and Pi
+do not say which session they have open: meme refuses the sessions of a folder
+one of them is running in. Where it cannot tell (an older agent, Codex on
+Windows, OpenCode and Pi on Windows), it refuses a session active in the last
 5 minutes; where an agent marks a session open but meme cannot check the process
 from here, it refuses it whatever its age and says where to run `meme forget`
 instead.
@@ -197,17 +202,24 @@ instead.
   session is on, and never edits Codex's files itself. Codex refuses to delete a
   session while a fork of it exists; name the fork too and meme deletes it first.
   Codex keeps what you typed in its own input history (`~/.codex/history.jsonl`).
+- **OpenCode**: meme runs `opencode session delete <id>` with the opencode of the
+  side the session is on, and deletes the full output of long commands OpenCode
+  saved for it (`tool-output/`). OpenCode keeps what you typed in its own prompt
+  history (`~/.local/state/opencode/prompt-history.jsonl`).
+- **Pi**: Pi has no delete command (its `/resume` list deletes the file too), so
+  meme deletes the session file, and the full output of long commands Pi saved for
+  it in the temporary folder.
 
 Inside an agent, `--yes` is required, and only when you have asked for the
 deletion.
 
 ## WSL and Windows
 
-- **meme in WSL** sees your Windows sessions, as `Claude·Win` / `Codex·Win`.
+- **meme in WSL** sees your Windows sessions, as `Claude·Win`, `Codex·Win` and so on.
   Continuing one opens the agent in WSL, at the session's directory under
   `/mnt/c/…` (or wherever `/etc/wsl.conf` mounts the Windows drives).
 - **meme on Windows** sees the sessions of the WSL distributions that are
-  running, as `Claude·WSL` / `Codex·WSL`. Listing, showing, searching and pulling a
+  running, as `Claude·WSL`, `Codex·WSL` and so on. Listing, showing, searching and pulling a
   handoff never start a stopped distribution: its sessions are listed as they were
   last seen, with a note at the top. Continuing one in a terminal, or deleting one,
   does start it.
@@ -225,8 +237,13 @@ deletion.
   logs next to it; `MEME_HOME` moves it. Deleted records are overwritten
   (`secure_delete`).
 - meme only reads the agents' files (`~/.claude`, or `CLAUDE_CONFIG_DIR`;
-  `~/.codex`, or `CODEX_HOME`). The one exception is `meme forget`. It never
-  writes Codex's databases.
+  `~/.codex`, or `CODEX_HOME`; `~/.local/share/opencode/opencode.db`, or
+  `OPENCODE_DB`; `~/.pi/agent/sessions`, or `PI_CODING_AGENT_DIR`). The one
+  exception is `meme forget`. It never writes the agents' databases (Codex's,
+  OpenCode's); OpenCode's is opened read-only, and read from a copy across WSL
+  and Windows.
+- OpenCode 2.0 (`@opencode/cli`) is not supported yet: it keeps sessions in a new
+  format in the same database, and `meme status` reports them as not read.
 - Secrets with a clear format are replaced with `[REDACTED:type]` before
   anything is stored: Anthropic and OpenAI API keys, GitHub tokens, AWS key ids,
   private keys, bearer tokens, and passwords in URLs or after `password=`.

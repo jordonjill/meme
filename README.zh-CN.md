@@ -4,7 +4,7 @@
 
 把编程 Agent 的会话放在一起，换哪个 Agent 都能接着做。
 
-meme 读取 **Claude Code** 和 **Codex** 的会话，镜像到本地的一个 SQLite 文件里，
+meme 读取 **Claude Code**、**Codex**、**OpenCode**（1.x）和 **Pi** 的会话，镜像到本地的一个 SQLite 文件里，
 让你在一处列出、查看、搜索它们。想在另一个 Agent（或同一个 Agent 的新会话）里接着做时，
 meme 负责交接：新 Agent 运行 `meme continue <id>`，拿到一份逐字取自原会话的交接内容。
 
@@ -19,7 +19,7 @@ Windows 上的 meme 也能看到正在运行的 WSL 发行版里的会话。
   在终端里是一个全屏的选择列表。
 - **查看和搜索。** `meme show` 把每一轮折成一行，选中哪轮展开哪轮；
   `meme search` 像 `rg` 一样搜你和 AI 说过的话。
-- **换个 Agent 接着做。** `meme continue` 在会话开始的目录里启动 Claude Code 或 Codex，
+- **换个 Agent 接着做。** `meme continue` 在会话开始的目录里启动 Claude Code、Codex、OpenCode 或 Pi，
   让它自己拉取交接内容：你说过的话（每句后面一行写 AI 做了什么）、最后几轮的每一步、
   改过的文件、最近的命令、最后一次测试或构建。会话本身是从别的会话接过来的，
   会带上前面那些会话里你说过的话；Agent 压缩过上下文的，会带上它自己写的摘要。
@@ -88,6 +88,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 - 在 **Claude Code** 里，你选好以后，Agent 会自己运行这条命令。
 - 在 **Codex** 里，`!` 命令的输出只显示给你，不会交给模型，所以运行后要再说一句"继续"。
+- 在 **OpenCode** 和 **Pi** 里，和 Claude Code 一样。（OpenCode 里敲 `!` 会切到 shell 模式，这一行后面的就是命令。）
 
 **我想……**
 
@@ -114,7 +115,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 不沿用上一个 Agent 的做法；`--plain` 只打印交接内容，不启动 Agent。
 
 交接内容不超过 15,000 token，也不超过所在 Agent 对命令输出的上限，保证完整读到：
-在 Claude Code 里是 27,000 字节（更长的输出会被它存成文件），在 Codex 里是 36,000 字节，认不出是哪家（接到管道，或在 Agent 外用 `--plain`）时取紧的那条；在 Agent 里用 `--plain`，守的是那家的上限。
+在 Claude Code 里是 27,000 字节（更长的输出会被它存成文件），在 Codex 里是 36,000 字节，在 OpenCode 和 Pi 里是 46,080 字节、1,800 行（这两家对更长的输出只留结尾），认不出是哪家（接到管道，或在 Agent 外用 `--plain`）时取最紧的；在 Agent 里用 `--plain`，守的是那家的上限。
 会话太长时，依次删减：每句后面那一行（从最早的删起）、Agent 的压缩摘要（先截到 1,000 token，再去掉）、
 最后几轮中间的步骤、最后几轮里 AI 说的话、最早改的文件、最后一次测试或构建的输出、最近的命令、
 最后几轮里重复的用户原话（改成指向上面那一条）、最后几轮剩下的步骤，最后才省掉中间的消息。
@@ -141,7 +142,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 - `↑` `↓` 选择，`Enter` 打开（或选中），`空格` 预览，`Esc` 退出
 - 直接打字搜索标题、项目、分支和 id（搜说过的话用 `meme search`）
-- `←` `→` 按平台（WSL、Win）或 Agent（Claude、Codex）筛选，`Tab` 在这两行之间切换；
+- `←` `→` 按平台（WSL、Win）或 Agent（Claude、Codex、OpenCode、Pi）筛选，`Tab` 在这两行之间切换；
   平台选全部时，会话按平台分组
 - `Ctrl+A` 在当前项目和全部项目之间切换
 
@@ -155,21 +156,24 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ### 删除
 
 `meme forget` 列出要删的每一个文件，然后问 `[y/N]`，只按回车不会删除。
-它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。查不到的时候（老版本的 Agent、Windows 上的 Codex），最近 5 分钟还在写的会话也不删；Agent 标着开着、但这里查不了那个进程的，不管多久都不删，并说明该到哪一边运行 `meme forget`。
+它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。OpenCode 和 Pi 不说自己开着哪个会话：它们中哪个正在某个目录里运行，那个目录的会话 meme 都不删。查不到的时候（老版本的 Agent、Windows 上的 Codex、Windows 上的 OpenCode 和 Pi），最近 5 分钟还在写的会话也不删；Agent 标着开着、但这里查不了那个进程的，不管多久都不删，并说明该到哪一边运行 `meme forget`。
 
 - **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`，以及 `jobs/` 下这个会话的后台任务）。
   Claude Code 自己的输入历史（`~/.claude/history.jsonl`）里还会留着你输入过的话。
 - **Codex**：meme 用会话所在那一边的 codex 运行 `codex delete --force <id>`，
   自己从不改 Codex 的文件。会话还有分叉时 Codex 不让删；把分叉一起写上，meme 会先删分叉。
   Codex 自己的输入历史（`~/.codex/history.jsonl`）里还会留着你输入过的话。
+- **OpenCode**：meme 用会话所在那一边的 opencode 运行 `opencode session delete <id>`，并删掉 OpenCode 为这个会话存的长输出全文（`tool-output/`）。
+  OpenCode 自己的输入历史（`~/.local/state/opencode/prompt-history.jsonl`）里还会留着你输入过的话。
+- **Pi**：Pi 没有删除命令（它的 `/resume` 列表删的也是文件），所以由 meme 删掉会话文件，以及 Pi 为它存在临时目录里的长输出全文。
 
 在 Agent 里删除必须加 `--yes`，而且只能在你明确要求删除时加。
 
 ## WSL 和 Windows
 
-- **WSL 里的 meme** 看得到 Windows 上的会话，标为 `Claude·Win` / `Codex·Win`。接着做这样的会话时，
+- **WSL 里的 meme** 看得到 Windows 上的会话，标为 `Claude·Win`、`Codex·Win` 等。接着做这样的会话时，
   Agent 在 WSL 里、会话目录对应的 `/mnt/c/…` 下打开（`/etc/wsl.conf` 改了挂载位置的，按它来）。
-- **Windows 上的 meme** 看得到正在运行的 WSL 发行版里的会话，标为 `Claude·WSL` / `Codex·WSL`。
+- **Windows 上的 meme** 看得到正在运行的 WSL 发行版里的会话，标为 `Claude·WSL`、`Codex·WSL` 等。
   列出、查看、搜索和拉取交接都不会启动停着的发行版：那些会话显示上次看到的样子，列表顶部会注明；
   在终端里接着做、或者删除它的会话，会启动它。接着做 WSL 的会话时，
   Agent 在 WSL 里打开，所以 WSL 里也要装 meme 和对应的 Agent。
@@ -182,8 +186,10 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 - 一切都留在你自己的电脑上，meme 不发任何网络请求。
 - 镜像是 `~/.meme/meme.sqlite`（Windows 上在 `%USERPROFILE%\.meme`），日志在它旁边；
   设置 `MEME_HOME` 可以换位置。删除的记录会被覆盖（`secure_delete`）。
-- meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`），
-  唯一的例外是 `meme forget`。它从不写 Codex 的数据库。
+- meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`；
+  `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
+  唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本。
+- 还不支持 OpenCode 2.0（`@opencode/cli`）：它把会话用新格式存在同一个库里，`meme status` 会报这些会话没读出来。
 - 存进镜像之前，格式明确的密钥会被替换成 `[REDACTED:类型]`：Anthropic 和 OpenAI 的 API key、
   GitHub token、AWS key id、私钥、Bearer token，以及 URL 里或 `password=` 后面的密码。
 - 在 Agent 里删掉的会话，下次运行 meme 时会从镜像里消失。`meme uninstall` 删除 `~/.meme`，
