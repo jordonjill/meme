@@ -1,6 +1,6 @@
 import { constants, Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { userKind, type Injected, type UserKind } from "../model/injected";
@@ -79,12 +79,21 @@ function openDb(file: string, local: boolean): Database {
   cached?.db.close();
   let db: Database;
   if (!local) {
+    // The copy stays for the next run, which copies again only once the database changed.
     const dir = copyDir(file);
-    rmSync(dir, { recursive: true, force: true });
-    mkdirSync(dir, { recursive: true });
     const copy = path.join(dir, "opencode.db");
-    copyFileSync(file, copy);
-    if (existsSync(file + "-wal")) copyFileSync(file + "-wal", copy + "-wal");
+    const stampFile = path.join(dir, "stamp");
+    let fresh = false;
+    try {
+      fresh = readFileSync(stampFile, "utf8") === stamp && existsSync(copy);
+    } catch {}
+    if (!fresh) {
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      copyFileSync(file, copy);
+      if (existsSync(file + "-wal")) copyFileSync(file + "-wal", copy + "-wal");
+      writeFileSync(stampFile, stamp);
+    }
     db = new Database(copy, { readonly: true });
   } else if (existsSync(file + "-wal")) db = new Database(file, { readonly: true });
   else {

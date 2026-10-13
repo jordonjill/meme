@@ -3,7 +3,7 @@
  * handed over from and pushed into, and deleted, through the command line.
  */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { samplePi } from "../fixtures/gen-pi";
@@ -127,7 +127,12 @@ describe("OpenCode and Pi through the command line (plan §6 ⑩)", () => {
     expect(ls).toMatch(new RegExp(`  ${PI}  Pi·WSL +.* /home/u/work/app `));
     expect(ls).toMatch(new RegExp(`  ${OC}  OpenCode·WSL +.* /home/u/work/app `));
     expect(readdirSync(linux("/home/u/.local/share/opencode"))).toEqual(["opencode.db"]);
-    expect(readdirSync(path.join(tmp, "meme-opencode")).length).toBe(1);
+    const copies = readdirSync(path.join(tmp, "meme-opencode"));
+    expect(copies.length).toBe(1);
+    // The next run uses the copy again: the database did not change.
+    const copy = path.join(tmp, "meme-opencode", copies[0]!, "opencode.db");
+    const before = statSync(copy).mtimeMs;
     expect(run(w, ["show", OC], { env }).out).toContain("❯ ! git status --short");
+    expect(statSync(copy).mtimeMs).toBe(before);
   });
 });
