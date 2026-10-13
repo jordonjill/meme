@@ -82,7 +82,13 @@ export function isWindowsPath(p: string): boolean {
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** `/mnt/c/x` (under the mount root): drive letter, then the rest. */
-const mounted = (root: string) => new RegExp(`^${escape(root)}([a-z])(\\/.*)?$`, "i");
+const patterns = new Map<string, RegExp>();
+/** `/mnt/c/…` for a mount root: made once per root, used for every path compared. */
+const mounted = (root: string) => {
+  let re = patterns.get(root);
+  if (!re) patterns.set(root, (re = new RegExp(`^${escape(root)}([a-z])(\\/.*)?$`, "i")));
+  return re;
+};
 
 /** `C:\x\y` → `/mnt/c/x/y` (under the mount root). Other paths are returned unchanged. */
 export function winToWsl(p: string, root = MOUNT_ROOT): string {
