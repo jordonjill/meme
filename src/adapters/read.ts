@@ -95,7 +95,7 @@ export const BOUNDS = { toolArguments: { maxCharacters: null }, toolResults: { m
  * rollback to the first message) is read as a partial one, which keeps what is
  * there (plan §6 ⑨, R13). A group id that clashes with the file's: read without it.
  */
-export function canonical(source: "claude-code" | "codex", text: string, o: { groupId?: string; partial?: boolean } = {}): { records: CanonicalRecord[]; dropped: Set<number> } {
+export function canonical(source: "claude-code" | "codex" | "opencode" | "pi", text: string, o: { groupId?: string; partial?: boolean } = {}): { records: CanonicalRecord[]; dropped: Set<number> } {
   const run = (groupId: string | undefined, partial: boolean) => {
     const context = { ...(groupId ? { groupId } : {}), ...(partial ? { partial } : {}) };
     const r = normalizeToCanonical({ source, transcript: text, bounds: BOUNDS, ...(groupId || partial ? { sourceContext: context } : {}) });

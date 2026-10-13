@@ -78,6 +78,11 @@ export function importAll(store: Store, platform: Platform, adapters: readonly A
   return result;
 }
 
+function fileStat(file: string): { size: number; mtime: number } {
+  const st = statSync(file);
+  return { size: st.size, mtime: st.mtimeMs };
+}
+
 function realPath(p: string): string {
   try {
     return realpathSync(p);
@@ -143,8 +148,9 @@ function importRoot(
     let unreadable = false;
     for (const file of files) {
       try {
-        const st = statSync(file);
-        states.push({ path: file, source: root.id, size: st.size, mtime: st.mtimeMs });
+        // A session kept in a database has no file of its own: its adapter says how big and how new it is.
+        const st = adapter.stat?.(file) ?? fileStat(file);
+        states.push({ path: file, source: root.id, size: st.size, mtime: st.mtime });
       } catch (err) {
         unreadable = true;
         log.error(`stat failed, keeping the old mirror: ${file}`, err);

@@ -41,7 +41,7 @@ describe("agent knowledge stays in the adapters (plan §6 ⑦)", () => {
     const re = agentWords();
     for (const p of PROFILES) {
       expect(re.test(p.name)).toBe(true);
-      expect(re.test(p.sessionVar)).toBe(true);
+      if (p.sessionVar) expect(re.test(p.sessionVar)).toBe(true);
     }
     // Words that merely contain a short alias are not agents.
     expect(re.test("access succeeded")).toBe(false);

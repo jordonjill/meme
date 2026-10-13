@@ -134,7 +134,7 @@ export function projectOf(platform: Platform, cwd: string): string {
  * running, so all are left out.
  */
 export function currentSessions(vars: Record<string, string | undefined>): Set<string> {
-  const ids = PROFILES.map((p) => vars[p.sessionVar]?.trim().toLowerCase()).filter((v): v is string => Boolean(v));
+  const ids = PROFILES.map((p) => (p.sessionVar ? vars[p.sessionVar]?.trim().toLowerCase() : undefined)).filter((v): v is string => Boolean(v));
   return new Set(ids);
 }
 

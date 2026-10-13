@@ -4,7 +4,7 @@ import type { Env } from "../platform/env";
 import type { Platform } from "../platform/paths";
 import type { WslPlace } from "../platform/wsl";
 
-export type Agent = "claude-code" | "codex";
+export type Agent = "claude-code" | "codex" | "opencode" | "pi";
 
 /** One directory meme reads sessions from, e.g. WSL's `~/.claude/projects`. */
 export interface SourceRoot {
@@ -120,14 +120,25 @@ export interface OpenEntry {
   started?: string | null;
   /** Or a file the agent's process keeps locked (flock) while the session is open. */
   lockFile?: string;
+  /**
+   * Only a guess: the agent's process runs in the session's folder, and the agent
+   * does not say which of the folder's sessions it has open (plan §6 ⑩).
+   */
+  maybe?: boolean;
 }
 
 export interface Adapter {
   agent: Agent;
   /** Session source directories; in WSL also the Windows ones under /mnt/c. */
   roots(platform: Platform): SourceRoot[];
-  /** Main session files under a root. Throws when the root cannot be read. */
+  /**
+   * Main session files under a root. Throws when the root cannot be read. An agent
+   * that keeps every session in one database names each `<database>#<session id>`
+   * and gives their state through `stat`.
+   */
   listFiles(root: SourceRoot): string[];
+  /** Size and time of a listed file that is not a file of its own (a session in a database); else the file's. */
+  stat?(file: string): { size: number; mtime: number };
   sessionId(path: string): string | null;
   /** The file's text without a half-written last line. */
   readText(path: string): string;
@@ -150,6 +161,18 @@ export interface Adapter {
    * null when the agent keeps no such list there (an older version): meme cannot tell. Never throws.
    */
   openSessions?(root: SourceRoot): OpenEntry[] | null;
+  /**
+   * An agent that does not say which sessions it has open (plan §6 ⑩): they are
+   * guessed from the folders its processes run in. A session in such a folder may
+   * be open; one in no such folder is judged by its age, as for any agent meme
+   * cannot ask.
+   */
+  openByFolder?: {
+    /** One of its processes, by its command line. */
+    isProcess(args: string[]): boolean;
+    /** Its sessions under this root that were started in `dir` (a path on the side the session is on). */
+    sessionsIn(root: SourceRoot, dir: string): string[];
+  };
   /** How to delete a session from the agent itself (plan §3.5). */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
   /**
@@ -240,20 +263,20 @@ export interface Profile {
   instructionFile: string;
   /** meme runs inside it: its tool calls see these variables. */
   inside(vars: Record<string, string | undefined>): boolean;
-  /** The variable that holds the id of the session running meme. */
-  sessionVar: string;
+  /** The variable that holds the id of the session running meme, when the agent sets one. */
+  sessionVar?: string;
   /**
    * When the variables of several agents are set (one started inside another),
    * the one with the highest number is taken as the one running meme.
    */
   nesting: number;
   /**
-   * What a handoff printed inside it must stay under, in the unit it counts: it
+   * What a handoff printed inside it must stay under, in the units it counts: it
    * keeps only so much of a command's output (handoff.md §7.3); added to meme's
    * own 15,000 tokens. Measure it (print `seq 1 20000`, see where it is cut) and
    * leave about 10% for the lines around the handoff.
    */
-  outputLimit: { chars?: number; bytes?: number };
+  outputLimit: { chars?: number; bytes?: number; lines?: number };
   /** The output of a `!` command reaches the model by itself (else only with the next message). */
   bangReachesModel: boolean;
   /**
