@@ -53,11 +53,24 @@ describe("Claude Code", () => {
     const m = mirror((home) => {
       const s = new ClaudeSession({ id: A });
       s.user("Start");
-      s.queued("who sent this?", null);
+      s.queued("who sent this?", "robot");
       s.assistant("Started.");
       s.write(projectsDir(home));
     });
     expect(m.unread()).toEqual(["attachment"]);
+  });
+
+  test("R1: before 2.1.296 there was no origin: a notice is not a message, what the user typed is", () => {
+    const m = mirror((home) => {
+      const s = new ClaudeSession({ id: A, version: "2.1.278" });
+      s.user("Start");
+      s.queued("<task-notification>\n<task-id>t1</task-id>\n<summary>done</summary>\n</task-notification>", null);
+      s.queued("and use tabs, not spaces", null);
+      s.assistant("Started.");
+      s.write(projectsDir(home));
+    });
+    expect(m.messages(A)).toEqual(["Start", "and use tabs, not spaces"]);
+    expect(m.unread()).toEqual([]);
   });
 
   test("R12: a prompt the user rewound and everything under it are neither turns nor edited files", () => {
