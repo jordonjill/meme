@@ -1,6 +1,6 @@
 import { agentNamed, agentWords } from "../../adapters/profiles";
 import type { Agent } from "../../adapters/types";
-import { isEnv, type Env } from "../../platform/env";
+import { ENV_WORDS, type Env } from "../../platform/env";
 import { listing, lsText, type ListFilter } from "../../render/ls";
 import { allSessions } from "../../store/queries";
 import { runPicker } from "../../tui/picker";
@@ -15,7 +15,7 @@ Run from inside an agent, the agent's own session is left out.
 
   -a, --all        all projects
   --agent <name>   only ${agentWords()} sessions
-  --env <name>     only sessions from wsl, win, mac or linux
+  --env <name>     only sessions from wsl, win (windows), mac (macos) or linux
   --plain          plain text, even in a terminal
 
 In a terminal: ↑↓ select, Enter open, Space preview, type to search titles,
@@ -32,9 +32,9 @@ export function parseAgent(v: string | undefined): Agent | undefined {
 
 export function parseEnv(v: string | undefined): Env | undefined {
   if (v === undefined) return undefined;
-  const e = v.toLowerCase();
-  if (isEnv(e)) return e;
-  throw new UsageError(`unknown env: ${v} (use wsl, win, mac or linux)`);
+  const e = ENV_WORDS[v.toLowerCase()];
+  if (e) return e;
+  throw new UsageError(`unknown env: ${v} (use wsl, win or windows, mac or macos, linux)`);
 }
 
 export async function ls(argv: string[]): Promise<number> {

@@ -6,8 +6,8 @@ export interface SearchTextOptions {
   st: Style;
   width: number;
   now: number;
-  /** `--all`: list hits in tool calls and tool output too. */
-  all: boolean;
+  /** `--tools`: list hits in tool calls and tool output too. */
+  tools: boolean;
   /** Hits listed per session before `… N more`. */
   perSession: number;
   /** First line: the current project has no sessions, so all projects were searched. */
@@ -51,10 +51,10 @@ const said = (h: Hit) => !h.call && !h.toolOutput;
 /**
  * Search results (plan §3.3). By default only what the user and the AI said is
  * listed; hits in tool calls and tool output are counted on the first line, and
- * `--all` lists them too.
+ * `--tools` lists them too.
  */
 export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
-  const listedOf = (g: HitGroup) => (o.all ? g.hits : g.hits.filter(said));
+  const listedOf = (g: HitGroup) => (o.tools ? g.hits : g.hits.filter(said));
   const count = (pick: (h: Hit) => boolean) => groups.reduce((n, g) => n + g.hits.filter(pick).length, 0);
   const listed = groups.reduce((n, g) => n + listedOf(g).length, 0);
   const calls = count((h) => h.call);
@@ -67,7 +67,7 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
   }
   const shownGroups = groups.filter((g) => listedOf(g).length > 0);
   const extra = [calls ? `+${calls} in tool calls` : "", output ? `+${output} in tool output` : ""].filter(Boolean).join(", ");
-  const hidden = !o.all && extra ? ` (${extra}; use --all)` : "";
+  const hidden = !o.tools && extra ? ` (${extra}; use --tools)` : "";
   const out = [...top, listed ? `${plural(listed, "match", "matches")} in ${plural(shownGroups.length, "session")}${hidden}` : `No matches in what was said${hidden}`];
 
   for (const g of shownGroups) {
@@ -95,10 +95,10 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
   return out.join("\n") + "\n";
 }
 
-/** What other projects have, counted the way the list counts: what was said, or everything with --all. */
+/** What other projects have, counted the way the list counts: what was said, or everything with --tools. */
 function elsewhereText(groups: HitGroup[], listedOf: (g: HitGroup) => Hit[]): string | null {
   const listed = groups.reduce((n, g) => n + listedOf(g).length, 0);
   if (listed) return `${plural(listed, "match", "matches")} in ${plural(groups.filter((g) => listedOf(g).length).length, "session")} in other projects (use -a)`;
   const tools = groups.reduce((n, g) => n + g.hits.length, 0);
-  return tools ? `${tools} in tool calls and tool output in other projects (use -a --all)` : null;
+  return tools ? `${tools} in tool calls and tool output in other projects (use -a --tools)` : null;
 }

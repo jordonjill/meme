@@ -15,7 +15,7 @@ import { compactedCodex, CodexSession } from "../fixtures/gen-codex";
 import { importInto, projectsDir, tempDir, testPlatform } from "../helpers";
 
 const NOW = Date.parse("2026-10-12T12:00:00.000Z");
-const showOpts = { st: makeStyle(false), width: 120, home: "/home/u", now: NOW, full: false, all: false, wrap: false };
+const showOpts = { st: makeStyle(false), width: 120, home: "/home/u", now: NOW, full: false, hidden: false, wrap: false };
 
 function claudeWorld(s = compactedClaude({ id: "c1a0de00-0000-4000-8000-000000000001" })) {
   const home = tempDir();
@@ -146,7 +146,7 @@ describe("compaction (handoff.md §7.8)", () => {
     expect(four).toContain("● Added --name; it printed: Codex, current time is 2026-10-12 11:36:28.933977.\n");
     expect(four).toContain("      ── compacted here ──\n");
     expect(four).not.toContain("Handoff Summary");
-    expect(showText(m, { ...showOpts, all: true }, 4)).toContain("⚙ ## Handoff Summary");
+    expect(showText(m, { ...showOpts, hidden: true }, 4)).toContain("⚙ ## Handoff Summary");
 
     resetIds();
     const c = claudeWorld();

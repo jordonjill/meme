@@ -78,14 +78,14 @@ describe("search (plan §4.6.5)", () => {
     expect(compile({ pattern: "a.b(", fixed: true, ignoreCase: false }).test("xa.b(y")).toBe(true);
   });
 
-  test("text output groups by session and hides tool output unless --all", () => {
+  test("text output groups by session and hides tool output unless --tools", () => {
     const { store } = world();
     const hits = search(store.db, { pattern: "接力", fixed: false, ignoreCase: false, context: 0, sessions: null });
     const groups = groupByChain(store.db, hits, new Map(allSessions(store.db).map((s) => [s.id, s])));
-    const out = searchText(groups, { st: plain, width: 100, now: NOW, all: false, perSession: 3 });
+    const out = searchText(groups, { st: plain, width: 100, now: NOW, tools: false, perSession: 3 });
     expect(out).toBe(
       [
-        "3 matches in 1 session (+1 in tool calls, +2 in tool output; use --all)",
+        "3 matches in 1 session (+1 in tool calls, +2 in tool output; use --tools)",
         "",
         "Status line setup  [Claude·Linux]  10-01  3 matches",
         "  turn   2  You:  状态栏现在显示哪些内容？接力",
@@ -95,15 +95,15 @@ describe("search (plan §4.6.5)", () => {
         "",
       ].join("\n"),
     );
-    const all = searchText(groups, { st: plain, width: 100, now: NOW, all: true, perSession: Infinity });
+    const all = searchText(groups, { st: plain, width: 100, now: NOW, tools: true, perSession: Infinity });
     expect(all).toContain("6 matches in 1 session\n");
     expect(all).toContain("Call: grep -r 接力 docs");
     expect(all).toContain("Tool: docs/a.md: 接力 here");
-    expect(searchText([], { st: plain, width: 100, now: NOW, all: false, perSession: 3 })).toBe("No matches.\n");
+    expect(searchText([], { st: plain, width: 100, now: NOW, tools: false, perSession: 3 })).toBe("No matches.\n");
     // Only tool hits: nothing listed, the counts still say where to look.
     const onlyTools = groupByChain(store.db, hits.filter((h) => h.call || h.toolOutput), new Map(allSessions(store.db).map((s) => [s.id, s])));
-    expect(searchText(onlyTools, { st: plain, width: 100, now: NOW, all: false, perSession: 3 })).toBe(
-      "No matches in what was said (+1 in tool calls, +2 in tool output; use --all)\n",
+    expect(searchText(onlyTools, { st: plain, width: 100, now: NOW, tools: false, perSession: 3 })).toBe(
+      "No matches in what was said (+1 in tool calls, +2 in tool output; use --tools)\n",
     );
   });
 });
@@ -156,7 +156,7 @@ describe("ls", () => {
 });
 
 describe("show", () => {
-  const opts = (o: Partial<ShowOptions> = {}): ShowOptions => ({ st: plain, width: 100, home: "/home/u", now: NOW, full: false, all: false, wrap: false, ...o });
+  const opts = (o: Partial<ShowOptions> = {}): ShowOptions => ({ st: plain, width: 100, home: "/home/u", now: NOW, full: false, hidden: false, wrap: false, ...o });
 
   test("one line per turn, with a separator where the session was continued", () => {
     const { store, b } = world();
@@ -201,10 +201,10 @@ describe("show", () => {
       "",
     ]);
     expect(showText(m, opts(), 3)).toContain("      ⏹ [Request interrupted by user for tool use]\n");
-    const all = showText(m, opts({ all: true }), 2);
+    const all = showText(m, opts({ hidden: true }), 2);
     expect(all).toContain("∴ Let me check the settings file.");
     expect(all).toContain("⚙ <system-reminder>");
-    expect(() => showText(m, opts(), 9)).toThrow(RangeError);
+    expect(() => showText(m, opts(), 9)).toThrow(LookupError);
     expect(showText(m, opts(), "none")).toContain("── continued in bbbbbbbb: run `meme show bbbbbbbb` ──");
   });
 });

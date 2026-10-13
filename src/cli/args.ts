@@ -12,7 +12,10 @@ export function parse<O extends Options>(args: string[], options: O) {
   try {
     return parseArgs({ args, options, allowPositionals: true, strict: true });
   } catch (err) {
-    throw new UsageError((err as Error).message.replace(/^TypeError \[[A-Z_]+\]: /, ""));
+    const message = (err as Error).message.replace(/^TypeError \[[A-Z_]+\]: /, "");
+    // Node's own wording ends in an advice with unbalanced quotes; one line of meme's instead.
+    const unknown = /^Unknown option '([^']+)'/.exec(message);
+    throw new UsageError(unknown ? `unknown option ${unknown[1]}` : message);
   }
 }
 

@@ -229,8 +229,8 @@ export class SessionView implements View {
   }
 }
 
-export async function runViewer(ctx: Context, out: Output, m: ShowModel, opts: { turn?: number; all: boolean }): Promise<void> {
+export async function runViewer(ctx: Context, out: Output, m: ShowModel, opts: { turn?: number; hidden: boolean }): Promise<void> {
   const tui = new Tui();
-  const base = { st: out.st, home: ctx.platform.home, now: ctx.now, full: false, all: opts.all };
+  const base = { st: out.st, home: ctx.platform.home, now: ctx.now, full: false, hidden: opts.hidden };
   await tui.run(new SessionView(tui, m, base, opts.turn));
 }

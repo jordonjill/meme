@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { existsSync } from "node:fs";
+import path from "node:path";
 import pkg from "../../package.json";
 import { fileLogger } from "../platform/log";
 import { currentPlatform } from "../platform/paths";
@@ -52,7 +54,10 @@ const SLOW_MS = 2000;
 function logIfSlow(argv: string[], begun: number): void {
   const platform = currentPlatform();
   const limit = Number(platform.vars.MEME_SLOW_MS || SLOW_MS);
-  const end = process.stdout.isTTY && timings.ready !== undefined ? timings.ready : performance.now();
+  // A command that reads no sessions (uninstall, help) is not slow on meme's account; and once the
+  // data folder is gone (uninstall), nothing may bring it back (plan §6 ⑨, R4).
+  if (timings.ready === undefined || !existsSync(platform.dataDir)) return;
+  const end = process.stdout.isTTY ? timings.ready : performance.now();
   if (end < limit) return;
   const ms = (n: number | undefined) => (n === undefined ? null : Math.round(n));
   const parts: [string, number | null][] = [
@@ -81,6 +86,10 @@ async function run(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (!command || command === "help" || command === "-h" || command === "--help") {
     const topic = command === "help" && rest[0] ? COMMANDS[rest[0]] : undefined;
+    if (command === "help" && rest[0] && !topic) {
+      process.stderr.write(`meme: unknown command: ${rest[0]}\n${USAGE}`);
+      return 2;
+    }
     process.stdout.write(topic ? topic.help : USAGE);
     return 0;
   }
@@ -100,14 +109,14 @@ async function run(argv: string[]): Promise<number> {
       process.stderr.write(`meme ${command}: ${err.message}\nRun \`meme ${command} --help\` for usage.\n`);
       return 2;
     }
-    if (err instanceof LookupError || err instanceof RangeError || err instanceof CommandError) {
+    if (err instanceof LookupError || err instanceof CommandError) {
       process.stderr.write(`meme: ${err.message}\n`);
       return 1;
     }
     // One short line for the user; the details go to the log (plan §3).
     const platform = currentPlatform();
     fileLogger(platform.dataDir).error(`meme ${argv.join(" ")}`, err);
-    process.stderr.write(`meme: ${err instanceof Error ? err.message : String(err)} (details in ${platform.dataDir}/logs/meme.log)\n`);
+    process.stderr.write(`meme: ${err instanceof Error ? err.message : String(err)} (details in ${path.join(platform.dataDir, "logs", "meme.log")})\n`);
     return 1;
   }
 }

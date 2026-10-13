@@ -5,7 +5,7 @@ import { firstLine } from "../model/title";
 import { describeCall, oneLine, resultFailed, resultText } from "../model/tools";
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Ending, type Turn } from "../model/turns";
 import { displayPath } from "../platform/paths";
-import { ancestors, failureOf, sessionRecords, shortId, uidsOf, unknownIn, type Ancestor, type SessionRow } from "../store/queries";
+import { ancestors, failureOf, LookupError, sessionRecords, shortId, uidsOf, unknownIn, type Ancestor, type SessionRow } from "../store/queries";
 import { coloredLabel, type Style } from "./labels";
 import { ago, padStart, plural, size, span, trimmedLines, truncate, when, width, wrap } from "./text";
 
@@ -81,7 +81,8 @@ export interface ShowOptions {
   /** Tool results and injected messages in full, nothing cut. */
   full: boolean;
   /** Also injected messages and reasoning. */
-  all: boolean;
+  /** `--hidden`: also injected messages and reasoning. */
+  hidden: boolean;
   /** Wrap long lines instead of cutting them (the interactive viewer). */
   wrap: boolean;
 }
@@ -191,8 +192,8 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
     const kind = kindOf(rec);
     if (isCompaction(rec.injected)) {
       out.push(indent + o.st.dim(COMPACTED));
-      // The summary is the agent's, not the AI speaking in this turn: only with --all.
-      if (o.all && rec.injected === "compact_summary") push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
+      // The summary is the agent's, not the AI speaking in this turn: only with --hidden.
+      if (o.hidden && rec.injected === "compact_summary") push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
       continue;
     }
     if (rec === t.prompt) {
@@ -207,7 +208,7 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
       continue;
     }
     if (kind === "injected") {
-      if (o.all) push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
+      if (o.hidden) push(o.st.dim("⚙ "), limited(contentOf(body) ?? ""), o.st.dim);
       else out.push(indent + o.st.dim("⚙ injected message (hidden)"));
       continue;
     }
@@ -220,7 +221,7 @@ export function expandedTurn(t: Turn, numW: number, o: ShowOptions, selected = f
       continue;
     }
     if (body.role === "reasoning") {
-      if (o.all) push(o.st.dim("∴ "), limited(body.content, o.full ? Infinity : 10), o.st.dim);
+      if (o.hidden) push(o.st.dim("∴ "), limited(body.content, o.full ? Infinity : 10), o.st.dim);
       continue;
     }
     if (body.role === "assistant" && "tool_calls" in body) {
@@ -260,7 +261,7 @@ export function showText(m: ShowModel, o: ShowOptions, expand: "none" | "all" | 
   const id = m.session.short;
   if (typeof expand === "number") {
     const t = m.turns.find((x) => x.n === expand);
-    if (!t) throw new RangeError(`session ${id} has ${plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn")}; there is no turn ${expand}`);
+    if (!t) throw new LookupError(`session ${id} has ${plural(m.turns.length ? m.turns[m.turns.length - 1]!.n : 0, "turn")}; there is no turn ${expand}`);
     out.push(...expandedTurn(t, numW, o));
     return out.join("\n") + "\n";
   }

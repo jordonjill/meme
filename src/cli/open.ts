@@ -17,14 +17,23 @@ export interface OpenSession {
   where: string;
 }
 
+/** Listed as open, but its process cannot be checked from here (plan §6 ⑨, R10). */
+export interface Unsure {
+  agent: Agent;
+  /** Where meme can check it instead ("on Windows", "in WSL (Ubuntu)"); null when nowhere. */
+  checkable: string | null;
+}
+
 export interface OpenCheck {
   /** The sessions open right now, by id. */
   open: Map<string, OpenSession>;
+  unsure: Map<string, Unsure>;
   /**
-   * For a session with these files: "open"; "closed" when its agent keeps a list
-   * of open sessions there and nothing in it says open; else "unknown".
+   * For a session with these files: "open"; "unsure" when listed as open but not
+   * checkable here; "closed" when its agent keeps a list of open sessions there
+   * and nothing in it says open; else "unknown".
    */
-  stateOf(id: string, files: string[]): "open" | "closed" | "unknown";
+  stateOf(id: string, files: string[]): "open" | "unsure" | "closed" | "unknown";
 }
 
 /** Where the processes of an agent reading this root run, seen from meme; null when meme cannot look there. */
@@ -35,11 +44,17 @@ function placeOf(platform: Platform, root: SourceRoot): ProcessPlace | null {
   return null;
 }
 
+/** Where else a process could be checked: the side it runs on, when that is not here. */
+function otherSide(where: ProcessPlace): string | null {
+  if (where.kind === "windows") return "on Windows";
+  if (where.kind === "wsl") return `in WSL (${where.place.distro})`;
+  return null;
+}
+
 /** Only sources meme reads now: on Windows, the running WSL distributions. */
 export function openCheck(platform: Platform): OpenCheck {
   const open = new Map<string, OpenSession>();
-  /** Listed as open, but whether they still are cannot be told. */
-  const unsure = new Set<string>();
+  const unsure = new Map<string, Unsure>();
   /** Roots and whether their agent keeps a list of open sessions that meme can check. */
   const roots: { root: SourceRoot; known: boolean }[] = [];
   for (const adapter of ADAPTERS) {
@@ -52,14 +67,19 @@ export function openCheck(platform: Platform): OpenCheck {
         let pid: number | null = null;
         if (e.pid !== undefined) {
           const running = processRunning(platform, where!, e.pid, e.started ?? null);
-          if (running === null) unsure.add(e.session);
+          // A process id can be checked on its own side: tasklist on Windows, /proc in WSL.
+          if (running === null) unsure.set(e.session, { agent: adapter.agent, checkable: otherSide(where!) });
           else if (running) pid = e.pid;
         } else if (e.lockFile) {
           const holder = lockHolder(platform, where!, e.lockFile);
-          if (holder === null) unsure.add(e.session);
+          // Who holds a lock is known only where /proc is: not on Windows.
+          if (holder === null) unsure.set(e.session, { agent: adapter.agent, checkable: where!.kind === "wsl" ? otherSide(where!) : null });
           else if (holder !== false) pid = holder;
         }
-        if (pid !== null) open.set(e.session, { agent: adapter.agent, pid, where: root.wsl && platform.env === "win" ? `WSL: ${root.wsl.distro}` : ENV_NAMES[root.env] });
+        if (pid !== null) {
+          unsure.delete(e.session);
+          open.set(e.session, { agent: adapter.agent, pid, where: root.wsl && platform.env === "win" ? `WSL: ${root.wsl.distro}` : ENV_NAMES[root.env] });
+        }
       }
     }
   }
@@ -69,10 +89,12 @@ export function openCheck(platform: Platform): OpenCheck {
   };
   return {
     open,
+    unsure,
     stateOf(id, files) {
       if (open.has(id)) return "open";
+      if (unsure.has(id)) return "unsure";
       const mine = roots.filter((r) => files.some((f) => under(f, r.root.path)));
-      return mine.length && mine.every((r) => r.known) && !unsure.has(id) ? "closed" : "unknown";
+      return mine.length && mine.every((r) => r.known) ? "closed" : "unknown";
     },
   };
 }

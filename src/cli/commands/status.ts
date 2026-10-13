@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import pkg from "../../../package.json";
-import { installedAt } from "../../adapters";
+import { sourceTrouble } from "../../adapters";
 import { displayPath } from "../../platform/paths";
 import { wslPlace } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
@@ -18,7 +18,7 @@ when you report a problem: it has the agents' versions.
 `;
 
 export async function status(argv: string[]): Promise<number> {
-  const { values, positionals } = parse(argv, { plain: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+  const { values, positionals } = parse(argv, { help: { type: "boolean", short: "h" } });
   if (values.help) {
     write(statusHelp);
     return 0;
@@ -50,7 +50,7 @@ export async function status(argv: string[]): Promise<number> {
   const stopped = new Set(ctx.wslStopped.map((d) => d.distro));
   for (const r of rows) {
     const place = r.env === "wsl" ? wslPlace(ctx.platform, r.root) : null;
-    const state = place && stopped.has(place.distro) ? "not running" : r.reachable ? "readable" : installedAt({ agent: r.agent, env: r.env, path: r.root }) ? "NOT READABLE (nothing deleted)" : "not installed";
+    const state = place && stopped.has(place.distro) ? "not running" : r.reachable ? "readable" : sourceTrouble(r);
     lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${state}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");

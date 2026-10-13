@@ -4,23 +4,26 @@ import { runViewer } from "../../tui/viewer";
 import { CommandError, intOption, parse, UsageError } from "../args";
 import { createContext, output, write } from "../context";
 
-export const showHelp = `Usage: meme show <session> [<turn>] [--full] [--all] [--plain]
+export const showHelp = `Usage: meme show <session> [<turn>] [--full] [--hidden] [--plain]
 
 Show a session with each turn folded into one line. The session id can be
 shortened to any unique prefix.
 
-  <turn>     one turn in full: every step, the first lines of each result
-  --full     every turn in full, nothing cut
-  --all      also injected messages and reasoning
+  <turn>     one turn expanded: every step, the first lines of each result;
+             with --full, nothing cut
+  --full     every turn expanded, nothing cut
+  --hidden   also injected messages and reasoning
   --plain    plain text, even in a terminal
 
 In a terminal: ↑↓ select a turn, Enter expand, / search, Esc back.
 `;
 
 export async function show(argv: string[]): Promise<number> {
+  // Handoffs written before step 9 point to `show <id> <turn> --all --full`.
+  if (argv.includes("--all")) throw new UsageError("--all is now --hidden: also injected messages and reasoning");
   const { values, positionals } = parse(argv, {
     full: { type: "boolean" },
-    all: { type: "boolean" },
+    hidden: { type: "boolean" },
     plain: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   });
@@ -37,9 +40,9 @@ export async function show(argv: string[]): Promise<number> {
   if (session.unreadable && !session.readable_until) throw new CommandError(unreadableMessage(session.short, failureOf(ctx.store.db, session.id)));
   const model = buildShow(ctx.store.db, session, ctx.now);
   const out = output(Boolean(values.plain));
-  const opts = { st: out.st, width: out.width, home: ctx.platform.home, now: ctx.now, full: Boolean(values.full), all: Boolean(values.all), wrap: false };
+  const opts = { st: out.st, width: out.width, home: ctx.platform.home, now: ctx.now, full: Boolean(values.full), hidden: Boolean(values.hidden), wrap: false };
   if (out.interactive && !values.full) {
-    await runViewer(ctx, out, model, { turn, all: opts.all });
+    await runViewer(ctx, out, model, { turn, hidden: opts.hidden });
     return 0;
   }
   write(showText(model, opts, turn ?? (values.full ? "all" : "none")));

@@ -19,7 +19,7 @@ import { tempDir, testPlatform } from "../helpers";
 
 const NOW = Date.parse("2026-10-11T12:00:00.000Z");
 const plain = makeStyle(false);
-const showOpts = { st: plain, width: 120, home: "/home/u", now: NOW, full: false, all: false, wrap: false };
+const showOpts = { st: plain, width: 120, home: "/home/u", now: NOW, full: false, hidden: false, wrap: false };
 
 function codexWorld() {
   resetIds();

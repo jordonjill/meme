@@ -27,10 +27,11 @@ export interface Away {
  * in WSL under the mount root; on Windows, a WSL path through `\\wsl.localhost`,
  * or the Windows drive it is when it is under the distribution's mount root.
  */
-export function localDir(dir: string, sessionEnv: Env, platform: Platform, wsl: WslPlace | null): string {
+export function localDir(dir: string, platform: Platform, wsl: WslPlace | null, mountRoot?: string): string {
   if (platform.env === "wsl" && isWindowsPath(dir)) return winToWsl(dir);
   if (platform.env === "win" && wsl && dir.startsWith("/")) {
-    const onDrive = wslToWin(dir, distroMountRoot(wsl));
+    // `mountRoot` given: the distribution is stopped and its wsl.conf is not read (that would start it).
+    const onDrive = wslToWin(dir, mountRoot ?? distroMountRoot(wsl));
     return onDrive !== dir ? onDrive : toHost(wsl.root, dir);
   }
   return dir;
@@ -70,7 +71,7 @@ const inside = (p: string, dir: string) => key(p) === key(dir) || key(p).startsW
  */
 export function awayFrom(sessionDir: string | null, sessionEnv: Env, platform: Platform, wsl: WslPlace | null, cwd: string): Away | null {
   if (!sessionDir) return null;
-  const there = real(localDir(sessionDir, sessionEnv, platform, wsl));
+  const there = real(localDir(sessionDir, platform, wsl));
   const here = real(cwd);
   const sRoot = gitRoot(there);
   const cRoot = gitRoot(here);

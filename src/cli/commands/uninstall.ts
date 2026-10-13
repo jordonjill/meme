@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { removeDir } from "../../platform/fs";
+import { removeDir, removeFile } from "../../platform/fs";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { size } from "../../render/text";
@@ -13,6 +13,18 @@ Remove the ~/.meme folder: the mirror of your sessions and the logs.
 Your original sessions are not touched. Asks first ([y/N]); --yes skips
 the question.
 `;
+
+/** What meme keeps in its data folder; when the folder is a link, only these go where it points. */
+const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs"];
+
+/** Where a linked data folder points (plan §6 ⑨, R22); null for a folder. */
+function linkTarget(dir: string): string | null {
+  try {
+    return lstatSync(dir).isSymbolicLink() ? realpathSync(dir) : null;
+  } catch {
+    return null;
+  }
+}
 
 function folderSize(dir: string): number {
   let total = 0;
@@ -60,14 +72,15 @@ export async function uninstall(argv: string[]): Promise<number> {
     return 0;
   }
 
+  const target = linkTarget(data);
   lines.push("This removes:");
-  lines.push(`  ${displayPath(data, home)}   the mirror and the logs (${size(folderSize(data))})`);
+  lines.push(`  ${displayPath(data, home)}${target ? ` -> ${displayPath(target, home)}` : ""}   the mirror and the logs (${size(folderSize(data))})`);
   lines.push("Your original sessions are not touched.");
   write(lines.join("\n") + "\n");
 
   if (!values.yes) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      process.stderr.write("meme: nothing removed; run `meme uninstall --yes` to go ahead\n");
+      process.stderr.write("meme: nothing removed. Removing needs the user's confirmation: run it in a terminal, or add --yes only if the user has explicitly asked to remove meme's data.\n");
       return 1;
     }
     if (!agreed("Remove them?")) {
@@ -75,7 +88,14 @@ export async function uninstall(argv: string[]): Promise<number> {
       return 1;
     }
   }
-  removeDir(data);
+  if (target) {
+    // A link: meme's own files where it points, the folder if that leaves it empty, then the link.
+    for (const name of OWN) removeDir(path.join(target, name));
+    try {
+      rmdirSync(target);
+    } catch {}
+    removeFile(data);
+  } else removeDir(data);
   write(`Removed. ${programNote}\n`);
   return 0;
 }

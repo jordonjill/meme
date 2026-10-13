@@ -5,21 +5,22 @@ import { compile, groupByChain, PatternError, search as runSearch } from "../../
 import { intOption, parse, UsageError } from "../args";
 import { createContext, output, write } from "../context";
 
-export const searchHelp = `Usage: meme search <pattern> [-F] [-i] [-C <lines>] [-a] [--session <session>] [--all] [--plain]
+export const searchHelp = `Usage: meme search <pattern> [-F] [-i] [-C <lines>] [-a] [--session <session>] [--tools] [--plain]
 
-Search past sessions. Works like rg: the pattern is a regular expression.
-Matches in what you and the AI said are listed; matches in tool calls and tool
-output are only counted unless you add --all. Injected messages are not
-searched, and text copied into a continued session counts once.
+Search past sessions. Works like rg: the pattern is a regular expression, and
+^ and $ match at the start and end of each line. Matches in what you and the AI
+said are listed; matches in tool calls and tool output are only counted unless
+you add --tools. Injected messages are not searched, and text copied into a
+continued session counts once.
 
   -F, --fixed-strings   the pattern is plain text
   -i, --ignore-case     ignore case
   -C, --context <n>     show n lines around each match
-  -a                    all projects (default: the current project, or all of
+  -a, --all             all projects (default: the current project, or all of
                         them when it has no sessions; matches elsewhere are counted)
   --session <session>   only this session (and the sessions it continued)
-  --all                 also list matches in tool calls and tool output (use it to
-                        find commands, errors and code), and every match
+  --tools               also list matches in tool calls and tool output (use it
+                        to find commands, errors and code), and every match
   --plain               plain text, even in a terminal
 `;
 
@@ -28,9 +29,9 @@ export async function search(argv: string[]): Promise<number> {
     "fixed-strings": { type: "boolean", short: "F" },
     "ignore-case": { type: "boolean", short: "i" },
     context: { type: "string", short: "C" },
-    a: { type: "boolean", short: "a" },
+    all: { type: "boolean", short: "a" },
     session: { type: "string" },
-    all: { type: "boolean" },
+    tools: { type: "boolean" },
     plain: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   });
@@ -59,7 +60,7 @@ export async function search(argv: string[]): Promise<number> {
   if (values.session) {
     const s = resolveSession(db, values.session);
     scope = [...ancestors(db, s.id).map((a) => a.id), s.id];
-  } else if (values.a) scope = null;
+  } else if (values.all) scope = null;
   else {
     scope = rows.filter((r) => r.project !== null && samePath(r.project, ctx.project)).map((r) => r.id);
     mine = scope.length > 0;
@@ -78,7 +79,7 @@ export async function search(argv: string[]): Promise<number> {
     if (others.length) elsewhere = { groups: groupByChain(db, others, byId), where };
   }
   const out = output(Boolean(values.plain));
-  const all = Boolean(values.all);
-  write(searchText(groups, { st: out.st, width: out.width, now: ctx.now, all, perSession: all || values.session ? Infinity : 3, notice, elsewhere }));
+  const tools = Boolean(values.tools);
+  write(searchText(groups, { st: out.st, width: out.width, now: ctx.now, tools, perSession: tools || values.session ? Infinity : 3, notice, elsewhere }));
   return 0;
 }

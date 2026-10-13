@@ -3,7 +3,7 @@ import type { Agent } from "../adapters/types";
 import { stoppedNotice, type Context, type Output } from "../cli/context";
 import type { Env } from "../platform/env";
 import { displayPath } from "../platform/paths";
-import { coloredLabel, label } from "../render/labels";
+import { coloredLabel, ENV_SHORT, label } from "../render/labels";
 import { fallbackNotice, listed, listing, marks, othersHint, unreadableHint, type ListFilter } from "../render/ls";
 import { buildShow, endingLine, foldedTurn, headerLines, numberWidth, separatorLine, type ShowModel, type ShowOptions } from "../render/show";
 import { ago, padEnd, shortPath, size, truncate, width, wrapParts } from "../render/text";
@@ -25,7 +25,7 @@ const ENV_ORDER: Env[] = ["wsl", "win", "mac", "linux"];
 /** At most this wide, a project path in the list: longer ones lose their middle. */
 const PATH_COLS = 40;
 const AGENT_ORDER: Agent[] = PROFILES.map((p) => p.agent);
-const ENV_NAME: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
+const ENV_NAME = ENV_SHORT;
 const AGENT_NAME = Object.fromEntries(PROFILES.map((p) => [p.agent, p.short])) as Record<Agent, string>;
 
 /** A filter row only when there is more than one value to tell apart (plan §3.1). */
@@ -177,7 +177,8 @@ export class PickerView implements View {
     // Only this project is shown: say how many more there are elsewhere (plan §3.1).
     const hint = this.all ? null : othersHint(this.visible(true).length - list.length, "Ctrl+A");
     const keys = wrapParts(this.keys(), " · ", cols - 1).map((l) => st.dim(l));
-    const bottom = rows - keys.length - (hint ? 1 : 0);
+    // A window only a few rows high: no room for the list, never a negative count (R14).
+    const bottom = Math.max(0, rows - keys.length - (hint ? 1 : 0));
     const room = Math.max(2, bottom - out.length);
     if (list.length === 0) {
       out.push("", st.dim(this.all ? "  No sessions." : "  No sessions in this project. Ctrl+A shows all projects."));
@@ -299,7 +300,7 @@ export class PickerView implements View {
   }
 
   private base(): Omit<ShowOptions, "width" | "wrap"> {
-    return { st: this.out.st, home: this.ctx.platform.home, now: this.ctx.now, full: false, all: false };
+    return { st: this.out.st, home: this.ctx.platform.home, now: this.ctx.now, full: false, hidden: false };
   }
 }
 

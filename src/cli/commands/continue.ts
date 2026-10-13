@@ -6,15 +6,14 @@ import { limitsIn } from "../../handoff/budget";
 import { buildHandoff } from "../../handoff/build";
 import { displayPath } from "../../platform/paths";
 import { runAttached } from "../../platform/spawn";
-import { findInWsl, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
+import { findInWsl, toHost, wslCommand, wslExe, wslPlace, type WslPlace } from "../../platform/wsl";
 import { agentName } from "../../render/labels";
 import { listing, numberedText, type ListFilter, type Listing } from "../../render/ls";
 import { allSessions, failureOf, getSession, handedOver, sessionFiles, sessionRecords, startDirOf, type SessionRow } from "../../store/queries";
 import { awayFrom, localDir } from "../../handoff/place";
-import { toHost } from "../../platform/wsl";
 import { chooseHandover, type AgentChoice, type Launchable } from "../../tui/handover";
 import { CommandError, parse, UsageError } from "../args";
-import { createContext, output, write, type Context } from "../context";
+import { createContext, insideAgent, output, write, type Context } from "../context";
 import { isListNumber, resolveTarget } from "../target";
 import { HOW_TO_CONTINUE } from "../usage";
 import { parseAgent } from "./ls";
@@ -30,8 +29,9 @@ printed; nothing is written, and nothing is summarized.
 ${HOW_TO_CONTINUE}
 
 A target is a number from the list (counted again each time, the same way), or
-words that narrow it down: last, ${agentWords(", ")}, win, wsl, the start of a session
-id, or a word from the title. One match is handed over; several are listed.
+words that narrow it down: last, ${agentWords(", ")}, wsl, win (windows), mac (macos),
+linux, the start of a session id, or a word from the title or the project
+folder's name. One match is handed over; several are listed.
 
   -a, --all      list the sessions of all projects, not only this one
   --in <agent>   at a terminal, continue in ${agentWords()} without asking
@@ -52,6 +52,8 @@ const MATCHES = 20;
  * not, the user types the command.
  */
 function forTheUser(how: string, vars: Record<string, string | undefined>): string {
+  // Printed for a person (a pipe, `--plain` at a terminal): no words for an agent.
+  if (!insideAgent(vars)) return `Run \`${how}\` to continue one.`;
   const yourself = runningAgent(vars)?.bangReachesModel ? ` When the user has chosen, run \`${how}\` yourself.` : "";
   return `This list is for the user. Ask which one to continue and wait; do not pick one yourself.${yourself} The user can also type: ! ${how}`;
 }
@@ -79,16 +81,17 @@ function wslOf(ctx: Context, s: SessionRow): WslPlace | null {
   return file ? wslPlace(ctx.platform, file) : null;
 }
 
+/** The push cannot start where the session started (arch.md 6.3, rule 4). */
+function notThere(dir: string | null, s: SessionRow): string {
+  if (!dir) return `meme does not know which directory ${s.short} started in. To continue it, open the agent where you want to work and run \`! meme continue ${s.short}\`.`;
+  return `the session's directory ${dir} is not there. To continue somewhere else, open the agent there and run \`! meme continue ${s.short}\`.`;
+}
+
 /**
  * A WSL session pushed from Windows continues in WSL: the agents and meme are
  * looked up there, as the user's shell finds them; the agent there fetches the
  * handoff with WSL's meme.
  */
-/** The push cannot start where the session started (arch.md 6.3, rule 4). */
-function notThere(dir: string | null, s: SessionRow): string {
-  return `the session's directory ${dir ?? "(unknown)"} is not there. To continue somewhere else, open the agent there and run \`! meme continue ${s.short}\`.`;
-}
-
 function agentsInWsl(ctx: Context, s: SessionRow, place: WslPlace, wanted: readonly Adapter[]): AgentChoice {
   // Where the session started, not its project's root: a worktree is its own place.
   const dir = startDirOf(ctx.store.db, s);
@@ -158,6 +161,8 @@ export async function continueSession(argv: string[]): Promise<number> {
       // The agent running meme keeps only so much of a command's output (its profile).
       const limits = limitsIn(runningAgent(ctx.platform.vars));
       const wsl = wslOf(ctx, picked);
+      // Its distribution is stopped: nothing in it is opened, which would start it (plan §6 ⑨, R6).
+      const stopped = wsl !== null && ctx.wslStopped.some((d) => d.distro === wsl.distro);
       const started = startDirOf(db, picked);
       const handoff = buildHandoff(
         {
@@ -165,12 +170,12 @@ export async function continueSession(argv: string[]): Promise<number> {
           records: sessionRecords(db, picked.id),
           env: ctx.platform.env,
           wsl,
-          localDir: started && localDir(started, picked.env, ctx.platform, wsl),
+          localDir: started && localDir(started, ctx.platform, wsl, stopped ? "/mnt/" : undefined),
           now: ctx.now,
           lookup: (ref, before) => handedOver(db, ref, before),
           current: ctx.current,
           // Not on the session's files: say so first (arch.md 6.3, rules 1 and 2).
-          away: awayFrom(started, picked.env, ctx.platform, wsl, process.cwd()),
+          away: stopped ? null : awayFrom(started, picked.env, ctx.platform, wsl, process.cwd()),
         },
         { fresh: Boolean(values.fresh), limits },
       );
@@ -226,7 +231,7 @@ export async function continueSession(argv: string[]): Promise<number> {
   // Where the session started (arch.md 6.3, rule 4), as a path where the agent runs:
   // not its project's root, so a worktree session opens in the worktree.
   const started = startDirOf(db, session);
-  const dir = started && (agent.wsl ? started : localDir(started, session.env, ctx.platform, null));
+  const dir = started && (agent.wsl ? started : localDir(started, ctx.platform, null));
   // In WSL the directory was checked before looking for the agent there.
   if (!dir || (!agent.wsl && !existsSync(dir))) throw new CommandError(notThere(dir, session));
   const sid = session.short;
