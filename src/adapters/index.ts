@@ -1,12 +1,13 @@
 import { existsSync } from "node:fs";
 import { claudeCode } from "./claude-code";
 import { codex } from "./codex";
+import { openCode } from "./opencode";
 import { pi } from "./pi";
 import type { Platform } from "../platform/paths";
 import { findCommand } from "../platform/spawn";
 import type { Adapter, Agent, SourceRoot } from "./types";
 
-export const ADAPTERS: readonly Adapter[] = [claudeCode, codex, pi];
+export const ADAPTERS: readonly Adapter[] = [claudeCode, codex, openCode, pi];
 
 /** Agents that can be started here: their command is on PATH. */
 export function launchable(platform: Platform): { adapter: Adapter; exe: string }[] {
