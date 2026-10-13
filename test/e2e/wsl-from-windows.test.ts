@@ -275,3 +275,38 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect(run(w, ["forget", "a5a5"], { env }).err).not.toContain("is open");
   });
 });
+
+/**
+ * Opening anything under \\wsl.localhost\<distro> starts a stopped distribution
+ * (plan step 5), so what only reads the mirror must not touch it. meme is run from
+ * its sources with a preload that records every path it reads; a built single file
+ * cannot take one, so this test is skipped with MEME_BIN. Pushing and deleting do
+ * start WSL on purpose and are not covered here (plan §6 ⑨.1).
+ */
+describe.skipIf(process.platform === "win32" || Boolean(process.env.MEME_BIN))("a stopped distribution is not touched (plan §6 ⑨.1)", () => {
+  const ROOT = path.resolve(import.meta.dir, "../..");
+  test("ls, status, show, search and pulling a handoff read nothing of it; the trace does catch it when it runs", () => {
+    const { w, wsl, env } = wslWorld();
+    const debian = path.join(wsl, "Debian");
+    // Debian ran once, so its session is in the mirror; now only Ubuntu runs.
+    expect(run(w, ["ls", "-a", "--plain"], { env: { ...env, MEME_WSL_RUNNING: "Ubuntu,Debian" } }).out).toContain("d3d3d3d3");
+    const trace = path.join(w.home, "fs-trace.log");
+    const traced = (args: string[], running: string) => {
+      writeFileSync(trace, "");
+      const p = Bun.spawnSync([process.execPath, "--preload", path.join(import.meta.dir, "fs-trace.ts"), path.join(ROOT, "src/cli/main.ts"), ...args], {
+        cwd: w.home,
+        env: { PATH: process.env.PATH ?? "", HOME: w.home, USERPROFILE: w.home, TZ: "UTC", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env, MEME_WSL_RUNNING: running, TRACE_MATCH: debian, TRACE_FILE: trace },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(p.exitCode, `${args.join(" ")}: ${p.stderr.toString()}`).toBe(0);
+      return readFileSync(trace, "utf8");
+    };
+    for (const args of [["ls", "-a", "--plain"], ["status"], ["show", "d3d3", "--plain"], ["search", "stopped", "-a", "--plain"], ["continue", "d3d3", "--plain"]]) {
+      expect(traced(args, "Ubuntu"), args.join(" ")).toBe("");
+    }
+    // The same pull while Debian runs reads its files: the trace works.
+    expect(traced(["continue", "d3d3", "--plain"], "Ubuntu,Debian")).toContain(debian);
+  });
+});
+
