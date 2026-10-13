@@ -9,13 +9,14 @@ import { agreed, write } from "../context";
 
 export const uninstallHelp = `Usage: meme uninstall [--yes]
 
-Remove the ~/.meme folder: the mirror of your sessions and the logs.
+Remove the ~/.meme folder: the mirror of your sessions, the logs, and the
+copies of agents' databases meme reads across WSL and Windows.
 Your original sessions are not touched. Asks first ([y/N]); --yes skips
 the question.
 `;
 
 /** What meme keeps in its data folder; when the folder is a link, only these go where it points. */
-const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs"];
+const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs", "cache"];
 
 /** Where a linked data folder points (plan §6 ⑨, R22); null for a folder. */
 function linkTarget(dir: string): string | null {
@@ -74,7 +75,7 @@ export async function uninstall(argv: string[]): Promise<number> {
 
   const target = linkTarget(data);
   lines.push("This removes:");
-  lines.push(`  ${displayPath(data, home)}${target ? ` -> ${displayPath(target, home)}` : ""}   the mirror and the logs (${size(folderSize(data))})`);
+  lines.push(`  ${displayPath(data, home)}${target ? ` -> ${displayPath(target, home)}` : ""}   the mirror, the logs and copies (${size(folderSize(data))})`);
   lines.push("Your original sessions are not touched.");
   write(lines.join("\n") + "\n");
 

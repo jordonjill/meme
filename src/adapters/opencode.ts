@@ -1,7 +1,6 @@
 import { constants, Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { userKind, type Injected, type UserKind } from "../model/injected";
 import { titleOf } from "../model/title";
@@ -53,7 +52,8 @@ const memeId = (id: string): string => id.replace(/^ses_/, "").toLowerCase();
  * The database is read where it is when it is on this side; meme never writes it.
  * With no write-ahead log next to it, nothing writes it now and it is opened
  * `immutable`, so SQLite creates no files there. On the other side (Windows
- * reading WSL, WSL reading Windows) SQLite's locks do not work: it is read from a copy.
+ * reading WSL, WSL reading Windows) SQLite's locks do not work: it is read from a
+ * copy in meme's own folder, which `meme uninstall` removes (plan §6 ⑩.1).
  */
 const handles = new Map<string, { stamp: string; db: Database }>();
 function stampOf(file: string): string {
@@ -68,19 +68,21 @@ function stampOf(file: string): string {
   return `${one(file)}|${one(file + "-wal")}`;
 }
 
-function copyDir(file: string): string {
-  return path.join(tmpdir(), "meme-opencode", createHash("sha256").update(file).digest("hex").slice(0, 16));
+/** Where meme copies a database of the other side: `<meme's folder>/cache/opencode/<hash of its path>`. */
+export function copyDirFor(dataDir: string, file: string): string {
+  return path.join(dataDir, "cache", "opencode", createHash("sha256").update(file).digest("hex").slice(0, 16));
 }
 
-function openDb(file: string, local: boolean): Database {
+/** `copyDir`: read from a copy there; null: read it where it is. */
+function openDb(file: string, copyDir: string | null): Database {
   const stamp = stampOf(file);
   const cached = handles.get(file);
   if (cached && cached.stamp === stamp) return cached.db;
   cached?.db.close();
   let db: Database;
-  if (!local) {
+  if (copyDir) {
     // The copy stays for the next run, which copies again only once the database changed.
-    const dir = copyDir(file);
+    const dir = copyDir;
     const copy = path.join(dir, "opencode.db");
     const stampFile = path.join(dir, "stamp");
     let fresh = false;
@@ -104,12 +106,9 @@ function openDb(file: string, local: boolean): Database {
   return db;
 }
 
-/** On the side meme runs on: not a WSL root seen from Windows, nor a Windows one seen from WSL. */
-const localRoot = (root: Pick<SourceRoot, "wsl" | "env" | "path">) => !root.wsl && !(root.env === "win" && root.path.startsWith("/"));
-
 function dbFor(root: SourceRoot): Database {
   if (!existsSync(root.path)) throw new Error(`no ${path.basename(root.path)} in ${path.dirname(root.path)}`);
-  return openDb(root.path, localRoot(root));
+  return openDb(root.path, root.copy ?? null);
 }
 
 interface SessionRow {
@@ -377,16 +376,24 @@ export const openCode: Adapter = {
     if (typeof r === "string") return { steps: [], gone: [], notes: [], blocked: `${r}; ${inOpenCode}. meme's copy follows on its own.` };
     if (!canDelete(r)) return { steps: [], gone: [], notes: [], blocked: `\`opencode session delete\` is not available ${r.where || "here"}; ${inOpenCode}${r.where ? " there" : ""}. meme's copy follows on its own.` };
     const steps: ForgetStep[] = [];
+    const copy = target.env === platform.env ? null : copyDirFor(platform.dataDir, db);
     try {
-      const local = target.env === platform.env;
-      for (const out of fullOutputs(openDb(db, local), id, path.dirname(db))) steps.push({ kind: "remove", path: out, dir: false, what: "the full output of a long command" });
+      for (const out of fullOutputs(openDb(db, copy), id, path.dirname(db))) steps.push({ kind: "remove", path: out, dir: false, what: "the full output of a long command" });
     } catch {}
     steps.push({ kind: "run", cmd: r.line(["session", "delete", id]), cwd: r.cwd, shown: r.where ? `opencode session delete ${id} ${r.where}` : undefined, what: "OpenCode removes the session from its database" });
+    // meme's copy still holds the session: it goes, and is made again when next needed.
+    if (copy && existsSync(copy)) steps.push({ kind: "remove", path: copy, dir: true, what: "meme's copy of OpenCode's database, made again when needed" });
     // On this side, where its state folder is (XDG_STATE_HOME moves it); on the other, where it is by default.
     const state = path.join(platform.vars.XDG_STATE_HOME || path.join(platform.home, ".local", "state"), "opencode", "prompt-history.jsonl");
     const history = r.where ? `~/.local/state/opencode/prompt-history.jsonl ${r.where}` : displayPath(state, platform.home);
     // A session in a database leaves no file of its own to check: the command's exit code says.
     return { steps, gone: [], notes: [`OpenCode keeps what you typed in its own prompt history (${history}).`] };
+  },
+
+  /** The databases (and copies) it has open, closed: Windows does not remove an open file. */
+  closeFiles(): void {
+    for (const h of handles.values()) h.db.close();
+    handles.clear();
   },
 
   launch(firstMessage: string) {
@@ -405,13 +412,13 @@ export const openCode: Adapter = {
       } catch {}
       for (const user of users.sort()) {
         const db = path.join(platform.windowsUsersDir, user, openCodeProfile.homeDir, "opencode.db");
-        if (existsSync(db)) roots.push({ id: sourceId(AGENT, "win", db), agent: AGENT, env: "win", path: db });
+        if (existsSync(db)) roots.push({ id: sourceId(AGENT, "win", db), agent: AGENT, env: "win", path: db, copy: copyDirFor(platform.dataDir, db) });
       }
     }
     // On Windows: the running WSL distributions (plan step 5).
     for (const h of platform.wsl) {
       const db = path.join(toHost(h.root, h.home), openCodeProfile.homeDir, "opencode.db");
-      if (existsSync(db)) roots.push({ id: sourceId(AGENT, "wsl", db), agent: AGENT, env: "wsl", path: db, wsl: { distro: h.distro, root: h.root } });
+      if (existsSync(db)) roots.push({ id: sourceId(AGENT, "wsl", db), agent: AGENT, env: "wsl", path: db, wsl: { distro: h.distro, root: h.root }, copy: copyDirFor(platform.dataDir, db) });
     }
     return roots;
   },
@@ -442,7 +449,7 @@ export const openCode: Adapter = {
 
   readText(file: string): string {
     const { db, id } = splitFile(file);
-    const handle = openDb(db, true);
+    const handle = openDb(db, null);
     const s = sessionRow(handle, id);
     return s ? JSON.stringify({ info: { id: s.id, directory: s.directory, title: s.title }, messages: rewrite(exportOf(handle, s), s.revert) }) : "";
   },

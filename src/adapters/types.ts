@@ -14,6 +14,8 @@ export interface SourceRoot {
   path: string;
   /** Windows reading a WSL distribution: its paths are WSL paths under this root. */
   wsl?: WslPlace;
+  /** A database on the other side is read from a copy meme keeps in this folder of its own. */
+  copy?: string;
 }
 
 /** The 8 per-session fields of format.md §2 (the files are tracked by the store). */
@@ -175,6 +177,8 @@ export interface Adapter {
   };
   /** How to delete a session from the agent itself (plan §3.5). */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
+  /** Closes the files it holds open, so they can be removed (Windows removes no open file). */
+  closeFiles?(): void;
   /**
    * The command that starts the agent with a first message (plan §2.3). The message
    * asks it to run `meme continue <id>` itself, so the agent should be allowed to
