@@ -4,10 +4,11 @@
  */
 import { claudeCodeProfile } from "./claude-code.profile";
 import { codexProfile } from "./codex.profile";
+import { piProfile } from "./pi.profile";
 import type { Agent, Profile } from "./types";
 
 /** In the order lists and filters show them. */
-export const PROFILES: readonly Profile[] = [claudeCodeProfile, codexProfile];
+export const PROFILES: readonly Profile[] = [claudeCodeProfile, codexProfile, piProfile];
 
 export function profileOf(agent: Agent): Profile {
   return PROFILES.find((p) => p.agent === agent)!;
