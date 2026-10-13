@@ -1,13 +1,13 @@
 import type { Database } from "bun:sqlite";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import pkg from "../../package.json";
 import type { Adapter, ConvertContext, Converted, SourceRoot } from "../adapters/types";
 import { projectResolver } from "../model/project";
 import { searchText } from "../model/record";
 import type { Logger } from "../platform/log";
 import type { Platform } from "../platform/paths";
-import { redactDeep, redactText } from "../redact/rules";
-import { isReadOnlyError, setMeta, type Store } from "./db";
+import { mayHoldSecret, redactDeep, redactText } from "../redact/rules";
+import { isReadOnlyError, moveToMemory, setMeta, type Store } from "./db";
 import { deleteFile, recomputeCopied } from "./sync";
 
 export interface ImportResult {
@@ -46,10 +46,18 @@ export function importAll(store: Store, platform: Platform, adapters: readonly A
     return r;
   };
   const touched = new Set<string>();
+  // The same folder by two paths (an agent's home in WSL linked to the Windows one) is read once, by the first (R16).
+  const read = new Set<string>();
   try {
     for (const adapter of adapters) {
       for (const root of adapter.roots(platform)) {
         if (only && !only(root)) continue;
+        const key = realPath(root.path);
+        if (read.has(key)) {
+          dropSource(db, root);
+          continue;
+        }
+        read.add(key);
         importRoot(db, adapter, root, projectFor(root), log, result, touched);
       }
     }
@@ -59,13 +67,32 @@ export function importAll(store: Store, platform: Platform, adapters: readonly A
       log.info(`import: ${result.changed} changed, ${result.deleted} deleted, ${result.failed} failed, ${Math.round(performance.now() - started)}ms`);
     }
   } catch (err) {
-    if (!isReadOnlyError(err)) throw err;
-    // Opening worked but writing does not (a sandbox): carry on with what is there.
-    store.readonly = true;
-    log.info("import: database is not writable, switching to read-only mode");
+    if (!isReadOnlyError(err) || store.memory) throw err;
+    // Opening worked but writing does not: a sandbox access() does not show (Landlock).
+    // On a copy in memory, the command still sees the sessions as they are now (R3).
+    moveToMemory(store);
+    log.info("import: the database cannot be written here, working on a copy in memory");
+    return importAll(store, platform, adapters, log, only);
   }
   result.ms = performance.now() - started;
   return result;
+}
+
+function realPath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/** A source read under another path: its rows go, so `status` does not list it twice. */
+function dropSource(db: Database, root: SourceRoot): void {
+  if (!db.query("SELECT 1 FROM sources WHERE id = ?").get(root.id)) return;
+  db.transaction(() => {
+    db.run("DELETE FROM files WHERE source = ?", [root.id]);
+    db.run("DELETE FROM sources WHERE id = ?", [root.id]);
+  }).immediate();
 }
 
 function importRoot(
@@ -77,17 +104,22 @@ function importRoot(
   result: ImportResult,
   touched: Set<string>,
 ): void {
+  const prev = db.query<SourceState, [string]>("SELECT reachable, state, last_scan FROM sources WHERE id = ?").get(root.id);
   let listed: string[];
   try {
     listed = adapter.listFiles(root);
   } catch (err) {
-    markSource(db, root, false);
+    markSource(db, root, false, prev?.state ?? null, prev);
     result.unreachable.push(root.path);
-    // An agent not installed here has nothing to read: not a line on every run (plan §6 ⑧.3).
-    if (existsSync(adapter.homeOf(root))) log.info(`source unreachable, nothing deleted: ${root.path} (${(err as Error).message})`);
+    // Not installed, or no sessions yet: not a line on every run (plan §6 ⑧.3, ⑨ R9).
+    const mirrored = db.query("SELECT 1 FROM files WHERE source = ? LIMIT 1").get(root.id) !== null;
+    if (mirrored && existsSync(adapter.homeOf(root))) log.info(`source unreachable, nothing deleted: ${root.path} (${(err as Error).message})`);
     return;
   }
-  markSource(db, root, true);
+  // A change in what feeds every session of the source (an index of names) converts them all again (R18).
+  const state = adapter.rootState?.(root) ?? null;
+  const reconvert = prev !== null && (prev.state ?? null) !== state;
+  markSource(db, root, true, state, prev);
 
   const stored = new Map<string, StoredFile>();
   for (const row of db.query<StoredFile, [string]>("SELECT path, session, size, mtime FROM files WHERE source = ?").all(root.id)) {
@@ -138,7 +170,7 @@ function importRoot(
       result.failed++;
       continue;
     }
-    if (!failed.length && states.every(same) && storedOfSession === states.length) continue;
+    if (!reconvert && !failed.length && states.every(same) && storedOfSession === states.length) continue;
     const ctx: ConvertContext = { sessionId, root, project, filesOf };
     let converted: Converted;
     try {
@@ -165,11 +197,23 @@ function importRoot(
   }
 }
 
-function markSource(db: Database, root: SourceRoot, reachable: boolean): void {
+interface SourceState {
+  reachable: number;
+  state: string | null;
+  last_scan: string | null;
+}
+
+/** How long a WSL source's time of last scan may lag: "its sessions are as of …" when it stops. */
+const SCAN_LAG_MS = 10 * 60_000;
+
+/** Written only when something changed, so a run with nothing new writes nothing to the file (R30). */
+function markSource(db: Database, root: SourceRoot, reachable: boolean, state: string | null, prev: SourceState | null): void {
+  const stale = Boolean(root.wsl) && Date.now() - Date.parse(prev?.last_scan ?? "") > SCAN_LAG_MS;
+  if (prev && prev.reachable === (reachable ? 1 : 0) && (prev.state ?? null) === state && !stale) return;
   db.run(
-    `INSERT INTO sources (id, agent, env, root, reachable, last_scan) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET reachable = excluded.reachable, last_scan = excluded.last_scan`,
-    [root.id, root.agent, root.env, root.path, reachable ? 1 : 0, new Date().toISOString()],
+    `INSERT INTO sources (id, agent, env, root, reachable, last_scan, state) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET reachable = excluded.reachable, last_scan = excluded.last_scan, state = excluded.state`,
+    [root.id, root.agent, root.env, root.path, reachable ? 1 : 0, new Date().toISOString(), state],
   );
 }
 
@@ -228,9 +272,6 @@ function recordFailure(db: Database, adapter: Adapter, ctx: ConvertContext, file
   }).immediate();
 }
 
-/** Cheap pre-check so most strings skip the redaction regexes. */
-const MAYBE_SECRET = /sk-|gh[pousr]_|github_pat_|AKIA|PRIVATE KEY|Bearer|:\/\/|passw/i;
-
 
 /**
  * Write one converted session in a single transaction, touching only records
@@ -240,7 +281,7 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
   const s = converted.session;
   const rows = converted.records.map((rec, seq) => {
     const raw = JSON.stringify(rec.body);
-    const redacted = MAYBE_SECRET.test(raw) ? redactDeep(rec.body) : rec.body;
+    const redacted = mayHoldSecret(raw) ? redactDeep(rec.body) : rec.body;
     const body = redacted === rec.body ? raw : JSON.stringify(redacted);
     const text = searchText(redacted);
     const hash = Bun.hash(JSON.stringify([rec.uid, rec.part, rec.turn, rec.injected, rec.role, rec.ts, body])).toString(36);

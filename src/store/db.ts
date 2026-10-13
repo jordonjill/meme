@@ -1,18 +1,21 @@
 import { Database } from "bun:sqlite";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { errorCode, removeFile } from "../platform/fs";
 
 /**
- * Bump whenever the tables, the outer fields or the redaction rules change. A
- * mismatch deletes the database and rebuilds it from the original sessions
- * (plan §4.4); there are no migrations.
+ * Bump whenever the tables, the outer fields, the redaction rules or what a
+ * session's records are change. An older database is emptied and rebuilt from the
+ * original sessions (plan §4.4); there are no migrations. A newer one, written by
+ * a later meme, is left alone: this one works on a copy in memory.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE sources (id TEXT PRIMARY KEY, agent TEXT, env TEXT, root TEXT, reachable INTEGER, last_scan TEXT);
+-- state: what the adapter says about files that feed every session of the source (an
+-- index of thread names); when it changes, the source's sessions are converted again.
+CREATE TABLE sources (id TEXT PRIMARY KEY, agent TEXT, env TEXT, root TEXT, reachable INTEGER, last_scan TEXT, state TEXT);
 CREATE TABLE sessions (
   id           TEXT PRIMARY KEY,
   agent        TEXT NOT NULL,
@@ -113,23 +116,53 @@ export function openStore(dataDir: string): Store {
     // The journal is created next to the file, so the directory must be writable too.
     accessSync(dataDir, constants.W_OK);
     if (existsSync(file)) accessSync(file, constants.W_OK);
-    return { db: openReadWrite(file), file, readonly: false, memory: false };
+    const db = openReadWrite(file);
+    if (db) return { db, file, readonly: false, memory: false };
   } catch (err) {
     if (!isReadOnlyError(err)) throw err;
   }
-  // Read-only (a sandbox): copy the database into memory and import into the copy,
-  // so commands see current sessions without writing anything.
+  return inMemory(file);
+}
+
+/**
+ * Read-only mode (a sandbox), or a database a newer meme wrote: a copy in memory
+ * that the import brings up to date, so commands see the sessions as they are now
+ * without writing anything. The copy is taken through SQLite, under its lock, never
+ * from the file's bytes: another meme may be in the middle of writing (plan §6 ⑨,
+ * R8). A copy that cannot be had (a crash's journal it may not undo): a fresh one.
+ */
+function inMemory(file: string): Store {
   if (existsSync(file)) {
     try {
-      const db = Database.deserialize(readFileSync(file));
-      if (schemaVersion(db) === SCHEMA_VERSION) {
-        configure(db);
-        return { db, file, readonly: true, memory: true };
+      const ro = new Database(file, { readonly: true });
+      try {
+        ro.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
+        if (schemaVersion(ro) === SCHEMA_VERSION) {
+          const db = Database.deserialize(ro.serialize());
+          configure(db);
+          return { db, file, readonly: true, memory: true };
+        }
+      } finally {
+        ro.close();
       }
-      db.close();
     } catch {}
   }
   return { db: openMemory(), file, readonly: true, memory: true };
+}
+
+/**
+ * Opening worked but writing does not: a sandbox that access() does not show
+ * (Landlock, plan §6 ⑨, R3). Carry on in memory, on a copy of what is there.
+ */
+export function moveToMemory(store: Store): void {
+  const db = Database.deserialize(store.db.serialize());
+  configure(db);
+  try {
+    store.db.close();
+  } catch {}
+  store.db = db;
+  store.readonly = true;
+  store.memory = true;
 }
 
 function openMemory(): Database {
@@ -139,23 +172,43 @@ function openMemory(): Database {
   return db;
 }
 
-function openReadWrite(file: string): Database {
-  let db: Database;
+/**
+ * The database, with this meme's tables; null when a newer meme wrote it. Deciding
+ * and building happen in one IMMEDIATE transaction, so meme processes starting
+ * together on a new or old file wait for each other instead of colliding (R7). An
+ * old database is emptied in place, not deleted: another meme may have it open.
+ */
+function openReadWrite(file: string): Database | null {
+  let db = new Database(file, { create: true, readwrite: true });
   try {
-    db = new Database(file, { create: true, readwrite: true });
     configure(db);
-    const version = schemaVersion(db);
-    if (version === SCHEMA_VERSION) return db;
-    if (version === null && !hasTables(db)) {
-      init(db);
-      restrict(file);
-      return db;
+    db.run("PRAGMA foreign_keys = OFF");
+    const state = db
+      .transaction((): "ok" | "newer" | "built" | "rebuilt" => {
+        const version = schemaVersion(db);
+        if (version === SCHEMA_VERSION) return "ok";
+        if (version !== null && version > SCHEMA_VERSION) return "newer";
+        const old = version !== null || hasTables(db);
+        if (old) dropAll(db);
+        db.run(SCHEMA);
+        db.run("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", [String(SCHEMA_VERSION)]);
+        return old ? "rebuilt" : "built";
+      })
+      .immediate();
+    db.run("PRAGMA foreign_keys = ON");
+    if (state === "newer") {
+      db.close();
+      return null;
     }
-    db.close();
+    // The old tables' pages are zeroed (secure_delete); give the space back.
+    if (state === "rebuilt") db.run("VACUUM");
+    if (state !== "ok") restrict(file);
+    return db;
   } catch (err) {
+    db.close();
     if (!isCorruptError(err)) throw err;
   }
-  // Old schema or a broken file: rebuild from the original sessions.
+  // A broken file: nothing in it can be kept.
   removeFile(file);
   removeFile(file + "-journal");
   db = new Database(file, { create: true, readwrite: true });
@@ -165,8 +218,17 @@ function openReadWrite(file: string): Database {
   return db;
 }
 
+function dropAll(db: Database): void {
+  for (const { name } of db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all()) {
+    db.run(`DROP TABLE IF EXISTS "${name.replace(/"/g, '""')}"`);
+  }
+}
+
+/** How long meme waits for another meme's write to finish. */
+const BUSY_MS = 10_000;
+
 function configure(db: Database): void {
-  db.run("PRAGMA busy_timeout = 10000");
+  db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
   try {
     db.run("PRAGMA journal_mode = DELETE");
   } catch {}

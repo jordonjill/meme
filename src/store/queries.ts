@@ -174,21 +174,6 @@ export function ancestors(db: Database, session: string): Ancestor[] {
   return out;
 }
 
-/** Sessions continued into this one, oldest first: A → B → this. */
-export function predecessors(db: Database, session: string): string[] {
-  const chain: string[] = [];
-  const seen = new Set([session]);
-  let current = session;
-  for (;;) {
-    const prev = db.query<{ id: string }, [string]>("SELECT id FROM sessions WHERE continued_in = ? ORDER BY ended_at DESC LIMIT 1").get(current);
-    if (!prev || seen.has(prev.id)) break;
-    seen.add(prev.id);
-    chain.unshift(prev.id);
-    current = prev.id;
-  }
-  return chain;
-}
-
 export function uidsOf(db: Database, session: string): Set<string> {
   const out = new Set<string>();
   for (const r of db.query<{ uid: string }, [string]>("SELECT uid FROM records WHERE session = ? AND uid IS NOT NULL").all(session)) out.add(r.uid);

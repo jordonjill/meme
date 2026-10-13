@@ -77,11 +77,14 @@ export function search(db: Database, o: SearchOptions): Hit[] {
     "SELECT json_type(body, '$.tool_calls') AS t FROM records WHERE session = ? AND seq = ?",
   );
 
+  // The quick test on a whole record: ^ and $ at each of its lines, as for the lines themselves (R17).
+  const any = new RegExp(re.source, re.flags + "m");
   const hits: Hit[] = [];
   for (const row of rows) {
-    if (!re.test(row.text)) continue;
+    const text = row.text.replace(/\r\n?/g, "\n");
+    if (!any.test(text)) continue;
     const call = row.role === "assistant" && isCall.get(row.session, row.seq)?.t === "array";
-    const lines = row.text.replace(/\r\n?/g, "\n").split("\n");
+    const lines = text.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const m = re.exec(lines[i]!);
       if (!m) continue;
