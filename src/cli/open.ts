@@ -8,13 +8,15 @@ import { ADAPTERS } from "../adapters";
 import type { Agent, SourceRoot } from "../adapters/types";
 import { ENV_NAMES } from "../platform/env";
 import { pathKey, type Platform } from "../platform/paths";
-import { lockHolder, processRunning, type ProcessPlace } from "../platform/process";
+import { lockHolder, processesWhere, processRunning, type ProcessInfo, type ProcessPlace } from "../platform/process";
 
 export interface OpenSession {
   agent: Agent;
   pid: number;
   /** Where its process runs, as the user names it: "WSL: Ubuntu", "Windows". */
   where: string;
+  /** Only a guess: the agent runs in the session's folder, and may have another of its sessions open (plan §6 ⑩). */
+  maybe?: boolean;
 }
 
 /** Listed as open, but its process cannot be checked from here (plan §6 ⑨, R10). */
@@ -57,9 +59,27 @@ export function openCheck(platform: Platform): OpenCheck {
   const unsure = new Map<string, Unsure>();
   /** Roots and whether their agent keeps a list of open sessions that meme can check. */
   const roots: { root: SourceRoot; known: boolean }[] = [];
+  const label = (root: SourceRoot) => (root.wsl && platform.env === "win" ? `WSL: ${root.wsl.distro}` : ENV_NAMES[root.env]);
   for (const adapter of ADAPTERS) {
+    const byFolder = adapter.openByFolder;
+    // One look at the processes of each place, for all the agent's roots there.
+    const listed = new Map<string, ProcessInfo[] | null>();
     for (const root of adapter.roots(platform)) {
       const where = placeOf(platform, root);
+      if (byFolder) {
+        // A session in no such folder may be open all the same: judged by its age.
+        roots.push({ root, known: false });
+        if (!where) continue;
+        const key = where.kind === "wsl" ? `wsl:${where.place.distro}` : where.kind;
+        if (!listed.has(key)) listed.set(key, processesWhere(platform, where, byFolder.isProcess));
+        for (const proc of listed.get(key) ?? []) {
+          if (!proc.cwd) continue;
+          for (const session of byFolder.sessionsIn(root, proc.cwd)) {
+            if (!open.has(session)) open.set(session, { agent: adapter.agent, pid: proc.pid, where: label(root), maybe: true });
+          }
+        }
+        continue;
+      }
       const entries = where && adapter.openSessions ? adapter.openSessions(root) : null;
       roots.push({ root, known: entries !== null });
       for (const e of entries ?? []) {
@@ -78,7 +98,7 @@ export function openCheck(platform: Platform): OpenCheck {
         }
         if (pid !== null) {
           unsure.delete(e.session);
-          open.set(e.session, { agent: adapter.agent, pid, where: root.wsl && platform.env === "win" ? `WSL: ${root.wsl.distro}` : ENV_NAMES[root.env] });
+          open.set(e.session, { agent: adapter.agent, pid, where: label(root) });
         }
       }
     }

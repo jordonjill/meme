@@ -90,7 +90,7 @@ export async function forget(argv: string[]): Promise<number> {
   const open = check.open;
   const chosen: SessionRow[] = [];
   if (!positionals.length) {
-    const picked = await pickSession(ctx, out, { all: Boolean(values.all), project: ctx.project, exclude: ctx.current }, "Delete which session?", "choose", (r) => (open.has(r.id) ? "open now" : null));
+    const picked = await pickSession(ctx, out, { all: Boolean(values.all), project: ctx.project, exclude: ctx.current }, "Delete which session?", "choose", (r) => (open.get(r.id)?.maybe ? "may be open" : open.has(r.id) ? "open now" : null));
     if (!picked) return 0;
     chosen.push(picked);
   }
@@ -103,6 +103,7 @@ export async function forget(argv: string[]): Promise<number> {
   const stillOpen = (s: SessionRow, c: OpenCheck = check, now = ctx.now): string | null => {
     const name = profileOf(s.agent).name;
     const o = c.open.get(s.id);
+    if (o?.maybe) return `${s.short} may be open: ${name} is running in its folder (${o.where}, process ${o.pid}). Close ${name} there first.`;
     if (o) return `${s.short} is open in ${name} (${o.where}, process ${o.pid}). Close it there first.`;
     const state = c.stateOf(s.id, sessionFiles(ctx.store.db, s.id));
     // Marked open, and nothing here can tell whether it still is: refused whatever its age (R10).

@@ -4,7 +4,7 @@
  * through \\wsl.localhost; a Windows one through tasklist.exe; a macOS one by its
  * pid. And which process holds a file locked (§6 ⑧.4), on Linux. null when meme cannot tell.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import path from "node:path";
 import { errorCode } from "./fs";
 import { mountRoot, type Platform } from "./paths";
@@ -86,6 +86,69 @@ export function processRunning(platform: Platform, where: ProcessPlace, pid: num
   }
   if (platform.env === "mac") return viaPid(pid);
   return viaProc(`/proc/${pid}/stat`, started);
+}
+
+export interface ProcessInfo {
+  pid: number;
+  /** Field 22 of /proc/<pid>/stat. */
+  started: string | null;
+  /** Its working directory, or the one it was started in; null when meme cannot tell. */
+  cwd: string | null;
+  /** Its command line, as it shows it (an agent may rename itself). */
+  args: string[];
+}
+
+/** The `PWD` it was started with, for when /proc/<pid>/cwd cannot be read (Windows reading WSL). */
+function startPwd(file: string): string | null {
+  try {
+    const env = readFileSync(file, "utf8");
+    for (const v of env.split("\0")) if (v.startsWith("PWD=")) return v.slice(4) || null;
+  } catch {}
+  return null;
+}
+
+/**
+ * The processes whose command line `match` takes, with their directories (plan
+ * §6 ⑩): through /proc, here on Linux and WSL, and in a WSL distribution from
+ * Windows. null where meme cannot list them (Windows and macOS processes).
+ */
+export function processesWhere(platform: Platform, where: ProcessPlace, match: (args: string[]) => boolean): ProcessInfo[] | null {
+  let proc: string;
+  if (where.kind === "wsl") proc = toHost(where.place.root, "/proc");
+  else if (where.kind === "here" && (platform.env === "linux" || platform.env === "wsl")) proc = "/proc";
+  else return null;
+  let names: string[];
+  try {
+    names = readdirSync(proc);
+  } catch {
+    return null;
+  }
+  const out: ProcessInfo[] = [];
+  for (const name of names) {
+    if (!/^\d+$/.test(name)) continue;
+    let args: string[];
+    try {
+      args = readFileSync(path.join(proc, name, "cmdline"), "utf8").split("\0");
+    } catch {
+      continue;
+    }
+    while (args.length && args.at(-1) === "") args.pop();
+    // A process may rename itself: its name and spaces fill what its arguments took.
+    if (args.length === 1) args = args[0]!.trimEnd().split(/\s+/);
+    if (!args.length || !match(args)) continue;
+    let cwd: string | null = null;
+    try {
+      cwd = readlinkSync(path.join(proc, name, "cwd"));
+    } catch {
+      cwd = startPwd(path.join(proc, name, "environ"));
+    }
+    let started: string | null = null;
+    try {
+      started = statStart(readFileSync(path.join(proc, name, "stat"), "utf8"));
+    } catch {}
+    out.push({ pid: Number(name), started, cwd, args });
+  }
+  return out;
 }
 
 /**
