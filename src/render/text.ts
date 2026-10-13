@@ -4,13 +4,23 @@ export function width(s: string): number {
   return Bun.stringWidth(s);
 }
 
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * What the terminal draws as one character: a code point and what joins it
+ * (`⚠️` is ⚠ and a variation selector, two columns, not one; plan §6 ⑨, R15).
+ */
+export function graphemes(s: string): string[] {
+  return Array.from(segmenter.segment(s), (x) => x.segment);
+}
+
 /** Cut to at most `max` columns, ending with `…` when something was cut. */
 export function truncate(s: string, max: number): string {
   if (max <= 0) return "";
   if (width(s) <= max) return s;
   let out = "";
   let w = 0;
-  for (const ch of s) {
+  for (const ch of graphemes(s)) {
     const cw = width(ch);
     if (w + cw > max - 1) break;
     out += ch;
@@ -77,7 +87,7 @@ export function wrap(line: string, cols: number): string[] {
   const out: string[] = [];
   let cur = "";
   let w = 0;
-  for (const ch of line) {
+  for (const ch of graphemes(line)) {
     const cw = width(ch);
     if (w + cw > cols && cur) {
       out.push(cur);
@@ -95,6 +105,20 @@ export function wrap(line: string, cols: number): string[] {
  * Control characters from session content (an escape sequence in a command's
  * output, say) would drive the terminal, so they are shown as `^[` and the like.
  */
+/** The first `end` UTF-16 units, one fewer when that would split an emoji's surrogate pair (plan §6 ⑨, R23). */
+export function sliceChars(s: string, end: number): string {
+  if (end > 0 && end < s.length) {
+    const c = s.charCodeAt(end - 1);
+    if (c >= 0xd800 && c <= 0xdbff) end--;
+  }
+  return s.slice(0, Math.max(0, end));
+}
+
+/** Cut to `max` characters, not columns ("about 120 characters" of a reply), with `…`. */
+export function clip(s: string, max: number): string {
+  return s.length <= max ? s : sliceChars(s, max - 1) + "…";
+}
+
 export function visible(s: string): string {
   return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === "\x7f" ? "^?" : "^" + String.fromCharCode(c.charCodeAt(0) + 64)));
 }

@@ -39,7 +39,7 @@ export function makeStyle(color: boolean): Style {
   };
 }
 
-const ENV_SHORT: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
+export const ENV_SHORT: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
 
 /** The source label, `<short name>·WSL`: the agent's short name from its profile. */
 export function label(agent: Agent, env: Env): string {
