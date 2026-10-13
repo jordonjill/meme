@@ -164,10 +164,9 @@ function items(lines: string[]): Message[] {
  * (forgotten): its own, and those of the sessions before it.
  */
 export function parseHandoff(text: string, ref: string): { messages: Message[]; earlier: Upstream[] } | null {
-  const body = text;
   let messages: Message[] | null = null;
   const earlier: Upstream[] = [];
-  for (const section of body.split(/\n(?=## )/)) {
+  for (const section of text.split(/\n(?=## )/)) {
     const [heading = "", ...rest] = section.split("\n");
     if (/^## User messages\b/.test(heading)) messages = items(rest);
     const e = /^## Earlier session ([0-9a-f]{4,36}) \(handed over into (this one|[0-9a-f]{4,36})\b/.exec(heading);

@@ -6,8 +6,9 @@
 import { callsOf, contentOf, type Rec } from "../model/record";
 import { commandOf, exitCodeOf, oneLine, resultFailed, resultText, type ParsedCall } from "../model/tools";
 import type { Turn } from "../model/turns";
+import { clip } from "../render/text";
 
-const MAX = 10;
+export const RECENT_COMMANDS = 10;
 const COMMAND_CHARS = 120;
 
 const READS = new Set([
@@ -113,11 +114,8 @@ export function onlyReads(command: string): boolean {
   });
 }
 
-function clip(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + "…";
-}
-
-function resultOf(t: Turn, call: ParsedCall): Rec | undefined {
+/** The record with a call's result. */
+export function resultOf(t: Turn, call: ParsedCall): Rec | undefined {
   return t.records.find((r) => r.body.role === "tool" && r.body.tool_call_id === call.id);
 }
 
@@ -137,7 +135,7 @@ export function outcome(result: Rec | undefined): string {
 }
 
 /** The last commands outside the turns listed step by step: lines to print, and how many older ones are not. */
-export function recentCommands(turns: Turn[], listed: Set<number>): { lines: string[]; older: number } {
+export function recentCommands(turns: Turn[], listed: Set<number>, max = RECENT_COMMANDS): { lines: string[]; older: number } {
   const all: string[] = [];
   for (const t of turns) {
     if (listed.has(t.n)) continue;
@@ -150,5 +148,5 @@ export function recentCommands(turns: Turn[], listed: Set<number>): { lines: str
       }
     }
   }
-  return { lines: all.slice(-MAX), older: Math.max(0, all.length - MAX) };
+  return { lines: max ? all.slice(-max) : [], older: Math.max(0, all.length - max) };
 }

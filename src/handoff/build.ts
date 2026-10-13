@@ -9,12 +9,13 @@ import { isWindowsPath, winToWsl } from "../platform/paths";
 import { toHost, type WslPlace } from "../platform/wsl";
 import { agentName, label } from "../render/labels";
 import { stepFacts } from "../render/show";
-import { ago, numberList, plural, span, trimmedLines, truncate, turnsText, when } from "../render/text";
+import { ago, clip, numberList, plural, sliceChars, span, trimmedLines, truncate, turnsText, visible, when } from "../render/text";
 import type { SessionRow } from "../store/queries";
 import { cutToTokens, estimateTokens, fitSizes, limitsIn, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
 import type { Away } from "./place";
-import { recentCommands, recognized } from "./commands";
+import { RECENT_COMMANDS, recentCommands, recognized, resultOf } from "./commands";
+import { PROFILES } from "../adapters/profiles";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
 const MESSAGE_CHARS = 1500;
@@ -28,10 +29,15 @@ const SUMMARY_CUT_TOKENS = 1000;
 /** The AI's words in the last turns, cut step by step when the handoff is too long. */
 const AI_CAPS = [4000, 2000, 1000, 500, 200];
 /** Step lines of each last turn, when the handoff is too long: the first two and the newest ones are kept. */
-const STEP_CAPS = [40, 20, 10, 6];
+const STEP_CAPS = [40, 20, 10, 6, 2];
 const FIRST_STEPS = 2;
 /** Edited files listed, when it is still too long: the ones edited last are kept. */
 const FILE_CAPS = [30, 10];
+/** Then the last test or build's output, in lines, and the recent commands (plan §6 ⑨, R2). */
+const VERIFY_TAILS = [3, 0];
+const COMMAND_CAPS = [5, 0];
+/** Steps of tools whose results come from the web: marked in a handoff (plan §6 ⑨). */
+const WEB_TOOLS = new Set(PROFILES.flatMap((p) => p.webTools));
 /** Edited files named on a last turn's "Steps:" line. */
 const NAMED_FILES = 5;
 /** A line of the last verification's output. */
@@ -78,26 +84,22 @@ export interface Handoff {
 
 const quote = (text: string) => trimmedLines(text).map((l) => (l ? "> " + l : ">")).join("\n");
 
-/** Cut to `max` characters, not columns: "about 120 characters" of the AI's reply. */
-function clip(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + "…";
-}
-
 function startDir(records: Rec[], session: SessionRow): string | null {
   const meta = records.find((r) => r.body.role === "meta")?.body;
   const cwd = meta && "cwd" in meta && typeof meta.cwd === "string" ? meta.cwd : null;
   return cwd ?? session.project;
 }
 
+/** The user's message as text: control characters (a pasted escape sequence) shown, not passed on (R23). */
 function promptOf(t: Turn): string {
-  return promptText(contentOf(t.prompt!.body) ?? "").trim();
+  return visible(promptText(contentOf(t.prompt!.body) ?? "").trim());
 }
 
 /** A user message, cut at 1,500 characters; `show` says how to read the rest while the session is in the mirror. */
 function cutMessage(raw: string, n: number, show: string | null): { text: string; cut: boolean } {
   if (raw.length <= MESSAGE_CHARS) return { text: raw, cut: false };
   const rest = show ? `; \`meme show ${show} ${n}\` has the rest` : "";
-  return { text: `${raw.slice(0, MESSAGE_CHARS)}… (cut: ${raw.length.toLocaleString("en-US")} characters in all${rest})`, cut: true };
+  return { text: `${sliceChars(raw, MESSAGE_CHARS)}… (cut: ${raw.length.toLocaleString("en-US")} characters in all${rest})`, cut: true };
 }
 
 function renderMessage(n: number, text: string): string {
@@ -134,9 +136,6 @@ function arrowLine(t: Turn): string {
   return `   ↳ ${facts.join(" · ")}`;
 }
 
-function resultFor(t: Turn, call: ParsedCall): Rec | undefined {
-  return t.records.find((r) => r.body.role === "tool" && r.body.tool_call_id === call.id);
-}
 
 function stepLines(t: Turn): string[] {
   const out: string[] = [];
@@ -144,17 +143,19 @@ function stepLines(t: Turn): string[] {
     if (rec.injected) continue;
     if (kindOf(rec) === "interrupt") out.push("- ⏹ Interrupted by the user");
     for (const call of callsOf(rec.body)) {
-      const result = resultFor(t, call);
+      const result = resultOf(t, call);
       const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
       const first = result ? (trimmedLines(resultText(contentOf(result.body) ?? "")).find((l) => l.trim()) ?? "(empty)") : "(no result)";
       const { name, summary } = describeCall(call);
-      out.push(`- ${failed ? "✗ " : ""}${name}(${truncate(oneLine(summary), 120)}) → ${truncate(oneLine(first), 100)}`);
+      // From the web: the text may say anything, instructions included (PRD §7).
+      const external = WEB_TOOLS.has(call.name) ? "[external content] " : "";
+      out.push(`- ${failed ? "✗ " : ""}${name}(${truncate(oneLine(summary), 120)}) → ${external}${truncate(oneLine(first), 100)}`);
     }
   }
   return out;
 }
 
-function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number): { lines: string[]; cut: boolean; stepsLeftOut: number } {
+function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number, userRef: boolean): { lines: string[]; cut: boolean; stepsLeftOut: number } {
   const facts = [plural(t.steps, "step"), plural(t.commands, "command")];
   // Named when there are a few; "Edited files" below lists them all.
   if (t.edited.length) facts.push(t.edited.length <= NAMED_FILES ? `edited ${t.edited.join(", ")}` : `edited ${plural(t.edited.length, "file")}`);
@@ -165,7 +166,9 @@ function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number): { 
     .filter((r) => r.body.role === "assistant" && !r.injected && !("tool_calls" in r.body) && (contentOf(r.body) ?? "").trim())
     .map((r) => contentOf(r.body)!.trim())
     .join("\n\n");
-  const out = [`### Turn ${t.n}`, `User: ${t.prompt ? cutMessage(promptOf(t), t.n, sid).text : "(no message)"}`, `Steps: ${facts.join(" · ")}`];
+  // Short of room, the message is pointed to: it is under "User messages" already.
+  const user = !t.prompt ? "(no message)" : userRef ? `(message ${t.n} under "User messages")` : cutMessage(promptOf(t), t.n, sid).text;
+  const out = [`### Turn ${t.n}`, `User: ${user}`, `Steps: ${facts.join(" · ")}`];
   let cut = false;
   if (said) {
     const c = cutToTokens(said, aiCap);
@@ -205,7 +208,7 @@ function editedFiles(turns: Turn[], cap: number): { lines: string[]; left: numbe
   return { lines: out, left: files.size - listed.length };
 }
 
-function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | null {
+function lastVerification(turns: Turn[], tailLines = OUTPUT_TAIL): { turn: number; lines: string[]; cut: boolean } | null {
   for (let i = turns.length - 1; i >= 0; i--) {
     const t = turns[i]!;
     const calls = t.records.flatMap((r) => callsOf(r.body)).reverse();
@@ -214,7 +217,7 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
       // Only the test or build, not the whole line it is in (handoff.md §7.3).
       const shown = command ? recognized(command, VERIFY) : null;
       if (!shown) continue;
-      const result = resultFor(t, call);
+      const result = resultOf(t, call);
       const raw = result ? (contentOf(result.body) ?? "") : "";
       const output = resultText(raw);
       const code = exitCodeOf(raw);
@@ -228,10 +231,12 @@ function lastVerification(turns: Turn[]): { turn: number; lines: string[] } | nu
           : tool.ok === true || code === 0
             ? "passed"
             : "finished (no exit code)";
-      const tail = trimmedLines(output).slice(-OUTPUT_TAIL).map((l) => clip(l, OUTPUT_LINE));
+      const all = trimmedLines(output).slice(-OUTPUT_TAIL);
+      const tail = (tailLines ? all.slice(-tailLines) : []).map((l) => clip(l, OUTPUT_LINE));
       return {
         turn: t.n,
         lines: [`Turn ${t.n}: \`${truncate(oneLine(shown), 200)}\` → ${status}`, ...(tail.length ? ["```text", ...tail, "```"] : [])],
+        cut: tail.length < all.length,
       };
     }
   }
@@ -296,7 +301,8 @@ function upstreamSection(u: Upstream, now: Date): Section {
     sid: show,
     heading,
     items: u.messages.map((m) => {
-      const c = cutMessage(m.text, m.n, show);
+      // From a handoff recorded downstream: already cut there, with the length it had (R25).
+      const c = u.from === "record" ? { text: visible(m.text), cut: /… \(cut: [\d,]+ characters in all/.test(m.text) } : cutMessage(visible(m.text), m.n, show);
       return { n: m.n, text: renderMessage(m.n, c.text), arrow: null, cut: c.cut };
     }),
     none: u.from === "gone" ? "(gone from meme's mirror, and its messages were not recorded where it was handed over)" : "(no messages of its own besides meme commands)",
@@ -370,7 +376,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
       "This is the agent's own summary, a hint that may be wrong. The user messages and steps below are verbatim.",
     ];
     if (unreadableLater) lines.push(`It compacted again ${unreadableLater.when}, but that summary cannot be read; this one covers up to turn ${summary!.covers}.`);
-    lines.push(quote(c.text) + (c.cut ? `\n> … (cut; \`meme show ${sid} ${summary!.rec.turn} --all --full\` has all of it)` : ""));
+    lines.push(quote(c.text) + (c.cut ? `\n> … (cut; \`meme show ${sid} ${summary!.rec.turn} --hidden --full\` has all of it)` : ""));
     return { lines, cut: c.cut };
   };
 
@@ -399,8 +405,17 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   sections.push(own);
   const ownHeading = (all: boolean) => `## User messages${chain.upstream.length ? " in this session" : ""}${all ? " (all)" : ""}`;
 
-  const verification = opts.fresh ? null : lastVerification(turns);
-  const commands = opts.fresh ? { lines: [], older: 0 } : recentCommands(turns, new Set(last.map((t) => t.n)));
+  const lastSet = new Set(last.map((t) => t.n));
+  interface Caps {
+    ai: number;
+    steps: number;
+    files: number;
+    /** Lines of the last test or build's output. */
+    verify: number;
+    commands: number;
+    /** The last turns point to their user messages instead of repeating them. */
+    userRef: boolean;
+  }
   interface Tail {
     lines: string[];
     /** Turns whose AI words were cut. */
@@ -409,23 +424,27 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     steps: { n: number; left: number }[];
     /** Edited files not listed. */
     files: number;
+    commands: { lines: string[]; older: number };
+    verification: { turn: number; lines: string[]; cut: boolean } | null;
   }
-  const tailFor = (aiCap: number, stepCap: number, fileCap: number): Tail => {
-    if (opts.fresh) return { lines: [], cut: [], steps: [], files: 0 };
+  const tailFor = (c: Caps): Tail => {
+    if (opts.fresh) return { lines: [], cut: [], steps: [], files: 0, commands: { lines: [], older: 0 }, verification: null };
     const out = ["", `## Last ${last.length === 1 ? "turn" : `${last.length} turns`}`];
     const cut: number[] = [];
     const steps: Tail["steps"] = [];
     for (const t of last) {
-      const r = lastTurnLines(t, sid, aiCap, stepCap);
+      const r = lastTurnLines(t, sid, c.ai, c.steps, c.userRef);
       out.push("", ...r.lines);
       if (r.cut) cut.push(t.n);
       if (r.stepsLeftOut) steps.push({ n: t.n, left: r.stepsLeftOut });
     }
-    const edited = editedFiles(turns, fileCap);
+    const edited = editedFiles(turns, c.files);
     out.push("", "## Edited files", ...edited.lines);
+    const commands = recentCommands(turns, lastSet, c.commands);
     if (commands.lines.length) out.push("", "## Recent commands (newest last)", ...commands.lines);
+    const verification = lastVerification(turns, c.verify);
     if (verification) out.push("", "## Last verification", ...verification.lines);
-    return { lines: out, cut, steps, files: edited.left };
+    return { lines: out, cut, steps, files: edited.left, commands, verification };
   };
 
   // Budget (handoff.md §7.3): the preamble is never cut. Over the limit, drop in
@@ -446,10 +465,8 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const messagesTotal = plus(...msgCost);
   let summaryCap = summary ? SUMMARY_TOKENS : 0;
   const summarySize = () => (summary && summaryCap ? line([...summaryLines(summaryCap).lines, ""].join("\n")) : ZERO);
-  let aiCap = Infinity;
-  let stepCap = Infinity;
-  let fileCap = Infinity;
-  let tail = tailFor(aiCap, stepCap, fileCap);
+  const caps: Caps = { ai: Infinity, steps: Infinity, files: Infinity, verify: OUTPUT_TAIL, commands: RECENT_COMMANDS, userRef: false };
+  let tail = tailFor(caps);
   let tailSize = line(tail.lines.join("\n"));
   let arrows = plus(...arrowCost);
   let summaryCost = summarySize();
@@ -469,24 +486,27 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     }
   }
   const retail = () => {
-    tail = tailFor(aiCap, stepCap, fileCap);
+    tail = tailFor(caps);
     tailSize = line(tail.lines.join("\n"));
   };
-  for (const cap of STEP_CAPS) {
-    if (!over()) break;
-    stepCap = cap;
+  const cutDown = <K extends "ai" | "steps" | "files" | "verify" | "commands">(key: K, values: number[]) => {
+    for (const v of values) {
+      if (!over()) return;
+      caps[key] = v;
+      retail();
+    }
+  };
+  cutDown("steps", STEP_CAPS.slice(0, -1));
+  cutDown("ai", AI_CAPS);
+  cutDown("files", FILE_CAPS);
+  // Never cut before step 9 (R2): enough of it in Chinese went over a limit by itself.
+  cutDown("verify", VERIFY_TAILS);
+  cutDown("commands", COMMAND_CAPS);
+  if (over()) {
+    caps.userRef = true;
     retail();
   }
-  for (const cap of AI_CAPS) {
-    if (!over()) break;
-    aiCap = cap;
-    retail();
-  }
-  for (const cap of FILE_CAPS) {
-    if (!over()) break;
-    fileCap = cap;
-    retail();
-  }
+  cutDown("steps", STEP_CAPS.slice(-1));
   const room = plus(fixed(), summaryCost);
   const keep = fitSizes(
     msgCost.map((c, i) => (arrowKept[i] ? plus(c, arrowCost[i]!) : c)),
@@ -549,9 +569,11 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   const leftOut: string[] = [];
   if (chain.upstream.length) included.push(`the user messages of ${plural(chain.upstream.length, "earlier session")} it was handed over from`);
   if (summary && summaryCap) included.push(`the summary the source agent wrote when it compacted its context ${summary.when}`);
+  // The first one kept is this session's own first only when that one was kept (in a chain, the oldest upstream's is).
+  const ownFirstKept = own.items.length > 0 && keep.has(items.length - own.items.length);
   if (own.items.length) included.push(
     ownKept < own.items.length
-      ? `${ownKept} of ${plural(own.items.length, "user message")} (the first, the last and the most recent)`
+      ? `${ownKept} of ${plural(own.items.length, "user message")} (${ownFirstKept ? "the first, the last and the most recent" : "the last and the most recent"})`
       : own.items.length === 1
         ? "the one user message"
         : `all ${plural(own.items.length, "user message")}`,
@@ -560,8 +582,8 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     if (keptArrowTurns.length) included.push(keptArrowTurns.length === arrowTurns.length ? "one line on what the AI did in each earlier turn" : `one line on what the AI did in each earlier turn from turn ${keptArrowTurns[0]} on`);
     if (last.length) included.push(`the last ${last.length === 1 ? "turn" : `${last.length} turns`} (${numberList(lastNs)}) step by step`);
     included.push("the files changed with editing tools");
-    if (commands.lines.length) included.push(`the last ${commands.lines.length === 1 ? "command" : plural(commands.lines.length, "command")} that changed something`);
-    if (verification) included.push(`the last test or build (turn ${verification.turn})`);
+    if (tail.commands.lines.length) included.push(`the last ${tail.commands.lines.length === 1 ? "command" : plural(tail.commands.lines.length, "command")} that changed something`);
+    if (tail.verification) included.push(`the last test or build (turn ${tail.verification.turn})`);
   }
   if (skippedBySection.length) {
     const n = skippedBySection.reduce((a, x) => a + x.ns.length, 0);
@@ -585,16 +607,33 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
     if (tail.cut.length) leftOut.push(`part of the AI's replies in ${turnsText(tail.cut)}`);
     if (tail.files) leftOut.push(`${plural(tail.files, "file")} edited earliest (\`meme show ${sid}\`)`);
     if (summary && (!summaryCap || summaryCut)) {
-      leftOut.push(`${summaryCap ? "the rest of " : ""}the source agent's compaction summary (\`meme show ${sid} ${summary.rec.turn} --all --full\`)`);
+      leftOut.push(`${summaryCap ? "the rest of " : ""}the source agent's compaction summary (\`meme show ${sid} ${summary.rec.turn} --hidden --full\`)`);
     }
-    if (commands.older) leftOut.push(plural(commands.older, "older command"));
+    if (tail.verification?.cut) leftOut.push(caps.verify ? `the last test or build's output before its last ${plural(caps.verify, "line")}` : "the last test or build's output");
+    if (tail.commands.older) leftOut.push(plural(tail.commands.older, "older command"));
   }
   if (chain.current.length) leftOut.push(`the messages of ${chain.current.map((c) => `session ${c}`).join(" and ")}, which you are in`);
 
-  const text = [...head, "", ...preamble(sid, opts, included, leftOut), "", ...body, ...tail.lines].join("\n") + "\n";
+  let text = [...head, "", ...preamble(sid, opts, included, leftOut), "", ...body, ...tail.lines].join("\n") + "\n";
+  // The last resort: what nothing above could cut still goes over (plan §6 ⑨, R2).
+  if (!within(measure(text), limits)) text = cutToFit(text, limits, sid);
   const trimmed =
     keptArrowTurns.length < arrowTurns.length || (summary !== null && summaryCap < SUMMARY_TOKENS) || tail.steps.length > 0 || tail.cut.length > 0 || tail.files > 0 || keep.size < items.length;
   return { text, tokens: estimateTokens(text), trimmed };
+}
+
+/** Whole lines, as many as fit with a note of how many more there were. */
+function cutToFit(text: string, limits: Limits, sid: string): string {
+  const lines = text.replace(/\n$/, "").split("\n");
+  const note = (n: number) => `… (cut here to fit: ${plural(n, "more line")}; \`meme show ${sid}\` has everything)`;
+  let size = measure(note(lines.length) + "\n");
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const next = plus(size, measure(lines[i]! + "\n"));
+    if (!within(next, limits)) break;
+    size = next;
+  }
+  return [...lines.slice(0, i), note(lines.length - i)].join("\n") + "\n";
 }
 
 /** The longest the Included and Left out lines get, for the space kept for the preamble. */
@@ -617,7 +656,8 @@ const WORST_LEFT_OUT = [
   "9,999 steps in the middle of turns 9999 and 9999",
   "part of the AI's replies in turns 9999 and 9999",
   "9,999 files edited earliest (`meme show 0123456789ab`)",
-  "the rest of the source agent's compaction summary (`meme show 0123456789ab 9999 --all --full`)",
+  "the rest of the source agent's compaction summary (`meme show 0123456789ab 9999 --hidden --full`)",
+  "the last test or build's output before its last 3 lines",
   "9,999 older commands",
   "the messages of session 0123456789ab, which you are in",
 ];

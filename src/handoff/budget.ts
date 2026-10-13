@@ -6,6 +6,7 @@
  * depends on where the handoff goes.
  */
 import { PROFILES } from "../adapters/profiles";
+import { sliceChars } from "../render/text";
 
 /** meme's own: a handoff takes no more than this of a model's window. */
 export const TOKEN_LIMIT = 15_000;
@@ -72,10 +73,10 @@ export function cutToTokens(s: string, max: number): { text: string; cut: boolea
   let hi = s.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (estimateTokens(s.slice(0, mid)) <= max) lo = mid;
+    if (estimateTokens(sliceChars(s, mid)) <= max) lo = mid;
     else hi = mid - 1;
   }
-  const head = s.slice(0, lo);
+  const head = sliceChars(s, lo);
   const nl = head.lastIndexOf("\n");
   return { text: nl > lo * 0.6 ? head.slice(0, nl) : head, cut: true };
 }
