@@ -101,13 +101,16 @@ export const codexProfile: Profile = {
   outputLimit: { bytes: 36_000 },
   // A `!` command's output stays in the conversation but reaches the model only with the next message.
   bangReachesModel: false,
+  // Codex's own web search (0.162: "web_search"); its tool calls carry that name.
+  webTools: ["web_search"],
   // Its model sets how much command output it keeps; ask for enough (sessions.md §7.1).
   firstMessage: (command) => `Continue an earlier session: run \`${command}\` exactly as written, with no pipe or other command around it (its output can be up to 10,000 tokens; allow that much), and follow the instructions at the top of its output.`,
   howToContinue: [
     'the same two commands, then say "continue": Codex keeps the output',
     "of a ! command but does not pass it to the model by itself",
   ],
-  forgetHelp: "Codex: meme runs `codex delete --force <id>` with the codex of the side the session is on:\nhere, in WSL (from Windows), or on Windows (from WSL).",
+  forgetHelp:
+    "Codex: meme runs `codex delete --force <id>` with the codex of the side the\nsession is on: here, in WSL (from Windows), or on Windows (from WSL). Codex\nwill not delete a session while a fork of it exists: name the fork too, and meme\ndeletes it first. Codex keeps what you typed in its own input history.",
   keepsForkParents: true,
   compaction: {
     keepsRecords: true,
@@ -116,6 +119,8 @@ export const codexProfile: Profile = {
   },
   formats: {
     injected: [/^<(?:environment_context|user_instructions|permissions instructions|turn_context)[\s>]/, /^# AGENTS\.md instructions\b/],
+    // What Codex 0.162 tells the model after the user stopped a turn (its source: `<turn_aborted>…</turn_aborted>`).
+    interrupt: /^<turn_aborted>/,
     shellInput: /^\s*<user_shell_command>\s*<command>\n?([\s\S]*?)\n?<\/command>/,
     shellOutput: /<result>\n?([\s\S]*?)\n?<\/result>\s*<\/user_shell_command>\s*$/,
     resultHeader: /^(?:Script (?:completed|failed)[^\n]*\n|Chunk ID:[^\n]*\n|Wall time:?[^\n]*\n|Process exited with code[^\n]*\n|Exit code:?[^\n]*\n|Original token count:[^\n]*\n|Duration:?[^\n]*\n)+Output:\n\n?/,

@@ -7,7 +7,8 @@
 import { expect, test } from "bun:test";
 import { normalizeToCanonical } from "@letta-ai/trajectory";
 import { ADAPTERS } from "../../src/adapters";
-import { claudeCode, BOUNDS } from "../../src/adapters/claude-code";
+import { claudeCode } from "../../src/adapters/claude-code";
+import { BOUNDS } from "../../src/adapters/read";
 import { projectResolver } from "../../src/model/project";
 import { parseLines } from "../../src/adapters/read";
 import { currentPlatform } from "../../src/platform/paths";

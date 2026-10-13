@@ -1,3 +1,4 @@
+import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
 import { readFileSync } from "node:fs";
 import type { UnknownType } from "./types";
 
@@ -83,4 +84,32 @@ export function droppedLines(diagnostics: { code: string; inputLine?: number }[]
 export function typeKey(type: unknown, sub: unknown): string {
   const t = typeof type === "string" ? type : "(no type)";
   return typeof sub === "string" ? `${t}/${sub}` : t;
+}
+
+/** Read in full: trajectory's default truncation would not be faithful. */
+export const BOUNDS = { toolArguments: { maxCharacters: null }, toolResults: { maxCharacters: null } };
+
+/**
+ * trajectory's canonical records of a transcript, and the lines it dropped on
+ * purpose. A transcript with no user or no AI records (only `!` commands, a
+ * rollback to the first message) is read as a partial one, which keeps what is
+ * there (plan §6 ⑨, R13). A group id that clashes with the file's: read without it.
+ */
+export function canonical(source: "claude-code" | "codex", text: string, o: { groupId?: string; partial?: boolean } = {}): { records: CanonicalRecord[]; dropped: Set<number> } {
+  const run = (groupId: string | undefined, partial: boolean) => {
+    const context = { ...(groupId ? { groupId } : {}), ...(partial ? { partial } : {}) };
+    const r = normalizeToCanonical({ source, transcript: text, bounds: BOUNDS, ...(groupId || partial ? { sourceContext: context } : {}) });
+    return { records: r.records, dropped: droppedLines(r.diagnostics) };
+  };
+  const attempt = (groupId: string | undefined, partial: boolean): { records: CanonicalRecord[]; dropped: Set<number> } => {
+    try {
+      return run(groupId, partial);
+    } catch (err) {
+      if (!(err instanceof NormalizationError)) throw err;
+      if (!partial && (err.code === "missing_user_records" || err.code === "missing_assistant_records")) return attempt(groupId, true);
+      if (groupId && err.code === "source_group_conflict") return attempt(undefined, partial);
+      throw err;
+    }
+  };
+  return attempt(o.groupId, Boolean(o.partial));
 }

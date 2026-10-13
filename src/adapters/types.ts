@@ -140,6 +140,11 @@ export interface Adapter {
   /** The home a source root belongs to: without it, the agent is not installed there (plan §6 ⑧.3). */
   homeOf(root: SourceRoot): string;
   /**
+   * What the files feeding every session of a root look like (Codex's thread names);
+   * when it changes, the root's sessions are converted again (plan §6 ⑨, R18).
+   */
+  rootState?(root: SourceRoot): string | null;
+  /**
    * Sessions the agent lists as open under this root (plan §6 ⑧.3, ⑧.4); whether
    * each still is, is for the caller to check. A session not listed is closed.
    * null when the agent keeps no such list there (an older version): meme cannot tell. Never throws.
@@ -251,6 +256,11 @@ export interface Profile {
   outputLimit: { chars?: number; bytes?: number };
   /** The output of a `!` command reaches the model by itself (else only with the next message). */
   bangReachesModel: boolean;
+  /**
+   * Its tools whose results come from the web (fetching a page, searching): a
+   * handoff marks their steps "external content" (plan §6 ⑨; PRD §7).
+   */
+  webTools: string[];
   /** The first message when meme starts it to continue a session; `command` is the `meme continue` to run. */
   firstMessage(command: string): string;
   /** Lines under "In <name>:" in the usage of `meme continue` and `meme install`. */

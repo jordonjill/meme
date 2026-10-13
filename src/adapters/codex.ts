@@ -1,4 +1,4 @@
-import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
+import type { CanonicalRecord } from "@letta-ai/trajectory";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -9,9 +9,8 @@ import { contentOf, type Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
 import { displayPath, wslToWin, type Platform } from "../platform/paths";
-import { BOUNDS } from "./claude-code";
 import { codexProfile } from "./codex.profile";
-import { droppedLines, dropPartialLine, TypeCounter, typeKey } from "./read";
+import { canonical, dropPartialLine, TypeCounter, typeKey } from "./read";
 import { commandLine, findCommand } from "../platform/spawn";
 import { toHost, toLinux, wslCommand, wslExe, wslPlace } from "../platform/wsl";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetTarget, type OpenEntry, type Peeked, type SourceRoot } from "./types";
@@ -102,27 +101,6 @@ function threadNames(home: string): Map<string, string> {
   return names;
 }
 
-function canonical(text: string, groupId: string | undefined, partial: boolean): { records: CanonicalRecord[]; dropped: Set<number> } {
-  const run = (group?: string) => {
-    const r = normalizeToCanonical({
-      source: "codex",
-      transcript: text,
-      bounds: BOUNDS,
-      ...(group || partial ? { sourceContext: { ...(group ? { groupId: group } : {}), ...(partial ? { partial } : {}) } } : {}),
-    });
-    return { records: r.records, dropped: droppedLines(r.diagnostics) };
-  };
-  try {
-    return run(groupId);
-  } catch (err) {
-    if (err instanceof NormalizationError) {
-      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return { records: [], dropped: new Set() };
-      if (err.code === "source_group_conflict") return run();
-    }
-    throw err;
-  }
-}
-
 /**
  * The second layer of the alarm (plan §6 ⑦.1): conversation lines of a session's
  * own file that became no record, matched by position (trajectory's ids for
@@ -174,7 +152,7 @@ function chain(file: Loaded, own: Loaded[], ctx: ConvertContext, cut: number | u
   const ownRecord = (group ?? ctx.sessionId) === top;
   // Ids are per file position; a rollback's later file gets its own prefix so they never collide.
   const uidOf = (id: string) => (file.tag ? `${file.tag}:${id}` : id);
-  const { records, dropped } = canonical(text, group, Boolean(base) && cut === undefined);
+  const { records, dropped } = canonical("codex", text, { groupId: group, partial: Boolean(base) && cut === undefined });
   const trajectoryGroup = records[0]?.source_group_id ?? group ?? ctx.sessionId;
   if (ownRecord) unreadLines(text, new Set(records.map((c) => c.stable_source_record_id)), dropped, trajectoryGroup, file.meta.cli_version ?? null, unread);
   const mine: ChainRecord[] = [];
@@ -388,7 +366,6 @@ export function convertCodex(files: string[], ctx: ConvertContext): Converted {
   };
 }
 
-/** Older Codex versions have no `delete`, and without a terminal it needs `--force`. */
 /**
  * How to run the codex of the side a session is on: here, in WSL from Windows
  * (through wsl.exe and the user's login shell), or on Windows from WSL (a .cmd
@@ -437,6 +414,7 @@ function codexRunner(target: ForgetTarget, platform: Platform, home: string): Co
   return `this Codex session is on ${target.env}`;
 }
 
+/** Older Codex versions have no `delete`, and without a terminal it needs `--force`. */
 function canDelete(r: CodexRunner): boolean {
   try {
     const [exe, ...args] = r.line(["delete", "--help"]);
@@ -467,6 +445,16 @@ export const codex: Adapter = {
     return root.path;
   },
 
+  /** A rename appends to `session_index.jsonl`, not to the session's file. */
+  rootState(root: SourceRoot): string | null {
+    try {
+      const st = statSync(path.join(root.path, "session_index.jsonl"));
+      return `${st.size}:${st.mtimeMs}`;
+    } catch {
+      return null;
+    }
+  },
+
   /**
    * Codex (0.162) keeps `<home>/thread-writer-locks/<session id>.lock` locked with
    * flock while a session is open, and removes it when it quits; a killed one
@@ -494,11 +482,15 @@ export const codex: Adapter = {
    * and only deletes sessions of the environment it runs in.
    */
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan {
-    const instead = `delete it in Codex with /delete, or with \`codex delete ${target.id}\``;
+    // `codex delete` is suggested only where meme could not look for it: on the other side.
+    const inCodex = "delete it in Codex with /delete";
     const r = codexRunner(target, platform, this.home(platform));
-    if (typeof r === "string") return { steps: [], gone: [], notes: [], blocked: `${r}; ${instead}${target.env !== platform.env ? " there" : ""}. meme's copy follows on its own.` };
+    if (typeof r === "string") {
+      const there = target.env !== platform.env ? `${inCodex}, or with \`codex delete ${target.id}\` there` : inCodex;
+      return { steps: [], gone: [], notes: [], blocked: `${r}; ${there}. meme's copy follows on its own.` };
+    }
     if (!canDelete(r)) {
-      return { steps: [], gone: [], notes: [], blocked: `\`codex delete\` is not available ${r.where || "here"}; ${instead}${r.where ? " there" : ""}. meme's copy follows on its own.` };
+      return { steps: [], gone: [], notes: [], blocked: `\`codex delete\` is not available ${r.where || "here"}; ${inCodex}${r.where ? " there" : ""}. meme's copy follows on its own.` };
     }
     const shown = r.where ? `codex delete --force ${target.id} ${r.where}` : undefined;
     return {

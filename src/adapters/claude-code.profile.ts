@@ -38,6 +38,14 @@ const EMPTY_BLOCK = (b: unknown): boolean => {
  * checked on the author's sessions): see plan §6 ⑦.1.
  */
 function expectedDrop(line: Record<string, unknown>): string | null {
+  // An attachment is the user's only as a queued message from a human (plan §6 ⑨, R1);
+  // one from a sender meme does not know is reported.
+  if (line.type === "attachment") {
+    const a = line.attachment as { type?: unknown; origin?: { kind?: unknown } } | undefined;
+    if (a?.type !== "queued_command") return "an attachment: files, hook output, notices";
+    const origin = a.origin?.kind;
+    return typeof origin === "string" && origin !== "human" ? "a queued message from a background task or another session" : null;
+  }
   const content = line.type === "system" ? line.content : (line.message as { content?: unknown } | undefined)?.content;
   if (typeof content === "string") {
     const t = content.trimStart();
@@ -68,6 +76,7 @@ export const claudeCodeProfile: Profile = {
   // room for the lines around the handoff.
   outputLimit: { bytes: 27_000 },
   bangReachesModel: true,
+  webTools: ["WebFetch", "WebSearch"],
   // As written: a pipe or another command around it hides the handoff from the relay chain (plan §6 ⑧.3).
   firstMessage: (command) => `Continue an earlier session: run \`${command}\` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.`,
   howToContinue: [
@@ -100,7 +109,7 @@ export const claudeCodeProfile: Profile = {
     "continued-in": "read: the session this one was continued in",
     "custom-title": "read: the title the user gave",
     "ai-title": "read: the title it generated",
-    attachment: "skipped: files and hook output attached to a message",
+    attachment: "read: what the user sent while the agent worked (queued_command from a human); skipped: files, hook output, notices",
     "file-history-snapshot": "skipped: backups of edited files",
     "file-history-delta": "skipped: backups of edited files",
     "last-prompt": "skipped: bookkeeping",
@@ -119,6 +128,6 @@ export const claudeCodeProfile: Profile = {
     "system/stop_hook_summary": "skipped: hook output",
     summary: "skipped: older versions' session summaries",
   },
-  conversation: ["user", "assistant", "system/local_command"],
+  conversation: ["user", "assistant", "system/local_command", "attachment"],
   expectedDrop,
 };

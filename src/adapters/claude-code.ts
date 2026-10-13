@@ -1,21 +1,27 @@
-import { NormalizationError, normalizeToCanonical, type CanonicalRecord } from "@letta-ai/trajectory";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { userKind, type Injected, type UserKind } from "../model/injected";
 import { contentOf, type Body } from "../model/record";
 import { titleOf } from "../model/title";
 import { assignTurns } from "../model/turns";
-import type { Platform } from "../platform/paths";
+import { displayPath, type Platform } from "../platform/paths";
 import { toHost } from "../platform/wsl";
 import { claudeCodeProfile } from "./claude-code.profile";
-import { droppedLines, parseLines, readJsonl, TypeCounter, typeKey } from "./read";
+import { canonical, parseLines, readJsonl, TypeCounter, typeKey } from "./read";
 import { sourceId, type Adapter, type ConvertContext, type Converted, type ConvertedRecord, type ForgetPlan, type ForgetStep, type ForgetTarget, type OpenEntry, type Peeked, type SourceRoot } from "./types";
 
 const AGENT = "claude-code" as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Read in full: trajectory's default truncation would not be faithful. */
-export const BOUNDS = { toolArguments: { maxCharacters: null }, toolResults: { maxCharacters: null } };
+/** The session a background job of Claude Code belongs to, from its state.json. */
+function jobOf(dir: string): string | null {
+  try {
+    const id = (JSON.parse(readFileSync(path.join(dir, "state.json"), "utf8")) as { sessionId?: unknown }).sessionId;
+    return typeof id === "string" ? id.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
 
 function isDir(p: string): boolean {
   try {
@@ -65,8 +71,9 @@ export const claudeCode: Adapter = {
    * Claude Code has no delete command; a session lives in 4 places under its home
    * (release.md §4). Folders go first and the main file last.
    */
-  forgetPlan(target: ForgetTarget): ForgetPlan {
+  forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan {
     const steps: ForgetStep[] = [];
+    const homes = new Set<string>();
     for (const file of target.files) {
       const projectDir = path.dirname(file);
       const home = path.dirname(path.dirname(projectDir));
@@ -75,10 +82,15 @@ export const claudeCode: Adapter = {
         [path.join(home, "file-history", target.id), "backups of files before Claude Code edited them"],
         [path.join(home, "session-env", target.id), "the session's environment"],
       ];
+      // A background job's folder is named after the session's short id; its state.json says whose it is (R29).
+      const job = path.join(home, "jobs", target.id.slice(0, 8));
+      if (jobOf(job) === target.id) dirs.push([job, "the background job: its state and what it did"]);
       for (const [dir, what] of dirs) if (isDir(dir)) steps.push({ kind: "remove", path: dir, dir: true, what });
       steps.push({ kind: "remove", path: file, dir: false, what: "the session" });
+      homes.add(home);
     }
-    return { steps, gone: target.files, notes: [] };
+    const notes = [...homes].map((h) => `${claudeCodeProfile.name} keeps what you typed in its own input history (${displayPath(path.join(h, "history.jsonl"), platform.home)}).`);
+    return { steps, gone: target.files, notes };
   },
 
   launch(firstMessage: string) {
@@ -180,6 +192,7 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
   const notJson = text.split("\n").filter((l) => l.trim()).length - parsed.length;
   for (let i = 0; i < notJson; i++) types.notJson(version);
   const lines = parsed.filter((l) => l.obj.isSidechain !== true);
+  const abandoned = rewound(lines);
   const byUuid = new Map<string, Line>();
   for (const l of lines) {
     const uuid = str(l.obj.uuid);
@@ -210,14 +223,17 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
   }
 
   // trajectory drops `<command-name>` lines as harness noise, but the command is
-  // something the user typed (`/statusline`, `/model`), so meme puts it back.
-  const commands: { line: number; rec: ConvertedRecord }[] = [];
+  // something the user typed (`/statusline`, `/model`), so meme puts it back; and it
+  // skips attachments, where Claude Code keeps what the user sent while it worked (R1).
+  const commands: { line: number; rec: ConvertedRecord; queued: boolean }[] = [];
   for (const l of lines) {
-    const command = commandOf(l.obj);
-    if (!command) continue;
+    if (abandoned.has(str(l.obj.uuid) ?? "")) continue;
+    const queued = queuedPrompt(l.obj);
+    const content = queued ?? commandOf(l.obj);
+    if (!content) continue;
     const ts = str(l.obj.timestamp);
-    const body: Body = { role: "user", content: command, timestamp: ts ?? "" };
-    commands.push({ line: l.index, rec: { uid: str(l.obj.uuid), part: 0, turn: 0, injected: null, role: "user", ts, body } });
+    const body: Body = { role: "user", content, timestamp: ts ?? "" };
+    commands.push({ line: l.index, rec: { uid: str(l.obj.uuid), part: 0, turn: 0, injected: null, role: "user", ts, body }, queued: queued !== null });
   }
 
   const merged: { rec: ConvertedRecord; kind: UserKind | null; restored?: boolean }[] = [];
@@ -225,8 +241,8 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
   let next = 0;
   const flushCommands = (beforeLine: number) => {
     while (next < commands.length && commands[next]!.line < beforeLine) {
-      const rec = commands[next++]!.rec;
-      if (!repeatsTypedCommand(rec)) merged.push({ rec, kind: "prompt", restored: true });
+      const { rec, queued } = commands[next++]!;
+      if (queued || !repeatsTypedCommand(rec)) merged.push({ rec, kind: "prompt", restored: true });
       else if (rec.uid) repeats.add(rec.uid);
     }
   };
@@ -240,10 +256,12 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     }
     return false;
   };
-  const { records: canon, dropped } = canonical(text, ctx.sessionId);
+  // Canonical records carry the source line's `uuid` (plan §4.6.2).
+  const { records: canon, dropped } = canonical("claude-code", text, { groupId: ctx.sessionId });
   for (const c of canon) {
     const body = JSON.parse(c.record_json) as Body;
     const raw = c.source_identity_kind === "native" ? byUuid.get(c.stable_source_record_id) : undefined;
+    if (c.source_identity_kind === "native" && abandoned.has(c.stable_source_record_id)) continue;
     if (raw) flushCommands(raw.index);
     // Lines it flags as its own: expanded commands and reminders (isMeta), compaction summaries.
     const flagged: Injected | null = raw?.obj.isCompactSummary === true ? "compact_summary" : raw?.obj.isMeta === true ? "harness" : null;
@@ -276,7 +294,7 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     const key = typeKey(obj.type, obj.subtype);
     if (!claudeCodeProfile.conversation.includes(key)) continue;
     const uuid = str(obj.uuid);
-    if (uuid && (produced.has(uuid) || repeats.has(uuid))) continue;
+    if (uuid && (produced.has(uuid) || repeats.has(uuid) || abandoned.has(uuid))) continue;
     if (obj.isSidechain === true || dropped.has(index) || claudeCodeProfile.expectedDrop(obj)) continue;
     unread.add(key, null, lineVersion);
   }
@@ -305,6 +323,58 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
 }
 
 /** `/name args` from a local-command line, in either the old (user) or new (system) form. */
+/**
+ * What the user sent while Claude Code worked (2.1.296): an `attachment` line with a
+ * `queued_command` whose origin is "human" (plan §6 ⑨, R1). Notices from background
+ * tasks and other sessions (origins "task-notification", "peer") are not the user's.
+ */
+function queuedPrompt(obj: Record<string, unknown>): string | null {
+  if (obj.type !== "attachment" || !obj.attachment || typeof obj.attachment !== "object") return null;
+  const a = obj.attachment as { type?: unknown; origin?: { kind?: unknown }; commandMode?: unknown; prompt?: unknown };
+  if (a.type !== "queued_command" || a.origin?.kind !== "human" || (a.commandMode !== undefined && a.commandMode !== "prompt")) return null;
+  if (typeof a.prompt === "string") return a.prompt.trim() ? a.prompt : null;
+  if (Array.isArray(a.prompt)) {
+    const text = a.prompt.map((b) => (b && typeof b === "object" && (b as { type?: unknown }).type === "text" ? String((b as { text?: unknown }).text ?? "") : "")).join("\n").trim();
+    return text || null;
+  }
+  return null;
+}
+
+/** A line that is a prompt the user typed (not a tool result, a command or the harness's text). */
+function typedPrompt(obj: Record<string, unknown>): boolean {
+  if (obj.type !== "user" || obj.isMeta === true || obj.isCompactSummary === true || commandOf(obj)) return false;
+  const content = (obj.message as { content?: unknown } | undefined)?.content;
+  if (typeof content === "string") return userKind(content) === "prompt";
+  if (!Array.isArray(content) || content.some((b) => (b as { type?: unknown })?.type === "tool_result")) return false;
+  const text = content.map((b) => ((b as { type?: unknown })?.type === "text" ? String((b as { text?: unknown }).text ?? "") : "")).join("\n");
+  return Boolean(text.trim()) && userKind(text) === "prompt";
+}
+
+/**
+ * A prompt the user rewound (Esc Esc, or editing an earlier message) stays in the
+ * file, under the same parent as the prompt that replaced it (46083e3d). The earlier
+ * ones and everything below them are left out (plan §6 ⑨, R12).
+ */
+function rewound(lines: Line[]): Set<string> {
+  const byParent = new Map<string, string[]>();
+  for (const { obj } of lines) {
+    const parent = str(obj.parentUuid);
+    const uuid = str(obj.uuid);
+    if (!parent || !uuid || !typedPrompt(obj)) continue;
+    (byParent.get(parent) ?? byParent.set(parent, []).get(parent)!).push(uuid);
+  }
+  const out = new Set<string>();
+  for (const kids of byParent.values()) for (const k of kids.slice(0, -1)) out.add(k);
+  if (!out.size) return out;
+  // Children come after their parents in the file: one pass takes the whole branch.
+  for (const { obj } of lines) {
+    const parent = str(obj.parentUuid);
+    const uuid = str(obj.uuid);
+    if (parent && uuid && out.has(parent)) out.add(uuid);
+  }
+  return out;
+}
+
 function commandOf(obj: Record<string, unknown>): string | null {
   let content: unknown;
   if (obj.type === "user" && obj.message && typeof obj.message === "object") content = (obj.message as { content?: unknown }).content;
@@ -317,27 +387,3 @@ function commandOf(obj: Record<string, unknown>): string | null {
   return args ? `${command} ${args}` : command;
 }
 
-/**
- * Canonical records carry the source line's `uuid` (plan §4.6.2). A session with
- * no conversation at all (only `/model`, say) is not an error: it has no records.
- */
-function canonical(text: string, sessionId: string): { records: CanonicalRecord[]; dropped: Set<number> } {
-  const run = (groupId?: string) => {
-    const r = normalizeToCanonical({
-      source: "claude-code",
-      transcript: text,
-      bounds: BOUNDS,
-      ...(groupId ? { sourceContext: { groupId } } : {}),
-    });
-    return { records: r.records, dropped: droppedLines(r.diagnostics) };
-  };
-  try {
-    return run(sessionId);
-  } catch (err) {
-    if (err instanceof NormalizationError) {
-      if (err.code === "missing_user_records" || err.code === "missing_assistant_records") return { records: [], dropped: new Set() };
-      if (err.code === "source_group_conflict") return run();
-    }
-    throw err;
-  }
-}

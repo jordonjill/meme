@@ -29,3 +29,13 @@ export function installedAt(root: Pick<SourceRoot, "agent" | "env" | "path">): b
   const adapter = adapterFor(root.agent);
   return !adapter || existsSync(adapter.homeOf({ id: "", ...root }));
 }
+
+/**
+ * Why a source could not be read, as `status` and `install` say it: the agent is
+ * not installed there; installed, with no sessions yet (nothing mirrored from it);
+ * or something is wrong, and nothing of what meme has from it was deleted (plan §6 ⑨, R9).
+ */
+export function sourceTrouble(root: Pick<SourceRoot, "agent" | "env"> & { root: string; sessions: number }): string {
+  if (!installedAt({ agent: root.agent, env: root.env, path: root.root })) return "not installed";
+  return root.sessions ? "NOT READABLE (nothing deleted)" : "no sessions yet";
+}
