@@ -6,7 +6,7 @@ import { describeCall, oneLine, resultFailed, resultText } from "../model/tools"
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Ending, type Turn } from "../model/turns";
 import { displayPath } from "../platform/paths";
 import { ancestors, failureOf, LookupError, sessionRecords, shortId, uidsOf, unknownIn, type Ancestor, type SessionRow } from "../store/queries";
-import { coloredLabel, type Style } from "./labels";
+import { coloredLabel, label, type Style } from "./labels";
 import { ago, padStart, plural, size, span, trimmedLines, truncate, when, width, wrap } from "./text";
 
 export interface ShowModel {
@@ -89,7 +89,10 @@ export interface ShowOptions {
 
 export function headerLines(m: ShowModel, o: ShowOptions): string[] {
   const s = m.session;
-  const title = `${o.st.bold(s.title ?? "(untitled)")}  [${coloredLabel(o.st, s.agent, s.env)}]`;
+  // One line, as everywhere else; --full shows the whole title (plan §6 ⑩.1).
+  const tag = `  [${coloredLabel(o.st, s.agent, s.env)}]`;
+  const name = s.title ?? "(untitled)";
+  const title = `${o.st.bold(o.full ? name : truncate(name, Math.max(10, o.width - width(`  [${label(s.agent, s.env)}]`))))}${tag}`;
   const facts = [
     s.project ? displayPath(s.project, o.home) : null,
     s.branch,

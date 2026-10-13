@@ -2,13 +2,33 @@ import { promptText } from "./record";
 
 const MAX_TITLE = 200;
 
-/** First non-empty line of a prompt, whitespace collapsed. */
-export function firstLine(text: string): string {
+/** The first non-empty line of a text, whitespace collapsed, control characters dropped. */
+function firstWholeLine(text: string): string {
   for (const line of text.split("\n")) {
     const t = line.replace(/\s+/g, " ").replace(/[\x00-\x1f\x7f]/g, "").trim();
-    if (t) return t.length > MAX_TITLE ? t.slice(0, MAX_TITLE) : t;
+    if (t) return t;
   }
   return "";
+}
+
+/** First non-empty line of a prompt, whitespace collapsed, at most 200 characters. */
+export function firstLine(text: string): string {
+  const t = firstWholeLine(text);
+  return t.length > MAX_TITLE ? t.slice(0, MAX_TITLE) : t;
+}
+
+const segmenter = new Intl.Segmenter();
+
+/**
+ * A title: the first line, up to about 200 characters, with `…` when it was cut,
+ * never inside a character (plan §6 ⑩.1). The handoff starts with it in full.
+ */
+function titleLine(text: string): string {
+  const t = firstWholeLine(text);
+  if (t.length <= MAX_TITLE) return t;
+  // A character is at most a few code units; this is plenty for 200 of them.
+  const chars = Array.from(segmenter.segment(t.slice(0, MAX_TITLE * 16)), (x) => x.segment);
+  return chars.length <= MAX_TITLE ? t : chars.slice(0, MAX_TITLE - 1).join("") + "…";
 }
 
 /**
@@ -17,8 +37,8 @@ export function firstLine(text: string): string {
  * shell command is skipped when a real one follows.
  */
 export function titleOf(custom: string | null, generated: string | null, prompts: string[]): string | null {
-  if (custom?.trim()) return firstLine(custom);
-  if (generated?.trim()) return firstLine(generated);
-  const texts = prompts.map((p) => firstLine(promptText(p))).filter(Boolean);
+  if (custom?.trim()) return titleLine(custom);
+  if (generated?.trim()) return titleLine(generated);
+  const texts = prompts.map((p) => titleLine(promptText(p))).filter(Boolean);
   return texts.find((t) => !t.startsWith("/") && !t.startsWith("! ")) ?? texts[0] ?? null;
 }
