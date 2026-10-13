@@ -188,11 +188,11 @@ matches too, it says how many (`-a` lists them).
 deletes nothing. It refuses the session that is running it and a session open in
 Claude Code or Codex (meme checks the process that has it open). OpenCode and Pi
 do not say which session they have open: meme refuses the sessions of a folder
-one of them is running in. Where it cannot tell (an older agent, Codex on
-Windows, OpenCode and Pi on Windows), it refuses a session active in the last
-5 minutes; where an agent marks a session open but meme cannot check the process
-from here, it refuses it whatever its age and says where to run `meme forget`
-instead.
+one of them is running in, and deletes at once when none runs there. Where meme
+cannot tell (an older agent, a Codex lock on Windows, a process on the other side
+of WSL and Windows, OpenCode or Pi running in a folder meme cannot see), it
+refuses a session written in the last 5 minutes and says when it can go
+("you can delete it after 17:21").
 
 - **Claude Code**: the session file and its folders (subagents and large tool
   output, `file-history`, `session-env`, and the session's background job under
@@ -240,8 +240,9 @@ deletion.
   `~/.codex`, or `CODEX_HOME`; `~/.local/share/opencode/opencode.db`, or
   `OPENCODE_DB`; `~/.pi/agent/sessions`, or `PI_CODING_AGENT_DIR`). The one
   exception is `meme forget`. It never writes the agents' databases (Codex's,
-  OpenCode's); OpenCode's is opened read-only, and read from a copy across WSL
-  and Windows.
+  OpenCode's); OpenCode's is opened read-only. Across WSL and Windows it is read
+  from a copy kept in `~/.meme/cache`, which `meme uninstall` removes and
+  `meme forget` removes with the session it deleted.
 - OpenCode 2.0 (`@opencode/cli`) is not supported yet: it keeps sessions in a new
   format in the same database, and `meme status` reports them as not read.
 - Secrets with a clear format are replaced with `[REDACTED:type]` before

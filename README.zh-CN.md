@@ -156,7 +156,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ### 删除
 
 `meme forget` 列出要删的每一个文件，然后问 `[y/N]`，只按回车不会删除。
-它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。OpenCode 和 Pi 不说自己开着哪个会话：它们中哪个正在某个目录里运行，那个目录的会话 meme 都不删。查不到的时候（老版本的 Agent、Windows 上的 Codex、Windows 上的 OpenCode 和 Pi），最近 5 分钟还在写的会话也不删；Agent 标着开着、但这里查不了那个进程的，不管多久都不删，并说明该到哪一边运行 `meme forget`。
+它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。OpenCode 和 Pi 不说自己开着哪个会话：它们中哪个正在某个目录里运行，那个目录的会话 meme 都不删；那里没有它们的进程，就马上能删。判断不了的时候（老版本的 Agent、Windows 上 Codex 的锁、进程在 WSL 和 Windows 的另一边、OpenCode 或 Pi 在 meme 看不到的目录里运行），最近 5 分钟写过的会话不删，并说明几点以后能删（"you can delete it after 17:21"）。
 
 - **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`，以及 `jobs/` 下这个会话的后台任务）。
   Claude Code 自己的输入历史（`~/.claude/history.jsonl`）里还会留着你输入过的话。
@@ -188,7 +188,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
   设置 `MEME_HOME` 可以换位置。删除的记录会被覆盖（`secure_delete`）。
 - meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`；
   `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
-  唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本。
+  唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本，放在 `~/.meme/cache` 里，`meme uninstall` 会删掉它，`meme forget` 删了会话也会一并删掉它。
 - 还不支持 OpenCode 2.0（`@opencode/cli`）：它把会话用新格式存在同一个库里，`meme status` 会报这些会话没读出来。
 - 存进镜像之前，格式明确的密钥会被替换成 `[REDACTED:类型]`：Anthropic 和 OpenAI 的 API key、
   GitHub token、AWS key id、私钥、Bearer token，以及 URL 里或 `password=` 后面的密码。
