@@ -41,10 +41,13 @@ function expectedDrop(line: Record<string, unknown>): string | null {
   // An attachment is the user's only as a queued message from a human (plan §6 ⑨, R1);
   // one from a sender meme does not know is reported.
   if (line.type === "attachment") {
-    const a = line.attachment as { type?: unknown; origin?: { kind?: unknown } } | undefined;
+    const a = line.attachment as { type?: unknown; origin?: { kind?: unknown }; prompt?: unknown } | undefined;
     if (a?.type !== "queued_command") return "an attachment: files, hook output, notices";
     const origin = a.origin?.kind;
-    return typeof origin === "string" && origin !== "human" ? "a queued message from a background task or another session" : null;
+    if (origin === "task-notification" || origin === "peer") return "a queued message from a background task or another session";
+    // No origin before 2.1.296: a notice reads as the harness's text.
+    if (origin === undefined && typeof a.prompt === "string" && formats.injected.some((re) => re.test(a.prompt as string))) return "a notice queued by the harness";
+    return null;
   }
   const content = line.type === "system" ? line.content : (line.message as { content?: unknown } | undefined)?.content;
   if (typeof content === "string") {

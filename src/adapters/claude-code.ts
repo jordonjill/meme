@@ -324,20 +324,23 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
 
 /** `/name args` from a local-command line, in either the old (user) or new (system) form. */
 /**
- * What the user sent while Claude Code worked (2.1.296): an `attachment` line with a
- * `queued_command` whose origin is "human" (plan §6 ⑨, R1). Notices from background
- * tasks and other sessions (origins "task-notification", "peer") are not the user's.
+ * What the user sent while Claude Code worked: an `attachment` line with a
+ * `queued_command` (plan §6 ⑨, R1). 2.1.296 says whose it is: origin "human" is the
+ * user, "task-notification" and "peer" are not. Before (2.1.278–2.1.284) there was no
+ * origin, and the only ones seen were notices, which read as the harness's text.
  */
 function queuedPrompt(obj: Record<string, unknown>): string | null {
   if (obj.type !== "attachment" || !obj.attachment || typeof obj.attachment !== "object") return null;
   const a = obj.attachment as { type?: unknown; origin?: { kind?: unknown }; commandMode?: unknown; prompt?: unknown };
-  if (a.type !== "queued_command" || a.origin?.kind !== "human" || (a.commandMode !== undefined && a.commandMode !== "prompt")) return null;
-  if (typeof a.prompt === "string") return a.prompt.trim() ? a.prompt : null;
-  if (Array.isArray(a.prompt)) {
-    const text = a.prompt.map((b) => (b && typeof b === "object" && (b as { type?: unknown }).type === "text" ? String((b as { text?: unknown }).text ?? "") : "")).join("\n").trim();
-    return text || null;
+  const origin = a.origin?.kind;
+  if (a.type !== "queued_command" || (origin !== undefined && origin !== "human") || (a.commandMode !== undefined && a.commandMode !== "prompt")) return null;
+  let text: string | null = null;
+  if (typeof a.prompt === "string") text = a.prompt.trim() ? a.prompt : null;
+  else if (Array.isArray(a.prompt)) {
+    text = a.prompt.map((b) => (b && typeof b === "object" && (b as { type?: unknown }).type === "text" ? String((b as { text?: unknown }).text ?? "") : "")).join("\n").trim() || null;
   }
-  return null;
+  if (text !== null && origin === undefined && userKind(text) !== "prompt") return null;
+  return text;
 }
 
 /** A line that is a prompt the user typed (not a tool result, a command or the harness's text). */
