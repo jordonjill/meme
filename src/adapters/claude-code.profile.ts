@@ -130,7 +130,7 @@ export const claudeCodeProfile: Profile = {
     "system/informational": "skipped: a notice to the user",
     "system/stop_hook_summary": "skipped: hook output",
     summary: "skipped: older versions' session summaries",
-    // 2.1.304 (Claude Desktop's own, 2026-10-22, plan §6 ⑪, F25): what it sent to the model, which the conversation holds too.
+    // From 2.1.304 (seen up to 2.1.308, 2026-10-22, plan §6 ⑪, F25): what it sent to the model, which the conversation holds too.
     "api-request": "skipped: a log of each request to the model",
     "api-request-blob": "skipped: the messages of those requests",
     "api-request-shape": "skipped: the system prompt and tools of those requests",
