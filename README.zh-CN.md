@@ -26,34 +26,47 @@ Windows 上的 meme 也能看到正在运行的 WSL 发行版里的会话。
   meme 不用大模型做摘要，也不往磁盘写任何文件。
 - **彻底删除。** `meme forget` 先列出要删的全部内容，确认后从 Agent 和 meme 里一起删掉。
 
-## 从源码安装
+## 安装
 
-需要 [Bun](https://bun.sh) 1.4.2 或更新的版本。
-
-```sh
-git clone <本仓库> meme && cd meme
-bun install
-bun scripts/build.ts linux-x64      # 或：linux-arm64、darwin-x64、darwin-arm64、windows-x64
-```
-
-`bun scripts/build.ts` 不带参数时打出全部 5 个版本，并写出 `dist/SHA256SUMS`。
-每个版本都是一个 60–90 MB 左右的单文件，不需要再装别的。把它放到 PATH 上，
-命名为 `meme`（Windows 上是 `meme.exe`），例如：
+Linux、WSL 或 macOS：
 
 ```sh
-mkdir -p ~/.local/bin && cp dist/meme-linux-x64 ~/.local/bin/meme
+curl -fsSL https://github.com/jordonjill/meme/releases/latest/download/install.sh | sh
 ```
 
-然后运行：
+Windows，在 PowerShell 里：
 
-```sh
-meme install     # 找到 Agent，把全部会话镜像一遍
+```powershell
+irm https://github.com/jordonjill/meme/releases/latest/download/install.ps1 | iex
 ```
+
+（meme 第一次正式发布以后可用。）安装脚本按你的系统和 CPU 挑单文件，用 Release 里的
+`SHA256SUMS` 核对，放进 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`），
+这个目录不在 PATH 上就加进去，最后运行 `meme install`：找到 Agent，把全部会话镜像一遍。
+`MEME_VERSION=v0.1.0` 装指定的版本；`MEME_NO_MODIFY_PATH=1` 不改 PATH。WSL 和 Windows
+两边的 Agent 里都要用 `! meme continue` 时，两边都要装；`meme install` 发现另一边有 Agent 时会提醒。
 
 `meme install` 不改 `~/.meme` 以外的任何东西：不装 skill，不改 `CLAUDE.md` 或
 `AGENTS.md`，不改设置，不加 hook。`meme install --dry-run` 只显示它会做什么。
 
-Linux x64 和 Windows x64 两个版本实测过；macOS 和 Linux arm64 的版本还没在真机上跑过。
+### 从源码安装
+
+需要 [Bun](https://bun.sh) 1.4.2 或更新的版本。
+
+```sh
+git clone https://github.com/jordonjill/meme && cd meme
+bun install
+bun scripts/build.ts linux-x64      # 或下面别的目标
+```
+
+目标有 `linux-x64`、`linux-arm64`、`darwin-x64`、`darwin-arm64`、`windows-x64`，以及给不支持
+AVX2 的 x64 CPU 用的 `linux-x64-baseline`、`darwin-x64-baseline`、`windows-x64-baseline`。
+不带参数时打出全部 8 个，并写出 `dist/SHA256SUMS`。每个都是一个 60–90 MB 左右的单文件，
+不需要再装别的。`MEME_FROM=dist sh install.sh`（或先 `$env:MEME_FROM = 'dist'` 再运行
+`install.ps1`）像从 Release 一样从 `dist` 安装。
+
+每次发布前，每个单文件都在 GitHub Actions 上它自己那种机器里跑测试：Linux x64 和 arm64、
+Intel 和 Apple 芯片的 macOS、Windows。
 
 ## 接着做一个会话
 

@@ -32,36 +32,52 @@ and meme on Windows also sees the sessions in your running WSL distributions.
 - **Forget.** `meme forget` deletes a session for good, from the agent and from
   meme, after showing exactly what will go.
 
-## Install from source
+## Install
 
-You need [Bun](https://bun.sh) 1.4.2 or later.
-
-```sh
-git clone <this repository> meme && cd meme
-bun install
-bun scripts/build.ts linux-x64      # or: linux-arm64, darwin-x64, darwin-arm64, windows-x64
-```
-
-`bun scripts/build.ts` with no target builds all five and writes
-`dist/SHA256SUMS`. Each build is a single file of about 60–90 MB with nothing
-else to install. Put it on your PATH as `meme` (on Windows, `meme.exe`), for example:
+On Linux, WSL or macOS:
 
 ```sh
-mkdir -p ~/.local/bin && cp dist/meme-linux-x64 ~/.local/bin/meme
+curl -fsSL https://github.com/jordonjill/meme/releases/latest/download/install.sh | sh
 ```
 
-Then run:
+On Windows, in PowerShell:
 
-```sh
-meme install     # finds the agents and mirrors all sessions once
+```powershell
+irm https://github.com/jordonjill/meme/releases/latest/download/install.ps1 | iex
 ```
+
+(These work from meme's first release on.) The script picks the single file for
+your system and CPU, checks it against the release's `SHA256SUMS`, puts it in
+`~/.local/bin` (on Windows `%USERPROFILE%\.local\bin`), adds that folder to your
+PATH if it is not there yet, and runs `meme install`, which finds the agents and
+mirrors all sessions once. `MEME_VERSION=v0.1.0` installs that release;
+`MEME_NO_MODIFY_PATH=1` leaves PATH alone. To use `! meme continue` in agents on
+both sides of WSL and Windows, install meme on both: `meme install` says so when it
+finds agents on the other side.
 
 `meme install` changes nothing outside `~/.meme`: no skills, no `CLAUDE.md` or
 `AGENTS.md`, no settings, no hooks. `meme install --dry-run` shows what it would
 do.
 
-The Linux x64 and Windows x64 builds are tested; the macOS and Linux arm64 builds
-have not been run on real machines yet.
+### From source
+
+You need [Bun](https://bun.sh) 1.4.2 or later.
+
+```sh
+git clone https://github.com/jordonjill/meme && cd meme
+bun install
+bun scripts/build.ts linux-x64      # or another target, below
+```
+
+The targets are `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64` and
+`windows-x64`, and `linux-x64-baseline`, `darwin-x64-baseline` and
+`windows-x64-baseline` for x64 CPUs without AVX2. With no target it builds all
+eight and writes `dist/SHA256SUMS`. Each is a single file of about 60–90 MB with
+nothing else to install. `MEME_FROM=dist sh install.sh` (or `$env:MEME_FROM =
+'dist'` before `install.ps1`) installs from `dist` as from a release.
+
+Each build runs its tests on its own kind of machine in GitHub Actions before a
+release: Linux x64 and arm64, macOS on Intel and on Apple silicon, Windows.
 
 ## Continue a session
 
