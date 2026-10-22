@@ -177,6 +177,9 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
   列出、查看、搜索和拉取交接都不会启动停着的发行版：那些会话显示上次看到的样子，列表顶部会注明；
   在终端里接着做、或者删除它的会话，会启动它。接着做 WSL 的会话时，
   Agent 在 WSL 里打开，所以 WSL 里也要装 meme 和对应的 Agent。
+- Claude 桌面版在 WSL 里运行 Claude Code，并在 Windows 的 `.claude\projects\ssh-<id>` 里给每个这样的会话留一份拷贝。
+  meme 读 WSL 里的原件，跳过这些拷贝。其他在两处都有的会话（比如把家目录拷到了另一边）只列一次，
+  用最后写过的那一份；`meme status` 会说有几个，`meme forget` 会把每一份都删掉。
 - 在 Windows PowerShell 5.1 里，把输出接到管道上（`meme ls | ...`）时，PowerShell
   按控制台代码页解码，中文会乱码。先运行 `[Console]::OutputEncoding = [Text.Encoding]::UTF8` 即可。
   直接显示在窗口里没有问题。
