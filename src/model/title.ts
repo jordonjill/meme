@@ -2,10 +2,13 @@ import { promptText } from "./record";
 
 const MAX_TITLE = 200;
 
-/** The first non-empty line of a text, whitespace collapsed, control characters dropped. */
+/** A terminal's escape sequences, whole: CSI (`\x1b[31m`), OSC (`\x1b]0;title\x07`) and the two-character ones. */
+const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])/g;
+
+/** The first non-empty line of a text, whitespace collapsed, escape sequences and control characters dropped (plan §6 ⑪, F20). */
 function firstWholeLine(text: string): string {
   for (const line of text.split("\n")) {
-    const t = line.replace(/\s+/g, " ").replace(/[\x00-\x1f\x7f]/g, "").trim();
+    const t = line.replace(ESCAPES, "").replace(/\s+/g, " ").replace(/[\x00-\x1f\x7f]/g, "").trim();
     if (t) return t;
   }
   return "";
