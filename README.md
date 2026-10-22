@@ -280,8 +280,9 @@ Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_WINDOWS_USERS_DIR` (where WSL finds the Windows user folders),
 `MEME_WSL_CONF` (another `/etc/wsl.conf`), `MEME_WSL_DIR`, `MEME_WSL_RUNNING` and
 `MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal),
-`MEME_SLOW_MS` (log runs slower than this; 0 logs every run) and
-`MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take).
+`MEME_SLOW_MS` (log runs slower than this; 0 logs every run),
+`MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take) and
+`MEME_WSL_TIMEOUT_MS` (how long Windows waits for `wsl.exe`).
 
 ## License
 

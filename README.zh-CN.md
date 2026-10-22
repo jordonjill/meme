@@ -217,7 +217,8 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 （WSL 在哪里找 Windows 的用户目录）、`MEME_WSL_CONF`（换一份 `/etc/wsl.conf`）、`MEME_WSL_DIR`、
 `MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`（从 Windows 看到的 WSL）、`MEME_TERMINAL`（当作在终端里）、
 `MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）、
-`MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）。
+`MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）、
+`MEME_WSL_TIMEOUT_MS`（Windows 上等 `wsl.exe` 最多等多久）。
 
 ## 许可证
 
