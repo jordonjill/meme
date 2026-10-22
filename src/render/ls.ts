@@ -7,6 +7,17 @@ import { ago, padEnd, plural, shortPath, size, truncate, when, width } from "./t
 
 /** The project column of a list across projects: longer paths lose their middle. */
 const PROJECT_COLS = 40;
+/** Short of room, a title and then a project give way down to these (plan §6 ⑪, F13): off a terminal a line fits 119 columns. */
+const MIN_TITLE = 12;
+const MIN_PROJECT = 20;
+
+/** The project column narrowed so a title of `minTitle` fits in `room` columns; `room` already counts the column at full width. */
+function narrowProject(cells: { project: string }[], wProject: number, room: number, minTitle: number): number {
+  if (room >= minTitle || !wProject) return wProject;
+  const w = Math.max(MIN_PROJECT, wProject - (minTitle - room));
+  for (const c of cells) c.project = shortPath(c.project, w);
+  return Math.max(...cells.map((c) => width(c.project)));
+}
 
 export interface ListFilter {
   /** All projects instead of the current one. */
@@ -111,13 +122,16 @@ export function lsText({ rows, filter, fellBack, others, unreadable }: Listing, 
   const wAgo = colW("ago");
   const wBranch = colW("branch");
   const wSize = colW("size");
-  const wProject = colW("project");
+  const wMarks = Math.max(...cells.map((c) => width(c.marks)));
+  const fixed = 2 + wId + 2 + wLabel + 2 + wAgo + 2 + wBranch + 2 + wSize + 2;
+  const full = colW("project");
+  const wProject = narrowProject(cells, full, o.width - fixed - (full ? full + 2 : 0) - wMarks, MIN_TITLE);
   const out = [fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`];
   for (const c of cells) {
     let line = `  ${padEnd(c.id, wId)}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
     if (filter.all) line += padEnd(c.project, wProject) + "  ";
     const used = width(line.replace(/\x1b\[[0-9;]*m/g, ""));
-    out.push(line + truncate(c.title, Math.max(20, o.width - used - width(c.marks))) + o.st.dim(c.marks));
+    out.push(line + truncate(c.title, Math.max(MIN_TITLE, o.width - used - width(c.marks))) + o.st.dim(c.marks));
   }
   const hint = othersHint(others, "use -a");
   if (hint) out.push(hint);
@@ -149,12 +163,20 @@ export function numberedText({ rows, filter, fellBack, others, unreadable }: Lis
     labelColored: coloredLabel(o.st, r.agent, r.env),
     ago: ago(r.ended_at, o.now),
     project: filter.all ? shortPath(displayPath(r.project ?? "", o.home), PROJECT_COLS) : "",
-    title: truncate(r.title ?? "(untitled)", 48) + marks(r, o.now),
+    title: r.title ?? "(untitled)",
+    marks: marks(r, o.now),
     id: r.short,
   }));
-  const colW = (k: "n" | "label" | "ago" | "project" | "title") => Math.max(...cells.map((c) => width(c[k])));
-  const [wN, wLabel, wAgo, wTitle] = [colW("n"), colW("label"), colW("ago"), colW("title")];
-  const wProject = colW("project");
+  const colW = (k: "n" | "label" | "ago" | "project" | "marks" | "id") => Math.max(...cells.map((c) => width(c[k])));
+  const [wN, wLabel, wAgo, wMarks, wId] = [colW("n"), colW("label"), colW("ago"), colW("marks"), colW("id")];
+  // Titles up to 48 columns, fewer when the line would not fit (plan §6 ⑪, F13).
+  const fixed = 2 + (o.numbered ? wN + 2 : 0) + wLabel + 2 + wAgo + 2 + 2 + wId;
+  const full = colW("project");
+  const room = o.width - fixed - (full ? full + 2 : 0) - wMarks;
+  const wProject = narrowProject(cells, full, room, MIN_TITLE);
+  const titleCols = Math.min(48, Math.max(MIN_TITLE, room + full - wProject));
+  for (const c of cells) c.title = truncate(c.title, titleCols) + c.marks;
+  const wTitle = Math.max(...cells.map((c) => width(c.title)));
   const out = [o.heading ?? (fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`)];
   for (const c of cells) {
     let line = `  ${o.numbered ? c.n.padStart(wN) + "  " : ""}${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  `;

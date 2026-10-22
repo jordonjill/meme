@@ -74,7 +74,10 @@ export function searchText(groups: HitGroup[], o: SearchTextOptions): string {
     const hits = listedOf(g);
     const s = g.head;
     out.push("");
-    out.push(`${o.st.bold(s.title ?? "(untitled)")}  [${coloredLabel(o.st, s.agent, s.env)}]  ${day(s.ended_at, new Date(o.now))}  ${plural(hits.length, "match", "matches")}`);
+    const facts = `  [${coloredLabel(o.st, s.agent, s.env)}]  ${day(s.ended_at, new Date(o.now))}  ${plural(hits.length, "match", "matches")}`;
+    // The title gives way to the width (plan §6 ⑪, F13).
+    const title = truncate(s.title ?? "(untitled)", Math.max(12, o.width - width(facts.replace(/\x1b\[[0-9;]*m/g, ""))));
+    out.push(`${o.st.bold(title)}${facts}`);
     for (const h of hits.slice(0, o.perSession)) {
       const turn = g.turnInHead.get(h) ?? h.turn;
       const prefix = `  turn ${String(turn).padStart(3)}  ${padEnd(roleLabel(h), 6)}`;
