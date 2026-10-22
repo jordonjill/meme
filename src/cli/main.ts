@@ -11,6 +11,7 @@ import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
+import { report, reportHelp } from "./commands/report";
 import { search, searchHelp } from "./commands/search";
 import { show, showHelp } from "./commands/show";
 import { status, statusHelp } from "./commands/status";
@@ -25,6 +26,7 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
+  report: { run: report, help: reportHelp },
 };
 
 const USAGE = `meme ${pkg.version}: your coding-agent sessions in one place, ready to continue in any agent.
@@ -40,6 +42,7 @@ Commands:
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data
+  report      a report to paste into an issue, with no conversation in it
 
 Run \`meme <command> --help\` for a command's options.
 `;
@@ -117,6 +120,7 @@ async function run(argv: string[]): Promise<number> {
     const platform = currentPlatform();
     fileLogger(platform.dataDir).error(`meme ${argv.join(" ")}`, err);
     process.stderr.write(`meme: ${err instanceof Error ? err.message : String(err)} (details in ${path.join(platform.dataDir, "logs", "meme.log")})\n`);
+    process.stderr.write("To report it, run `meme report` and paste what it prints into an issue.\n");
     return 1;
   }
 }

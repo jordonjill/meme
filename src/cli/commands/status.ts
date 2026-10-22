@@ -9,13 +9,13 @@ import { ago, padEnd, plural, size, when } from "../../render/text";
 import { getMeta } from "../../store/db";
 import { counts, failures, inSeveralSources, sources, unknownTypes, unreadByVersion } from "../../store/queries";
 import { parse, UsageError } from "../args";
-import { createContext, stoppedNotice, write } from "../context";
+import { createContext, stoppedNotice, write, type Context } from "../context";
 
 export const statusHelp = `Usage: meme status
 
 Show the version, where the data lives, which session sources can be read,
-which sessions meme cannot read, and record types it does not know. Attach this
-when you report a problem: it has the agents' versions.
+which sessions meme cannot read, and record types it does not know. To report
+a problem, run \`meme report\`: it has all of this.
 `;
 
 export async function status(argv: string[]): Promise<number> {
@@ -25,7 +25,12 @@ export async function status(argv: string[]): Promise<number> {
     return 0;
   }
   if (positionals.length) throw new UsageError(`status takes no arguments, got ${positionals[0]}`);
-  const ctx = await createContext();
+  write(statusLines(await createContext()).join("\n") + "\n");
+  return 0;
+}
+
+/** What `status` says, also the middle of `meme report`. */
+export function statusLines(ctx: Context): string[] {
   const { db, file, readonly, memory } = ctx.store;
   const home = ctx.platform.home;
   let dbSize = "";
@@ -96,6 +101,5 @@ export async function status(argv: string[]): Promise<number> {
     const sessions = damaged.reduce((a, u) => a + u.sessions, 0);
     lines.push(`Not JSON:     ${plural(n, "line")} in ${plural(sessions, "session")}, skipped (a damaged file?)`);
   }
-  write(lines.join("\n") + "\n");
-  return 0;
+  return lines;
 }
