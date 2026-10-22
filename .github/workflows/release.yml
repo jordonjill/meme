@@ -1,0 +1,126 @@
+# The single files, built and run where users run them (plan section 6, step 13;
+# release prep items 1, 2, 7, 10 and 13). Run by hand to check a build; a v* tag
+# also makes a draft release with the files, SHA256SUMS and the install scripts.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/build.ts linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-x64-baseline darwin-arm64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unix
+          path: dist/meme-*
+          if-no-files-found: error
+
+  # Bun sets meme.exe's version information only when it compiles on Windows (item 10).
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/build.ts windows-x64 windows-x64-baseline
+      - name: meme.exe says it is meme
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          foreach ($f in 'dist/meme-windows-x64.exe', 'dist/meme-windows-x64-baseline.exe') {
+            $v = (Get-Item $f).VersionInfo
+            Write-Host "$f : $($v.ProductName) $($v.FileVersion) / $($v.CompanyName) / $($v.FileDescription) / $($v.LegalCopyright)"
+            if ($v.ProductName -ne 'meme' -or $v.FileVersion -notlike "$version*") { throw "$f has the version information of $($v.ProductName) $($v.FileVersion)" }
+          }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: dist/meme-windows-*.exe
+          if-no-files-found: error
+
+  # Item 13: each file on its own kind of machine, the end-to-end tests against it, and install.sh from the build.
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, file: meme-linux-x64 }
+          - { runner: ubuntu-24.04-arm, file: meme-linux-arm64 }
+          - { runner: macos-15-intel, file: meme-darwin-x64 }
+          - { runner: macos-latest, file: meme-darwin-arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unix
+          path: dist
+      - run: chmod +x dist/meme-*
+      - run: dist/${{ matrix.file }} --version
+      - name: Tests, the end-to-end ones on the single file
+        run: bun test
+        env:
+          MEME_BIN: dist/${{ matrix.file }}
+      - name: install.sh from the build
+        run: |
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum meme-* > SHA256SUMS; else shasum -a 256 meme-* > SHA256SUMS; fi
+          cd ..
+          mkdir -p "$RUNNER_TEMP/home"
+          HOME="$RUNNER_TEMP/home" MEME_FROM=dist MEME_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/meme" --version
+
+  # Items 2, 7 and 10 on Windows: meme.exe reading sessions, how long it takes without WSL, install.ps1.
+  test-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows
+          path: dist
+      - run: pwsh -NoProfile -File test/ci/windows.ps1 -Dist dist
+        shell: pwsh
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, test-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: cd dist && sha256sum meme-* > SHA256SUMS && cat SHA256SUMS
+      - name: A draft release, published by hand
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "meme ${GITHUB_REF_NAME#v}" --notes "meme ${GITHUB_REF_NAME#v}" dist/* install.sh install.ps1
+        env:
+          GH_TOKEN: ${{ github.token }}
