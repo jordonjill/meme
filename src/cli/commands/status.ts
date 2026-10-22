@@ -6,7 +6,7 @@ import { wslPlace } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
 import { ago, padEnd, plural, size, when } from "../../render/text";
 import { getMeta } from "../../store/db";
-import { counts, failures, sources, unknownTypes, unreadByVersion } from "../../store/queries";
+import { counts, failures, inSeveralSources, sources, unknownTypes, unreadByVersion } from "../../store/queries";
 import { parse, UsageError } from "../args";
 import { createContext, stoppedNotice, write } from "../context";
 
@@ -54,6 +54,9 @@ export async function status(argv: string[]): Promise<number> {
     lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${state}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");
+  // The same session read from two places (a copied home folder): one is shown (plan §6 ⑪, F10).
+  const several = inSeveralSources(db);
+  if (several) lines.push(`  ${plural(several, "session")} ${several === 1 ? "is" : "are"} in more than one source: meme shows the copy written last, and \`meme forget\` deletes every copy.`);
   const notice = stoppedNotice(ctx.wslStopped, ctx.now);
   if (notice) lines.push(`  ${notice}`);
 

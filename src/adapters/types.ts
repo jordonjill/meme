@@ -96,6 +96,8 @@ export type ForgetStep =
       cwd?: string;
       /** Variables the command runs with, besides meme's own. */
       env?: Record<string, string>;
+      /** The files it deletes, when not all of the session's: one copy of several (plan §6 ⑪, F10). */
+      files?: string[];
     };
 
 export interface ForgetPlan {

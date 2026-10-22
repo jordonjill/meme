@@ -2,14 +2,14 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { ADAPTERS, adapterFor } from "../../adapters";
 import { PROFILES, profileOf } from "../../adapters/profiles";
-import type { ForgetPlan } from "../../adapters/types";
+import type { Adapter, ForgetPlan } from "../../adapters/types";
 import { lastActive, mayBeRunning, quietAfter } from "../../model/turns";
 import { removeDir, removeFile } from "../../platform/fs";
 import { displayPath } from "../../platform/paths";
 import { commandLine } from "../../platform/spawn";
 import { coloredLabel } from "../../render/labels";
 import { ago, padEnd, plural } from "../../render/text";
-import { ancestors, getSession, idPrefix, resolveSession, sessionFiles, type SessionRow } from "../../store/queries";
+import { ancestors, getSession, idPrefix, resolveSession, sessionCopies, type SessionRow } from "../../store/queries";
 import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
@@ -108,6 +108,19 @@ export async function forget(argv: string[]): Promise<number> {
     if (ctx.current.has(s.id)) throw new CommandError(`${s.short} is the session that is running meme; it cannot delete itself`);
     if (!chosen.some((c) => c.id === s.id)) chosen.push(s);
   }
+  // A session in more than one source has a copy in each; every one goes (plan §6 ⑪, F10).
+  const allFiles = (id: string) => sessionCopies(ctx.store.db, id).flatMap((c) => c.files);
+  const planFor = (session: SessionRow, adapter: Adapter): ForgetPlan => {
+    const copies = sessionCopies(ctx.store.db, session.id);
+    if (copies.length <= 1) return adapter.forgetPlan({ id: session.id, env: session.env, files: copies[0]?.files ?? [] }, ctx.platform);
+    const plans = copies.map((c) => {
+      const plan = adapter.forgetPlan({ id: session.id, env: c.env, files: c.files }, ctx.platform);
+      return { ...plan, steps: plan.steps.map((step) => (step.kind === "run" ? { ...step, files: c.files } : step)) };
+    });
+    const blocked = plans.find((p) => p.blocked)?.blocked;
+    if (blocked) return { steps: [], gone: [], notes: [], blocked };
+    return { steps: plans.flatMap((p) => p.steps), gone: plans.flatMap((p) => p.gone), notes: [...new Set(plans.flatMap((p) => p.notes))] };
+  };
   /** Why a session must not be deleted now, if it must not. */
   const stillOpen = (s: SessionRow, c: OpenCheck = check, now = ctx.now): string | null => {
     const name = profileOf(s.agent).name;
@@ -117,7 +130,7 @@ export async function forget(argv: string[]): Promise<number> {
     // Open or closed, meme cannot tell (an agent that keeps no list, a process it
     // cannot check from here): refused only while it was written in the last few
     // minutes, and it says when it can go (plan §6 ⑩.1).
-    if (c.stateOf(s.id, sessionFiles(ctx.store.db, s.id)) === "closed") return null;
+    if (c.stateOf(s.id, allFiles(s.id)) === "closed") return null;
     const last = lastActive(s.ended_at);
     if (last !== null && mayBeRunning(last, now)) {
       const there = c.unsure.get(s.id)?.checkable;
@@ -143,10 +156,10 @@ export async function forget(argv: string[]): Promise<number> {
   }
 
   const items: Item[] = chosen.map((session) => {
-    const files = sessionFiles(ctx.store.db, session.id);
+    const files = allFiles(session.id);
     const adapter = adapterFor(session.agent);
     let plan: ForgetPlan = adapter
-      ? adapter.forgetPlan({ id: session.id, env: session.env, files }, ctx.platform)
+      ? planFor(session, adapter)
       : { steps: [], gone: [], notes: [], blocked: "meme does not know how to delete this agent's sessions" };
     // Some agents refuse to delete a session while a fork still reads its history
     // from it (its profile, plan §3.5): name the forks too, or delete them first.
@@ -185,7 +198,7 @@ export async function forget(argv: string[]): Promise<number> {
       else {
         const program = path.basename(step.cmd[0]!).replace(/\.(exe|cmd|bat)$/i, "");
         lines.push(`    runs: ${step.shown ?? [program, ...step.cmd.slice(1)].join(" ")}`, `    ${st.dim(step.what + ":")}`);
-        for (const f of files) lines.push(`      ${displayPath(f, home)}`);
+        for (const f of step.files ?? files) lines.push(`      ${displayPath(f, home)}`);
       }
     }
     for (const note of plan.notes) lines.push(`    ${note}`);
