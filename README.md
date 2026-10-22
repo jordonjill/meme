@@ -227,7 +227,7 @@ deletion.
   to be installed there too.
 - Claude Desktop runs Claude Code in WSL and keeps a copy of each such session
   in Windows' `.claude\projects\ssh-<id>`. meme reads the original in WSL and
-  skips these copies. Any other session found in two places (a home folder copied
+  skips these copies; `meme forget` deletes the copy with the session. Any other session found in two places (a home folder copied
   to the other side) is listed once, from the copy written last; `meme status`
   says how many there are, and `meme forget` deletes every copy.
 - In Windows PowerShell 5.1, output piped to another command (`meme ls | ...`)
