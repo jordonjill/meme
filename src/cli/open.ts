@@ -107,9 +107,10 @@ export function openCheck(platform: Platform): OpenCheck {
       }
     }
   }
+  // A session in a database is `<database>#<id>` (plan §6 ⑪, F3).
   const under = (file: string, dir: string) => {
     const [f, d] = [pathKey(file), pathKey(dir)];
-    return f.length > d.length && f.startsWith(d) && "/\\".includes(f[d.length]!);
+    return f.length > d.length && f.startsWith(d) && "/\\#".includes(f[d.length]!);
   };
   return {
     open,

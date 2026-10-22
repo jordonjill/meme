@@ -100,10 +100,19 @@ export function getSession(db: Database, id: string): SessionRow | null {
 
 export class LookupError extends Error {}
 
+/**
+ * Could `s` be the start of a session id? Every id starts with 12 hex digits (a
+ * UUID's, or when the session started); some go on in lower-case letters, which a
+ * short id longer than 12 characters may hold (plan §6 ⑪, F4).
+ */
+export function idPrefix(s: string, min = 1): boolean {
+  return s.length >= min && /^[0-9a-f][0-9a-f-]{0,11}[0-9a-z-]*$/.test(s);
+}
+
 /** A session from its id or any unique prefix of it. */
 export function resolveSession(db: Database, ref: string): SessionRow {
   const prefix = ref.trim().toLowerCase();
-  if (!/^[0-9a-f-]+$/.test(prefix)) throw new LookupError(`not a session id: ${ref}`);
+  if (!idPrefix(prefix)) throw new LookupError(`not a session id: ${ref}`);
   const ids = db
     .query<{ id: string }, [string, number]>("SELECT id FROM sessions WHERE substr(id, 1, ?2) = ?1 ORDER BY ended_at DESC LIMIT 6")
     .all(prefix, prefix.length)

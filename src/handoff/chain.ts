@@ -34,7 +34,7 @@ export interface Upstream {
 export type Lookup = (ref: string, before: string | null) => { session: SessionRow; records: Rec[] } | null;
 
 /** The header meme prints first (plan §4.6.6). */
-const HEADER = /^# Handoff: [^\n]*\r?\nSource: [^\n]*?\bsession ([0-9a-f]{4,36})\b/;
+const HEADER = /^# Handoff: [^\n]*\r?\nSource: [^\n]*?\bsession ([0-9a-f][0-9a-z-]{3,35})\b/;
 /** `meme continue <target>` on its own: how a handoff is pulled, by the user with `!` or by the agent. */
 const PULL = /^\s*(?:\S*[\\/])?meme(?:\.exe)?\s+continue(?:\s+[^\s|&;<>`$()]+)*\s*$/;
 /** At most this many lines may come before a handoff's header: what the command printed first (`command -v meme`). */

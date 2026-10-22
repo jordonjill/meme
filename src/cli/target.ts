@@ -3,7 +3,7 @@ import { agentNamed } from "../adapters/profiles";
 import type { Agent } from "../adapters/types";
 import { ENV_WORDS, type Env } from "../platform/env";
 import { listed, listing, type ListFilter, type Listing } from "../render/ls";
-import type { SessionRow } from "../store/queries";
+import { idPrefix, type SessionRow } from "../store/queries";
 
 /**
  * What `meme continue <target>` points at (plan §3.4). A target is one or more
@@ -33,7 +33,7 @@ export function resolveTarget(tokens: string[], rows: SessionRow[], filter: List
     if (t === "last") last = true;
     else if (agentNamed(t)) agent = agentNamed(t);
     else if (ENV_WORDS[t]) env = ENV_WORDS[t];
-    else if (/^[0-9a-f][0-9a-f-]{3,}$/.test(t) && rows.some((r) => r.id.startsWith(t))) ids.push(t);
+    else if (idPrefix(t, 4) && rows.some((r) => r.id.startsWith(t))) ids.push(t);
     else words.push(t);
   }
   const matches = (r: SessionRow) =>

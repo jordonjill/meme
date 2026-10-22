@@ -8,8 +8,8 @@ import { removeDir, removeFile } from "../../platform/fs";
 import { displayPath } from "../../platform/paths";
 import { commandLine } from "../../platform/spawn";
 import { coloredLabel } from "../../render/labels";
-import { ago, padEnd } from "../../render/text";
-import { ancestors, getSession, resolveSession, sessionFiles, type SessionRow } from "../../store/queries";
+import { ago, padEnd, plural } from "../../render/text";
+import { ancestors, getSession, idPrefix, resolveSession, sessionFiles, type SessionRow } from "../../store/queries";
 import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
@@ -39,6 +39,9 @@ function clock(ms: number): string {
   const d = new Date(Math.ceil(ms / 60_000) * 60_000);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+/** How long an agent's own command that deletes a session may take. */
+const DELETE_TIMEOUT_MS = 120_000;
 
 interface Item {
   session: SessionRow;
@@ -80,7 +83,7 @@ export async function forget(argv: string[]): Promise<number> {
   if (!positionals.length && !interactive) throw new UsageError("name the sessions to delete by id; `meme ls` shows them");
   for (const ref of positionals) {
     // Only ids: deleting by a number or a word from the title is too easy to get wrong.
-    if (!/^[0-9a-f][0-9a-f-]{3,}$/i.test(ref)) throw new UsageError(`forget takes session ids (at least 4 characters), not "${ref}"`);
+    if (!idPrefix(ref.toLowerCase(), 4)) throw new UsageError(`forget takes session ids (at least 4 characters), not "${ref}"`);
   }
 
   const ctx = await createContext();
@@ -214,6 +217,8 @@ export async function forget(argv: string[]): Promise<number> {
 
   // Files meme itself holds open (a copy of an agent's database) would not go on Windows.
   for (const a of ADAPTERS) a.closeFiles?.();
+  // An agent's own delete command that hangs is stopped (plan §6 ⑪, F12); `MEME_DELETE_TIMEOUT_MS` sets it for tests.
+  const timeout = Number(ctx.platform.vars.MEME_DELETE_TIMEOUT_MS || DELETE_TIMEOUT_MS);
   // The original first; only once it is gone, the mirror.
   let failed = 0;
   const touched = new Set<string>();
@@ -224,8 +229,11 @@ export async function forget(argv: string[]): Promise<number> {
         if (step.kind === "remove") (step.dir ? removeDir : removeFile)(step.path);
         else {
           const line = commandLine(step.cmd[0]!, step.cmd.slice(1));
-          const p = Bun.spawnSync(line, { cwd: step.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsVerbatimArguments: line[0] === "cmd.exe" });
-          if (p.exitCode !== 0) throw new Error(`\`${step.shown ?? step.cmd.slice(1).join(" ")}\` failed: ${(p.stderr.toString() || p.stdout.toString()).trim().split("\n")[0]}`);
+          const env = step.env ? { ...process.env, ...step.env } : undefined;
+          const p = Bun.spawnSync(line, { cwd: step.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout, windowsVerbatimArguments: line[0] === "cmd.exe" });
+          const shown = `\`${step.shown ?? step.cmd.slice(1).join(" ")}\``;
+          if (p.exitCode === null) throw new Error(`${shown} did not finish within ${plural(Math.round(timeout / 1000), "second")}`);
+          if (p.exitCode !== 0) throw new Error(`${shown} failed: ${(p.stderr.toString() || p.stdout.toString()).trim().split("\n")[0]}`);
         }
       }
       const left = plan.gone.filter((f) => existsSync(f));
