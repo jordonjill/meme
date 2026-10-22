@@ -9,11 +9,11 @@ export const HOW_TO_CONTINUE = [
 ].join("\n");
 
 /**
- * How to install meme on the other side of WSL and Windows, as `meme install` says it
- * (plan §6 ⑫, item 8). One place: the one-line installs replace these with the
- * install scripts (release prep, item 2).
+ * How to install meme, as `meme install` says it for the other side of WSL and
+ * Windows (plan §6 ⑫, item 8): the install scripts of the latest release (§6 ⑬).
+ * The README and the scripts say the same (tested).
  */
 export const INSTALL_HINT = {
-  linux: "see Install in the README: https://github.com/jordonjill/meme#install-from-source",
-  windows: "see Install in the README: https://github.com/jordonjill/meme#install-from-source",
+  linux: "curl -fsSL https://github.com/jordonjill/meme/releases/latest/download/install.sh | sh",
+  windows: "irm https://github.com/jordonjill/meme/releases/latest/download/install.ps1 | iex",
 };
