@@ -17,6 +17,25 @@ const TARGETS: Record<string, { bun: string; file: string }> = {
   "windows-x64": { bun: "bun-windows-x64", file: "meme-windows-x64.exe" },
 };
 
+/**
+ * meme.exe's name, version and maker in Windows (plan release prep, item 10). Bun sets
+ * them only when it compiles on Windows; built elsewhere, the file has Bun's own.
+ */
+function windowsInfo(target: string): string[] {
+  if (!target.startsWith("windows")) return [];
+  if (process.platform !== "win32") {
+    console.log(`${target}: built off Windows, so meme.exe has Bun's version information, not meme's`);
+    return [];
+  }
+  return [
+    "--windows-title=meme",
+    "--windows-publisher=Jordon",
+    `--windows-version=${pkg.version}.0`,
+    "--windows-description=meme: coding-agent sessions in one place",
+    "--windows-copyright=Copyright (c) 2026 Jordon. MIT License.",
+  ];
+}
+
 const root = path.resolve(import.meta.dir, "..");
 const out = path.join(root, "dist");
 mkdirSync(out, { recursive: true });
@@ -29,7 +48,8 @@ for (const [name, t] of Object.entries(TARGETS)) {
   const outfile = path.join(out, t.file);
   const started = performance.now();
   const p = Bun.spawnSync(
-    [process.execPath, "build", "--compile", "--minify", `--target=${t.bun}`, path.join(root, "src/cli/main.ts"), "--outfile", outfile],
+    // A source map inside: an error's stack in the log names meme's source files and lines (arch.md 6.5).
+    [process.execPath, "build", "--compile", "--minify", "--sourcemap", `--target=${t.bun}`, ...windowsInfo(name), path.join(root, "src/cli/main.ts"), "--outfile", outfile],
     { stdout: "inherit", stderr: "inherit" },
   );
   if (p.exitCode !== 0) process.exit(p.exitCode ?? 1);
