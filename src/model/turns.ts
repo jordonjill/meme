@@ -120,7 +120,7 @@ export function quietAfter(mtimeMs: number): number {
 
 export function mayBeRunning(mtimeMs: number | null, now = Date.now()): boolean {
   if (mtimeMs === null) return false;
-  // A little in the future is clock skew (Windows files seen from WSL); far in the future is not "now".
-  const age = now - mtimeMs;
-  return age < RUNNING_WINDOW_MS && age > -RUNNING_WINDOW_MS;
+  // In the future is a clock ahead of this one (Windows seen from WSL, which falls behind
+  // after sleep): by however much, it may be now (plan §6 ⑪, F18).
+  return now - mtimeMs < RUNNING_WINDOW_MS;
 }

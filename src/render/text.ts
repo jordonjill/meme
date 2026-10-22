@@ -145,15 +145,21 @@ const UNITS: [number, string, string][] = [
   [1, "s", "second"],
 ];
 
-/** `2h ago`, or `2 hours ago` when `long`. */
+/** A time up to this far ahead of this clock is skew, said as `0s ago`. */
+const SKEW_SECS = 60;
+
+/** `2h ago`, or `2 hours ago` when `long`; ahead of this clock, `2h ahead` (plan §6 ⑪, F18). */
 export function ago(iso: string | null, now = Date.now(), long = false): string {
   if (!iso) return "";
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
-  const secs = Math.max(0, Math.floor((now - t) / 1000));
+  const diff = Math.floor((now - t) / 1000);
+  const ahead = diff < -SKEW_SECS;
+  const secs = ahead ? -diff : Math.max(0, diff);
   for (const [size, short, name] of UNITS) {
     if (secs >= size || size === 1) {
       const n = Math.floor(secs / size);
+      if (ahead) return long ? `${n} ${name}${n === 1 ? "" : "s"} ahead of this clock` : `${n}${short} ahead`;
       return long ? `${n} ${name}${n === 1 ? "" : "s"} ago` : `${n}${short} ago`;
     }
   }
