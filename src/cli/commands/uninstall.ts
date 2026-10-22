@@ -9,14 +9,44 @@ import { agreed, write } from "../context";
 
 export const uninstallHelp = `Usage: meme uninstall [--yes]
 
-Remove the ~/.meme folder: the mirror of your sessions, the logs, and the
-copies of agents' databases meme reads across WSL and Windows.
-Your original sessions are not touched. Asks first ([y/N]); --yes skips
+Remove meme's data in ~/.meme: the mirror of your sessions, the logs, and
+the copies of agents' databases meme reads across WSL and Windows; then the
+folder, if nothing else is in it. Your original sessions are not touched. Asks first ([y/N]); --yes skips
 the question.
 `;
 
-/** What meme keeps in its data folder; when the folder is a link, only these go where it points. */
-const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs", "cache"];
+/**
+ * What meme keeps in its data folder, and all uninstall removes there: the folder may
+ * be a link (plan §6 ⑨, R22), or MEME_HOME may name one that holds other files, even
+ * the home folder (plan §6 ⑪, F2).
+ */
+const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs/meme.log", "logs/meme.log.1", "cache/opencode"];
+/** The folders that hold them, removed when that leaves them empty; the data folder itself last. */
+const OWN_DIRS = ["logs", "cache", ""];
+
+/** Is anything in the data folder not meme's? */
+function holdsOthers(dir: string): boolean {
+  const list = (rel: string) => {
+    try {
+      return readdirSync(path.join(dir, rel));
+    } catch {
+      return [];
+    }
+  };
+  return OWN_DIRS.some((rel) =>
+    list(rel).some((name) => !OWN.includes(rel ? `${rel}/${name}` : name) && !(rel === "" && OWN_DIRS.includes(name))),
+  );
+}
+
+function ownSize(dir: string): number {
+  let total = 0;
+  for (const p of OWN.map((p) => path.join(dir, p))) {
+    try {
+      total += statSync(p).isDirectory() ? folderSize(p) : statSync(p).size;
+    } catch {}
+  }
+  return total;
+}
 
 /** Where a linked data folder points (plan §6 ⑨, R22); null for a folder. */
 function linkTarget(dir: string): string | null {
@@ -75,7 +105,8 @@ export async function uninstall(argv: string[]): Promise<number> {
 
   const target = linkTarget(data);
   lines.push("This removes:");
-  lines.push(`  ${displayPath(data, home)}${target ? ` -> ${displayPath(target, home)}` : ""}   the mirror, the logs and copies (${size(folderSize(data))})`);
+  lines.push(`  ${displayPath(data, home)}${target ? ` -> ${displayPath(target, home)}` : ""}   the mirror, the logs and copies (${size(ownSize(target ?? data))})`);
+  if (holdsOthers(target ?? data)) lines.push(`Other files in ${displayPath(data, home)} are kept.`);
   lines.push("Your original sessions are not touched.");
   write(lines.join("\n") + "\n");
 
@@ -89,14 +120,15 @@ export async function uninstall(argv: string[]): Promise<number> {
       return 1;
     }
   }
-  if (target) {
-    // A link: meme's own files where it points, the folder if that leaves it empty, then the link.
-    for (const name of OWN) removeDir(path.join(target, name));
+  // meme's own files, the folders that held them if that leaves them empty, then a link to the folder.
+  const where = target ?? data;
+  for (const p of OWN) removeDir(path.join(where, p));
+  for (const dir of OWN_DIRS) {
     try {
-      rmdirSync(target);
+      rmdirSync(path.join(where, dir));
     } catch {}
-    removeFile(data);
-  } else removeDir(data);
+  }
+  if (target) removeFile(data);
   write(`Removed. ${programNote}\n`);
   return 0;
 }
