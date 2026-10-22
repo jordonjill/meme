@@ -236,7 +236,9 @@ export function convertClaude(text: string, ctx: ConvertContext): Converted {
     if (!content) continue;
     const ts = str(l.obj.timestamp);
     const body: Body = { role: "user", content, timestamp: ts ?? "" };
-    commands.push({ line: l.index, rec: { uid: str(l.obj.uuid), part: 0, turn: 0, injected: null, role: "user", ts, body }, queued: queued !== null });
+    // A command line is marked, so a message that only starts with a slash is not taken for one (F7).
+    const rec: ConvertedRecord = { uid: str(l.obj.uuid), part: 0, turn: 0, injected: null, role: "user", ts, body, ...(queued === null ? { command: true as const } : {}) };
+    commands.push({ line: l.index, rec, queued: queued !== null });
   }
 
   const merged: { rec: ConvertedRecord; kind: UserKind | null; restored?: boolean }[] = [];

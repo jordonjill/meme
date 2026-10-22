@@ -44,6 +44,8 @@ export interface ConvertedRecord {
   role: string;
   ts: string | null;
   body: Body;
+  /** A local command the agent ran itself (`/model`): it gets no reply (plan §6 ⑪, F7). */
+  command?: true;
 }
 
 export interface Converted {
@@ -211,6 +213,8 @@ export interface Formats {
   shellInput?: RegExp;
   /** That command's output, in the same record or the next one: group 1. */
   shellOutput?: RegExp;
+  /** A command the user ran and kept from the model (Pi's `!!`): never handed to another (plan §6 ⑪, F9). */
+  hidden?: RegExp;
   /** What the agent puts first when a command's output was too long, before a preview of it. */
   longOutput?: RegExp;
   /** Lines a tool result starts with before the output itself. */

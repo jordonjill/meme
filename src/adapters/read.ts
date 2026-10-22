@@ -6,6 +6,9 @@ import type { UnknownType } from "./types";
  * Read a JSONL session. A running agent may be in the middle of writing the last
  * line; that line is left out until it is complete (storage.md 2.4).
  */
+/** The 'type' of a line that is not JSON: a damaged file, not a new agent version (plan §6 ⑪, F22). */
+export const NOT_JSON = "(not JSON)";
+
 export function readJsonl(path: string): string {
   const text = readFileSync(path, "utf8");
   return dropPartialLine(text);
@@ -58,7 +61,7 @@ export class TypeCounter {
 
   /** A line that is not a JSON object. */
   notJson(version: string | null): void {
-    this.add("(not JSON)", null, version);
+    this.add(NOT_JSON, null, version);
   }
 
   list(): UnknownType[] {

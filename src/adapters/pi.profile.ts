@@ -10,8 +10,9 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? 
 export const PI_INTERRUPT = "[Pi: the user stopped this turn]";
 
 /** A command the user ran with `!` or `!!`, as Pi passes it to the model (its `bashExecutionToText`, 1.2.0). */
-export function piShellText(m: { command?: unknown; output?: unknown; exitCode?: unknown; cancelled?: unknown; truncated?: unknown; fullOutputPath?: unknown }): string {
-  let text = `Ran \`${typeof m.command === "string" ? m.command : ""}\`\n`;
+export function piShellText(m: { command?: unknown; output?: unknown; exitCode?: unknown; cancelled?: unknown; truncated?: unknown; fullOutputPath?: unknown; excludeFromContext?: unknown }): string {
+  // `!!`: Pi keeps it from the model, and so does a handoff (plan §6 ⑪, F9).
+  let text = `Ran \`${typeof m.command === "string" ? m.command : ""}\`${m.excludeFromContext === true ? KEPT : ""}\n`;
   text += typeof m.output === "string" && m.output ? `\`\`\`\n${m.output}\n\`\`\`` : "(no output)";
   if (m.cancelled === true) text += "\n\n(command cancelled)";
   else if (typeof m.exitCode === "number" && m.exitCode !== 0) text += `\n\nCommand exited with code ${m.exitCode}`;
@@ -19,11 +20,14 @@ export function piShellText(m: { command?: unknown; output?: unknown; exitCode?:
   return text;
 }
 
+const KEPT = " (kept from the model)";
+
 const formats: Formats = {
   injected: [],
   interrupt: /^\[Pi: the user stopped this turn\]/,
-  shellInput: /^Ran `([\s\S]*?)`\n(?:```\n|\(no output\))/,
-  shellOutput: /^Ran `[\s\S]*?`\n```\n([\s\S]*?)\n```/,
+  shellInput: /^Ran `([\s\S]*?)`(?: \(kept from the model\))?\n(?:```\n|\(no output\))/,
+  shellOutput: /^Ran `[\s\S]*?`(?: \(kept from the model\))?\n```\n([\s\S]*?)\n```/,
+  hidden: /^Ran `[\s\S]*?` \(kept from the model\)\n/,
   exitCode: /^Command exited with code (-?\d+)/m,
 };
 
