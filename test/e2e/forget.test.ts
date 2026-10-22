@@ -507,4 +507,21 @@ describe.skipIf(process.platform !== "linux")("meme forget: step 11 (plan §6 �
     expect([existsSync(wslFile), existsSync(winFile)]).toEqual([false, false]);
     expect(run(w, ["ls", "-a"]).out).not.toContain("25252525");
   });
+
+  test("F10: deleting a session Claude Desktop ran in WSL also deletes Desktop's copy on Windows", () => {
+    const w = world();
+    const id = "26262626-0000-4000-8000-000000000026";
+    const s = new ClaudeSession({ id, cwd: "/work/desktop", start: "2026-09-20T08:00:00.000Z" });
+    s.user("one");
+    s.assistant("a");
+    const wslFile = s.write(path.join(w.home, ".claude", "projects"));
+    const copy = path.join(w.users, "me", ".claude", "projects", `ssh-${id}`);
+    mkdirSync(copy, { recursive: true });
+    writeFileSync(path.join(copy, `${id}.jsonl`), readFileSync(wslFile));
+    writeFileSync(path.join(copy, "agent-a1b2c3.jsonl"), "{}\n");
+    const r = run(w, ["forget", "2626", "--yes"], { env: { PATH: MINIMAL_PATH } });
+    expect(r.out).toMatch(new RegExp(`mnt-c-Users/me/\\.claude/projects/ssh-${id}/ +Claude Desktop's copy of the session on Windows`));
+    expect(r.out).toContain("✓ 26262626 deleted");
+    expect([existsSync(wslFile), existsSync(copy)]).toEqual([false, false]);
+  });
 });
