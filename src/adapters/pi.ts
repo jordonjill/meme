@@ -259,7 +259,6 @@ export const pi: Adapter = {
     return FILE.exec(path.basename(file))?.[2]?.toLowerCase() ?? null;
   },
 
-  readText: readJsonl,
 
   convert(files: string[], ctx: ConvertContext): Converted {
     // Pi keeps one file per session.

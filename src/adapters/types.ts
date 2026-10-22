@@ -144,8 +144,6 @@ export interface Adapter {
   /** Size and time of a listed file that is not a file of its own (a session in a database); else the file's. */
   stat?(file: string): { size: number; mtime: number };
   sessionId(path: string): string | null;
-  /** The file's text without a half-written last line. */
-  readText(path: string): string;
   /** One session from all its files (Codex can have several after a rollback). */
   convert(files: string[], ctx: ConvertContext): Converted;
   /** What can be told about the session without converting it; never throws. */

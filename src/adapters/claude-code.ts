@@ -139,7 +139,6 @@ export const claudeCode: Adapter = {
     return UUID.test(id) ? id.toLowerCase() : null;
   },
 
-  readText: readJsonl,
 
   convert(files: string[], ctx: ConvertContext): Converted {
     // Claude Code keeps one file per session.

@@ -10,7 +10,7 @@ import { ADAPTERS } from "../../src/adapters";
 import { claudeCode } from "../../src/adapters/claude-code";
 import { BOUNDS } from "../../src/adapters/read";
 import { projectResolver } from "../../src/model/project";
-import { parseLines } from "../../src/adapters/read";
+import { parseLines, readJsonl } from "../../src/adapters/read";
 import { currentPlatform } from "../../src/platform/paths";
 
 test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every Claude Code record id is native and in its file", () => {
@@ -25,7 +25,7 @@ test.skipIf(!process.env.MEME_REAL_SESSIONS)("real sessions: every Claude Code r
       continue;
     }
     for (const file of listed) {
-      const text = claudeCode.readText(file);
+      const text = readJsonl(file);
       const uuids = new Set(parseLines(text).map((l) => l.obj.uuid));
       let recs;
       try {

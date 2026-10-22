@@ -540,10 +540,6 @@ export const codex: Adapter = {
     return FILE.exec(path.basename(file))?.[2]?.toLowerCase() ?? null;
   },
 
-  readText(file: string): string {
-    return readRollout(file).toString("utf8");
-  },
-
   convert(files: string[], ctx: ConvertContext): Converted {
     return convertCodex(files, ctx);
   },

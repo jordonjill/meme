@@ -460,13 +460,6 @@ export const openCode: Adapter = {
     return /^ses_[0-9A-Za-z]+$/.test(id) ? memeId(id) : null;
   },
 
-  readText(file: string): string {
-    const { db, id } = splitFile(file);
-    const handle = openDb(db, null);
-    const s = sessionRow(handle, id);
-    return s ? JSON.stringify({ info: { id: s.id, directory: s.directory, title: s.title }, messages: rewrite(exportOf(handle, s), s.revert) }) : "";
-  },
-
   convert(files: string[], ctx: ConvertContext): Converted {
     const handle = dbFor(ctx.root);
     const s = sessionRow(handle, splitFile(files[0]!).id);
