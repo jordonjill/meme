@@ -9,7 +9,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * original sessions (plan §4.4); there are no migrations. A newer one, written by
  * a later meme, is left alone: this one works on a copy in memory.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);

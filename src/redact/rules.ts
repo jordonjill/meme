@@ -17,9 +17,21 @@ export const RULES: readonly (readonly [kind: string, re: RegExp])[] = [
   ["openai-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/g],
   ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g],
   ["aws-key-id", /\bAKIA[0-9A-Z]{16}\b/g],
+  // 40 characters after a key that names an AWS secret (`AWS_SECRET_ACCESS_KEY=`, `"SecretAccessKey": "`).
+  ["aws-secret", /(?<=(?:aws[\w.-]{0,20}secret|secret_?access_?key)[\w.-]*["']?\s*[=:]\s*["']?)[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/gi],
+  // Prefixed tokens, after gitleaks.
+  ["slack-token", /\bxox[baprs]-[A-Za-z0-9-]{10,}/g],
+  ["google-api-key", /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g],
+  ["gitlab-token", /\bglpat-[0-9A-Za-z_-]{20,}/g],
+  ["npm-token", /\bnpm_[A-Za-z0-9]{36}(?![A-Za-z0-9])/g],
+  ["stripe-key", /\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{10,}/g],
+  ["huggingface-token", /\bhf_[A-Za-z0-9]{30,}(?![A-Za-z0-9])/g],
   // The whole block; without its END line (`head id_rsa`), the BEGIN line and the base64 and header lines after it.
   ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----|(?:\r?\n(?:[A-Za-z0-9+/=]{16,}|[A-Za-z-]+: [^\n]*))*)/g],
   ["bearer", /(?<=\bBearer\s+)[A-Za-z0-9._~+/-]{20,}=*/g],
+  // After `Bearer`, so a bearer JWT keeps its label; a JWT on its own has three base64url parts, the first two JSON.
+  ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g],
+  ["basic-auth", /(?<=\bAuthorization["']?\s*[:=]\s*["']?Basic\s+)[A-Za-z0-9+/]{16,}={0,2}/gi],
   ["url-password", /(?<=:\/\/[^\s:/@]+:)[^\s@/]{3,}(?=@)/g],
   // A password must be a value, not code that names one (plan §6 ⑨): a quoted string with no spaces,
   // after `=` or `:`, the key itself perhaps quoted (`{"password": "…"}`);
@@ -32,7 +44,7 @@ export const RULES: readonly (readonly [kind: string, re: RegExp])[] = [
 
 /** Cheap pre-check so most strings skip the rules; it must let through every string a rule would change (tested). */
 export function mayHoldSecret(s: string): boolean {
-  return /sk-|gh[pousr]_|github_pat_|AKIA|PRIVATE KEY|Bearer|:\/\/|passw/i.test(s);
+  return /sk-|gh[pousr]_|github_pat_|AKIA|secret|xox[baprs]-|AIza|glpat-|npm_|[sr]k_(?:live|test)_|hf_|eyJ|authorization|PRIVATE KEY|Bearer|:\/\/|passw/i.test(s);
 }
 
 /** A JSON key whose string value is a password (`password`, `db_password`, `adminPassword`). */
