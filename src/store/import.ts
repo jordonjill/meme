@@ -188,7 +188,9 @@ function importRoot(
       touched.add(sessionId);
       continue;
     }
-    writeSession(db, converted, states);
+    // The mirror holds another source's copy, written later: this one's files are noted, so it is not converted again until it changes (F10).
+    if (heldElsewhere(db, converted.session.id, root.id, converted.session.endedAt)) writeFiles(db, converted.session.id, root.id, states);
+    else writeSession(db, converted, states, root.id);
     touched.add(converted.session.id);
     if (converted.session.continuedIn) touched.add(converted.session.continuedIn);
     result.changed++;
@@ -201,6 +203,35 @@ function importRoot(
     for (const id of deleteFile(db, prev.path)) touched.add(id);
     result.deleted++;
   }
+}
+
+/** Does the mirror hold this session from another source, still there, with a later last record? */
+function heldElsewhere(db: Database, id: string, source: string, endedAt: string | null): boolean {
+  const held = db
+    .query<{ ended_at: string | null }, [string, string]>(
+      "SELECT ended_at FROM sessions s WHERE id = ?1 AND source IS NOT NULL AND source != ?2 AND EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND f.source = s.source)",
+    )
+    .get(id, source);
+  if (!held) return false;
+  const t = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
+  return t(held.ended_at) > t(endedAt);
+}
+
+/** A source's files of a session, as they are now; its others go. */
+function writeFiles(db: Database, session: string, source: string, files: FileState[]): void {
+  db.transaction(() => {
+    for (const f of files) {
+      db.run(
+        `INSERT INTO files (path, session, source, size, mtime) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET session = excluded.session, source = excluded.source, size = excluded.size, mtime = excluded.mtime`,
+        [f.path, session, source, f.size, f.mtime],
+      );
+    }
+    const keep = new Set(files.map((f) => f.path));
+    for (const { path } of db.query<{ path: string }, [string, string]>("SELECT path FROM files WHERE session = ? AND source = ?").all(session, source)) {
+      if (!keep.has(path)) db.run("DELETE FROM files WHERE path = ?", [path]);
+    }
+  }).immediate();
 }
 
 interface SourceState {
@@ -256,10 +287,10 @@ function recordFailure(db: Database, adapter: Adapter, ctx: ConvertContext, file
   db.transaction(() => {
     if (!mirror?.has) {
       db.run(
-        `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, NULL)
-         ON CONFLICT(id) DO UPDATE SET project = excluded.project, title = excluded.title, started_at = excluded.started_at, ended_at = excluded.ended_at`,
-        [ctx.sessionId, adapter.agent, ctx.root.env, ctx.project(peeked.cwd), peeked.title === null ? null : redactText(peeked.title), peeked.startedAt, peeked.endedAt],
+        `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point, source)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET project = excluded.project, title = excluded.title, started_at = excluded.started_at, ended_at = excluded.ended_at, source = excluded.source`,
+        [ctx.sessionId, adapter.agent, ctx.root.env, ctx.project(peeked.cwd), peeked.title === null ? null : redactText(peeked.title), peeked.startedAt, peeked.endedAt, ctx.root.id],
       );
       for (const f of states) {
         db.run(
@@ -283,7 +314,7 @@ function recordFailure(db: Database, adapter: Adapter, ctx: ConvertContext, file
  * Write one converted session in a single transaction, touching only records
  * whose hash changed (plan §4.6.1 step 5).
  */
-export function writeSession(db: Database, converted: Converted, files: FileState[]): void {
+export function writeSession(db: Database, converted: Converted, files: FileState[], source: string): void {
   const s = converted.session;
   const rows = converted.records.map((rec, seq) => {
     const raw = JSON.stringify(rec.body);
@@ -295,12 +326,12 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
   });
 
   const upsertSession = db.prepare(
-    `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO sessions (id, agent, env, project, title, branch, started_at, ended_at, continued_in, forked_from, fork_point, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET agent = excluded.agent, env = excluded.env, project = excluded.project,
        title = excluded.title, branch = excluded.branch, started_at = excluded.started_at,
        ended_at = excluded.ended_at, continued_in = excluded.continued_in, forked_from = excluded.forked_from,
-       fork_point = excluded.fork_point`,
+       fork_point = excluded.fork_point, source = excluded.source`,
   );
   const upsertFile = db.prepare(
     `INSERT INTO files (path, session, source, size, mtime) VALUES (?, ?, ?, ?, ?)
@@ -318,12 +349,12 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
   db.transaction(() => {
     upsertSession.run(
       s.id, s.agent, s.env, s.project, s.title === null ? null : redactText(s.title),
-      s.branch, s.startedAt, s.endedAt, s.continuedIn, s.forkedFrom, s.forkPoint,
+      s.branch, s.startedAt, s.endedAt, s.continuedIn, s.forkedFrom, s.forkPoint, source,
     );
     for (const f of files) upsertFile.run(f.path, s.id, f.source, f.size, f.mtime);
-    // Files of this session that are gone (an archived file moved, an old rollback file removed).
+    // Files of this session that are gone (an archived file moved, an old rollback file removed); another source's copy stays (F10).
     const keep = new Set(files.map((f) => f.path));
-    for (const { path } of db.query<{ path: string }, [string]>("SELECT path FROM files WHERE session = ?").all(s.id)) {
+    for (const { path } of db.query<{ path: string }, [string, string]>("SELECT path FROM files WHERE session = ? AND source = ?").all(s.id, source)) {
       if (!keep.has(path)) db.run("DELETE FROM files WHERE path = ?", [path]);
     }
     const existing = new Map<number, string>();

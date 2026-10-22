@@ -69,23 +69,45 @@ function withShort({ prev_id, next_id, ...row }: Loaded): SessionRow {
 /** A file in an agent's archive folder. */
 const ARCHIVED = PROFILES.flatMap((p) => (p.archivedDir ? [`instr(f.path, '${p.archivedDir.replace(/'/g, "''")}') > 0`] : [])).join(" OR ") || "0";
 
+/** A file of the copy the mirror holds, when a session is in more than one source (plan §6 ⑪, F10). */
+const HELD = "(s.source IS NULL OR f.source = s.source)";
+
 const SESSION_SELECT = `
 SELECT s.*,
-  COALESCE((SELECT SUM(size) FROM files f WHERE f.session = s.id), 0) AS size,
-  (SELECT MAX(mtime) FROM files f WHERE f.session = s.id) AS mtime,
+  COALESCE((SELECT SUM(size) FROM files f WHERE f.session = s.id AND ${HELD}), 0) AS size,
+  (SELECT MAX(mtime) FROM files f WHERE f.session = s.id AND ${HELD}) AS mtime,
   COALESCE((SELECT turn FROM records r WHERE r.session = s.id ORDER BY seq DESC LIMIT 1), 0) AS turns,
   EXISTS (SELECT 1 FROM records r WHERE r.session = s.id AND r.role = 'assistant') AS talked,
   EXISTS (SELECT 1 FROM failures x WHERE x.session = s.id) AS unreadable,
   (SELECT MIN(as_of) FROM failures x WHERE x.session = s.id) AS readable_until,
   EXISTS (SELECT 1 FROM sessions n WHERE n.id = s.continued_in) AS superseded,
-  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND (${ARCHIVED})) AS archived,
+  EXISTS (SELECT 1 FROM files f WHERE f.session = s.id AND ${HELD} AND (${ARCHIVED})) AS archived,
   (SELECT MAX(p.id) FROM sessions p WHERE p.id < s.id) AS prev_id,
   (SELECT MIN(n.id) FROM sessions n WHERE n.id > s.id) AS next_id
 FROM sessions s`;
 
-/** The original files of a session, as meme last read them. */
+/** The original files of a session, as meme last read them: of the copy it holds, when there are more (F10). */
 export function sessionFiles(db: Database, id: string): string[] {
-  return db.query<{ path: string }, [string]>("SELECT path FROM files WHERE session = ? ORDER BY path").all(id).map((r) => r.path);
+  return db
+    .query<{ path: string }, [string]>(`SELECT f.path FROM files f JOIN sessions s ON s.id = f.session WHERE f.session = ? AND ${HELD} ORDER BY f.path`)
+    .all(id)
+    .map((r) => r.path);
+}
+
+/** Every copy of a session, one per source: where its files are, on which side (plan §6 ⑪, F10). */
+export function sessionCopies(db: Database, id: string): { source: string; env: Env; files: string[] }[] {
+  const copies = new Map<string, { source: string; env: Env; files: string[] }>();
+  for (const r of db
+    .query<{ path: string; source: string; env: Env }, [string]>("SELECT f.path, f.source, src.env FROM files f JOIN sources src ON src.id = f.source WHERE f.session = ? ORDER BY f.source, f.path")
+    .all(id)) {
+    (copies.get(r.source) ?? copies.set(r.source, { source: r.source, env: r.env, files: [] }).get(r.source)!).files.push(r.path);
+  }
+  return [...copies.values()];
+}
+
+/** How many sessions are in more than one source. */
+export function inSeveralSources(db: Database): number {
+  return db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM (SELECT session FROM files GROUP BY session HAVING COUNT(DISTINCT source) > 1)").get()!.n;
 }
 
 /** All sessions, newest first. */

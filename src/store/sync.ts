@@ -14,6 +14,11 @@ export function deleteFile(db: Database, path: string): string[] {
     db.run("DELETE FROM failures WHERE path = ?", [path]);
     const left = db.query("SELECT 1 FROM files WHERE session = ? LIMIT 1").get(row.session);
     if (left) {
+      // The copy the mirror held is gone and another source has one (plan §6 ⑪, F10): that one is converted on its next run.
+      if (!db.query("SELECT 1 FROM files f JOIN sessions s ON s.id = f.session WHERE s.id = ? AND f.source = s.source LIMIT 1").get(row.session)) {
+        db.run("UPDATE sessions SET source = NULL WHERE id = ?", [row.session]);
+        db.run("UPDATE files SET size = -1 WHERE session = ?", [row.session]);
+      }
       touched.push(row.session);
       return;
     }

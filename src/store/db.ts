@@ -9,7 +9,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * original sessions (plan §4.4); there are no migrations. A newer one, written by
  * a later meme, is left alone: this one works on a copy in memory.
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -27,7 +27,10 @@ CREATE TABLE sessions (
   ended_at     TEXT,
   continued_in TEXT,
   forked_from  TEXT,
-  fork_point   INTEGER
+  fork_point   INTEGER,
+  -- The source whose copy the mirror holds, when the session is in more than one (the
+  -- copy written last; plan §6 ⑪, F10). Every copy's files are in the files table.
+  source       TEXT
 );
 CREATE TABLE files (
   path    TEXT PRIMARY KEY,
