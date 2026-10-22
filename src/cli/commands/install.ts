@@ -6,7 +6,7 @@ import { PROFILES } from "../../adapters/profiles";
 import type { SourceRoot } from "../../adapters/types";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
-import { runningDistros, wslHomes } from "../../platform/wsl";
+import { readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
 import { padEnd, plural, size } from "../../render/text";
 import { counts, sources } from "../../store/queries";
@@ -55,8 +55,8 @@ export async function install(argv: string[]): Promise<number> {
   let summary: string;
   if (dry) {
     // The sources a real run reads: on Windows also those in running WSL distributions, none started (plan §6 ⑪, F6).
-    if (platform.env === "win") {
-      const running = await runningDistros(platform);
+    if (readsWsl(platform)) {
+      const { running } = await runningDistros(platform);
       if (running.length) platform.wsl = wslHomes(platform, running);
     }
     const found: [root: SourceRoot, n: string][] = [];

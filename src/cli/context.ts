@@ -3,9 +3,10 @@ import { PROFILES } from "../adapters/profiles";
 import { projectResolver } from "../model/project";
 import { fileLogger, type Logger } from "../platform/log";
 import { currentPlatform, type Platform } from "../platform/paths";
-import { runningDistros, toLinux, wslHomes, wslPlace } from "../platform/wsl";
+import { readsWsl, runningDistros, toLinux, wslHomes, wslPlace, wslTimeout, type AbsentMemo, type WslAnswer } from "../platform/wsl";
 import { makeStyle, type Style } from "../render/labels";
-import { openStore, type Store } from "../store/db";
+import { getMeta, openStore, setMeta, type Store } from "../store/db";
+import { dropSources } from "../store/sync";
 import { sources } from "../store/queries";
 import { when } from "../render/text";
 import { importAll, type ImportResult } from "../store/import";
@@ -21,6 +22,8 @@ export interface Context {
   current: Set<string>;
   /** On Windows: WSL distributions with sessions in the mirror that are not running; theirs are as of the last sync. */
   wslStopped: WslStopped[];
+  /** On Windows: `wsl.exe` did not answer within this many milliseconds, so which distributions run is not known. */
+  wslSilent?: number;
   now: number;
 }
 
@@ -43,7 +46,6 @@ export const timings: { open?: number; import?: number; wsl?: number; importWsl?
 
 export async function createContext(): Promise<Context> {
   const platform = currentPlatform();
-  const distros = platform.env === "win" ? runningDistros(platform) : null;
   const log = fileLogger(platform.dataDir);
   let t = performance.now();
   const lap = () => {
@@ -54,14 +56,22 @@ export async function createContext(): Promise<Context> {
   };
   const store = openStore(platform.dataDir);
   timings.open = lap();
+  // Windows reads WSL too, unless that is turned off (arch.md 6.2); wsl.exe answers while the Windows sessions are synced.
+  const wsl = readsWsl(platform);
+  const distros = wsl ? runningDistros(platform, absentMemo(store)) : null;
   let imported: ImportResult | null = null;
-  let running: string[] = [];
+  let answer: WslAnswer = { running: [], silent: false };
   try {
+    // Turned off: what meme had from WSL goes, and Windows reads only itself (plan §6 ⑫, item 5).
+    if (platform.env === "win" && !wsl && !store.readonly) dropSources(store.db, "wsl");
     imported = importAll(store, platform, ADAPTERS, log);
     timings.import = lap();
     // wsl.exe has been answering meanwhile.
-    running = distros ? await distros : [];
-    if (distros) timings.wsl = lap();
+    if (distros) {
+      answer = await distros;
+      timings.wsl = lap();
+    }
+    const running = answer.running;
     if (running.length) {
       platform.wsl = wslHomes(platform, running);
       if (platform.wsl.length) imported = addUp(imported, importAll(store, platform, ADAPTERS, log, (root) => Boolean(root.wsl)));
@@ -71,7 +81,7 @@ export async function createContext(): Promise<Context> {
     // An import failure must not stop the command: use what the store has.
     log.error("import failed", err);
   }
-  if (distros) running = await distros;
+  if (distros) answer = await distros;
   timings.ready = performance.now();
   const now = Date.now();
   return {
@@ -81,8 +91,24 @@ export async function createContext(): Promise<Context> {
     imported,
     project: projectOf(platform, process.cwd()),
     current: currentSessions(platform.vars),
-    wslStopped: platform.env === "win" ? stoppedDistros(store, platform, running) : [],
+    wslStopped: wsl ? stoppedDistros(store, platform, answer.running) : [],
+    ...(answer.silent ? { wslSilent: wslTimeout(platform) } : {}),
     now,
+  };
+}
+
+/** `wsl.exe` said there is no WSL: noted in the mirror's meta, so it is not asked again for a day (plan §6 ⑫, item 6). */
+function absentMemo(store: Store): AbsentMemo {
+  return {
+    since() {
+      const t = Date.parse(getMeta(store.db, "wsl_absent") ?? "");
+      return Number.isNaN(t) ? null : t;
+    },
+    mark() {
+      try {
+        setMeta(store.db, "wsl_absent", new Date().toISOString());
+      } catch {}
+    },
   };
 }
 
@@ -99,8 +125,13 @@ function stoppedDistros(store: Store, platform: Platform, running: string[]): Ws
   return [...out.values()];
 }
 
-/** The line a list starts with while a WSL distribution is not running. */
-export function stoppedNotice(stopped: WslStopped[], now: number): string | null {
+/** The line a list starts with while a WSL distribution is not running, or WSL did not answer (`silent`, in milliseconds). */
+export function stoppedNotice(stopped: WslStopped[], now: number, silent?: number): string | null {
+  const asOf = (d: WslStopped) => (d.asOf ? when(d.asOf, new Date(now)) : "an earlier run");
+  if (silent !== undefined) {
+    const times = stopped.length === 1 ? asOf(stopped[0]!) : stopped.map((d) => `${asOf(d)} (${d.distro})`).join(", ");
+    return `WSL did not respond within ${silent / 1000} seconds${stopped.length ? `; its sessions are as of ${times}` : ""}`;
+  }
   if (!stopped.length) return null;
   const parts = stopped.map((d) => `WSL (${d.distro}) is not running; its sessions are as of ${d.asOf ? when(d.asOf, new Date(now)) : "an earlier run"}`);
   return parts.join(". ");

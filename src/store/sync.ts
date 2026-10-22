@@ -58,3 +58,17 @@ export function recomputeCopied(db: Database, touched: Iterable<string>): void {
     }
   }).immediate();
 }
+
+/** Every source on one side gone from the mirror, with the sessions only it held (plan §6 ⑫, item 5). Writes nothing when there is none. */
+export function dropSources(db: Database, env: string): void {
+  const ids = db.query<{ id: string }, [string]>("SELECT id FROM sources WHERE env = ?").all(env).map((r) => r.id);
+  if (!ids.length) return;
+  const touched = new Set<string>();
+  for (const id of ids) {
+    for (const { path } of db.query<{ path: string }, [string]>("SELECT path FROM files WHERE source = ?").all(id)) {
+      for (const t of deleteFile(db, path)) touched.add(t);
+    }
+    db.run("DELETE FROM sources WHERE id = ?", [id]);
+  }
+  recomputeCopied(db, touched);
+}

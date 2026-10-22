@@ -178,7 +178,7 @@ export class PickerView implements View {
     // Notices are read whole: wrapped, not cut at the window's edge.
     const out: string[] = [];
     const unreadable = unreadableHint(this.rows.filter((r) => r.unreadable === 1).length);
-    for (const n of [this.notice, stoppedNotice(this.ctx.wslStopped, this.ctx.now), unreadable]) if (n) out.push(...wrapLine(st.yellow(` ${n}`), cols - 1, " "));
+    for (const n of [this.notice, stoppedNotice(this.ctx.wslStopped, this.ctx.now, this.ctx.wslSilent), unreadable]) if (n) out.push(...wrapLine(st.yellow(` ${n}`), cols - 1, " "));
     out.push(` ${st.bold(this.pick?.title ?? "Sessions")} · ${where}  ${st.dim(`${list.length} shown`)}`);
     const filters = this.filterRows();
     const nameOf = (r: FilterRow<string>) => (v: string | null) => (v === null ? "All" : ((r === (this.platforms as FilterRow<string> | null) ? ENV_NAME : AGENT_NAME) as Record<string, string>)[v] ?? v);

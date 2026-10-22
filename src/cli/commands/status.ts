@@ -51,14 +51,15 @@ export async function status(argv: string[]): Promise<number> {
   const stopped = new Set(ctx.wslStopped.map((d) => d.distro));
   for (const r of rows) {
     const place = r.env === "wsl" ? wslPlace(ctx.platform, r.root) : null;
-    const state = place && stopped.has(place.distro) ? "not running" : r.reachable ? "readable" : sourceTrouble(r);
+    // wsl.exe said nothing in time: whether it runs is not known (plan §6 ⑫, item 7).
+    const state = place && stopped.has(place.distro) ? (ctx.wslSilent !== undefined ? "no answer" : "not running") : r.reachable ? "readable" : sourceTrouble(r);
     lines.push(`  ${padEnd(label(r.agent, r.env), lw)}  ${padEnd(displayPath(r.root, home), w)}  ${state}  ${plural(r.sessions, "session")}`);
   }
   if (rows.length === 0) lines.push("  (none found)");
   // The same session read from two places (a copied home folder): one is shown (plan §6 ⑪, F10).
   const several = inSeveralSources(db);
   if (several) lines.push(`  ${plural(several, "session")} ${several === 1 ? "is" : "are"} in more than one source: meme shows the copy written last, and \`meme forget\` deletes every copy.`);
-  const notice = stoppedNotice(ctx.wslStopped, ctx.now);
+  const notice = stoppedNotice(ctx.wslStopped, ctx.now, ctx.wslSilent);
   if (notice) lines.push(`  ${notice}`);
 
   // Agent upgrades (arch.md §6.1): files meme cannot convert, and record types it does not know.

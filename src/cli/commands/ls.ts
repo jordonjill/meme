@@ -56,7 +56,7 @@ export async function ls(argv: string[]): Promise<number> {
   filter.exclude = ctx.current;
   const out = output(Boolean(values.plain));
   if (out.interactive) return runPicker(ctx, out, filter);
-  const stopped = stoppedNotice(ctx.wslStopped, ctx.now);
+  const stopped = stoppedNotice(ctx.wslStopped, ctx.now, ctx.wslSilent);
   if (stopped) write(stopped + "\n");
   write(lsText(listing(allSessions(ctx.store.db), filter), { home: ctx.platform.home, now: ctx.now, st: out.st, width: out.width }));
   return 0;

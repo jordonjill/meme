@@ -24,8 +24,35 @@ export interface WslHome extends WslPlace {
 /** Docker Desktop's own distributions hold no sessions. */
 const SKIP = /^docker-desktop/i;
 
-/** How long `wsl.exe` may take before WSL is treated as not there. */
+/** How long `wsl.exe` may take before WSL is treated as silent; `MEME_WSL_TIMEOUT_MS` sets it for tests. */
 const WSL_TIMEOUT_MS = 5000;
+
+export function wslTimeout(platform: Platform): number {
+  return Number(platform.vars.MEME_WSL_TIMEOUT_MS || WSL_TIMEOUT_MS);
+}
+
+/** After `wsl.exe` said there is no WSL, it is not asked again for this long (plan §6 ⑫, item 6). */
+const ABSENT_FOR_MS = 24 * 3600_000;
+
+/**
+ * Does meme on Windows read the sessions in WSL too (arch.md 6.2)? The one place
+ * that says so; `MEME_NO_WSL=1` turns it off, a way back kept to ourselves (plan §6 ⑫, item 5).
+ */
+export function readsWsl(platform: Platform): boolean {
+  return platform.env === "win" && platform.vars.MEME_NO_WSL !== "1";
+}
+
+/** Where meme notes that `wsl.exe` said there is no WSL: when it did, and noting it now. */
+export interface AbsentMemo {
+  since(): number | null;
+  mark(): void;
+}
+
+/** What `wsl.exe` said this run: the running distributions, or nothing in time. */
+export interface WslAnswer {
+  running: string[];
+  silent: boolean;
+}
 
 function isDir(p: string): boolean {
   try {
@@ -42,11 +69,36 @@ function isDir(p: string): boolean {
  * (measured 2026-10-10).
  */
 export function wslExe(platform: Platform): string | null {
-  if (platform.vars.MEME_WSL_EXE) return platform.vars.MEME_WSL_EXE;
+  return findWsl(platform)?.exe ?? null;
+}
+
+/** `own`: WSL is installed (its own wsl.exe); else the stub every Windows has in System32, WSL or not. */
+function findWsl(platform: Platform): { exe: string; own: boolean } | null {
+  if (platform.vars.MEME_WSL_EXE) return { exe: platform.vars.MEME_WSL_EXE, own: true };
   if (platform.env !== "win") return null;
   const own = platform.vars.ProgramFiles ? path.join(platform.vars.ProgramFiles, "WSL", "wsl.exe") : null;
-  if (own && existsSync(own)) return own;
-  return findCommand("wsl", platform.vars);
+  if (own && existsSync(own)) return { exe: own, own: true };
+  const stub = findCommand("wsl", platform.vars);
+  return stub ? { exe: stub, own: false } : null;
+}
+
+/** The distributions `wsl.exe` lists with these arguments; null when it does not answer in time. */
+async function listed(exe: string, args: string[], timeout: number): Promise<{ ok: boolean; names: string[] } | null> {
+  try {
+    const p = Bun.spawn([exe, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), timeout)));
+    const out = await Promise.race([new Response(p.stdout).arrayBuffer(), late]);
+    clearTimeout(timer);
+    if (out === null) {
+      p.kill();
+      return null;
+    }
+    // None running: wsl.exe says so and exits non-zero.
+    return { ok: (await p.exited) === 0, names: distroNames(new Uint8Array(out)) };
+  } catch {
+    return { ok: false, names: [] };
+  }
 }
 
 /** `wsl.exe --list` prints UTF-16 unless WSL_UTF8 is set; one name per line. */
@@ -65,29 +117,37 @@ export function distroNames(out: Uint8Array): string[] {
 /**
  * The running distributions. Started early and awaited after the Windows sessions
  * are synced, since `wsl.exe` takes 0.2 seconds (1 second the first time).
- * Tests list folders of `MEME_WSL_DIR`, or `MEME_WSL_RUNNING`.
+ * With only System32's stub, a run that finds none running asks which are installed;
+ * none, and `memo` keeps it from asking for a day (plan §6 ⑫, item 6). Only "none
+ * installed" is kept, never "none running": a distribution started later would
+ * stay unseen. Tests name them in `MEME_WSL_RUNNING`, or list the folders of
+ * `MEME_WSL_DIR` when there is no stand-in wsl.exe.
  */
-export async function runningDistros(platform: Platform): Promise<string[]> {
+export async function runningDistros(platform: Platform, memo?: AbsentMemo): Promise<WslAnswer> {
+  const none: WslAnswer = { running: [], silent: false };
+  const named = platform.vars.MEME_WSL_RUNNING;
+  if (named !== undefined) return { running: named.split(",").map((d) => d.trim()).filter(Boolean), silent: false };
+  const wsl = findWsl(platform);
   const dir = platform.vars.MEME_WSL_DIR;
-  if (dir) {
-    const listed = platform.vars.MEME_WSL_RUNNING;
-    if (listed !== undefined) return listed.split(",").map((d) => d.trim()).filter(Boolean);
+  if (!wsl) {
+    if (!dir) return none;
     try {
-      return readdirSync(dir).filter((d) => !SKIP.test(d)).sort();
+      return { running: readdirSync(dir).filter((d) => !SKIP.test(d)).sort(), silent: false };
     } catch {
-      return [];
+      return none;
     }
   }
-  const exe = wslExe(platform);
-  if (!exe) return [];
-  try {
-    const p = Bun.spawn([exe, "--list", "--running", "--quiet"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: WSL_TIMEOUT_MS });
-    const out = new Uint8Array(await new Response(p.stdout).arrayBuffer());
-    // No distribution running: wsl.exe says so and exits non-zero.
-    return (await p.exited) === 0 ? distroNames(out) : [];
-  } catch {
-    return [];
+  const since = wsl.own ? null : memo?.since() ?? null;
+  if (since !== null && Date.now() - since < ABSENT_FOR_MS) return none;
+  const timeout = wslTimeout(platform);
+  const running = await listed(wsl.exe, ["--list", "--running", "--quiet"], timeout);
+  if (running === null) return { running: [], silent: true };
+  if (running.ok && running.names.length) return { running: running.names, silent: false };
+  if (!wsl.own && memo) {
+    const installed = await listed(wsl.exe, ["--list", "--quiet"], timeout);
+    if (installed !== null && !(installed.ok && installed.names.length)) memo.mark();
   }
+  return none;
 }
 
 /** A distribution's `/` on Windows; `\\wsl$` before `\\wsl.localhost` existed. */
