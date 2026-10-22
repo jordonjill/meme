@@ -119,7 +119,10 @@ export async function forget(argv: string[]): Promise<number> {
     });
     const blocked = plans.find((p) => p.blocked)?.blocked;
     if (blocked) return { steps: [], gone: [], notes: [], blocked };
-    return { steps: plans.flatMap((p) => p.steps), gone: plans.flatMap((p) => p.gone), notes: [...new Set(plans.flatMap((p) => p.notes))] };
+    // Each copy's plan may name what belongs to the session as a whole (a desktop app's own copy): once.
+    const removed = new Set<string>();
+    const steps = plans.flatMap((p) => p.steps).filter((step) => step.kind !== "remove" || (!removed.has(step.path) && Boolean(removed.add(step.path))));
+    return { steps, gone: [...new Set(plans.flatMap((p) => p.gone))], notes: [...new Set(plans.flatMap((p) => p.notes))] };
   };
   /** Why a session must not be deleted now, if it must not. */
   const stillOpen = (s: SessionRow, c: OpenCheck = check, now = ctx.now): string | null => {
