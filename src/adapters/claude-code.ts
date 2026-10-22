@@ -123,7 +123,8 @@ export const claudeCode: Adapter = {
   listFiles(root: SourceRoot): string[] {
     const files: string[] = [];
     for (const entry of readdirSync(root.path, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+      // Claude Desktop copies each session it runs in WSL to Windows' projects/ssh-<id>, a turn behind (plan §6 ⑪, F10).
+      if (!entry.isDirectory() || entry.name.startsWith("ssh-")) continue;
       const dir = path.join(root.path, entry.name);
       for (const f of readdirSync(dir, { withFileTypes: true })) {
         if (f.isFile() && f.name.endsWith(".jsonl") && UUID.test(f.name.slice(0, -6))) files.push(path.join(dir, f.name));
