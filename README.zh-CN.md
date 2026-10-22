@@ -217,3 +217,7 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 `MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`（从 Windows 看到的 WSL）、`MEME_TERMINAL`（当作在终端里）、
 `MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）、
 `MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）。
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。

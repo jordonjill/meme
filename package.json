@@ -2,6 +2,7 @@
   "name": "meme",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Mirror coding-agent sessions into one local SQLite file and continue them in any agent.",
   "bin": {

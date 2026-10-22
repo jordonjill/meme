@@ -281,3 +281,7 @@ Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal),
 `MEME_SLOW_MS` (log runs slower than this; 0 logs every run) and
 `MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
