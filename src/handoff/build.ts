@@ -5,7 +5,7 @@ import { callsOf, contentOf, promptText } from "../model/record";
 import { commandOf, describeCall, editedFiles as filesOfCall, exitCodeOf, oneLine, resultFailed, resultText, type ParsedCall } from "../model/tools";
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Turn } from "../model/turns";
 import type { Env } from "../platform/env";
-import { isWindowsPath, winToWsl } from "../platform/paths";
+import { isWindowsPath, isWslUnc, winToWsl } from "../platform/paths";
 import { toHost, type WslPlace } from "../platform/wsl";
 import { agentName, label } from "../render/labels";
 import { stepFacts } from "../render/show";
@@ -354,7 +354,8 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   if (s.unreadable && s.readable_until) {
     head.push(`Note: meme can't read this session's file any more; this handoff is the session as of ${when(s.readable_until, now)}, and what came after is missing. Tell the user; \`meme status\` says why.`);
   }
-  if (input.env === "wsl" && s.env === "win") {
+  // Not for a Windows session that ran in WSL's own files through `\\wsl.localhost` (plan §6 ⑪, F8).
+  if (input.env === "wsl" && s.env === "win" && !(dir && isWslUnc(dir))) {
     head.push("Note: the repository is on the Windows side. In WSL, run git with `-c core.autocrlf=true -c core.filemode=false`, or every file looks modified.");
   }
   if (inDistro) {

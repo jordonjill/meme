@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { isWindowsPath, winToWsl } from "../platform/paths";
+import { isWindowsPath, uncToWsl, winToWsl } from "../platform/paths";
 import type { Platform } from "../platform/paths";
 import { toHost, toLinux, type WslPlace } from "../platform/wsl";
 
@@ -62,7 +62,7 @@ export function projectResolver(platform: Platform, wsl?: WslPlace): (cwd: strin
       return project;
     };
   }
-  const toLocal = (p: string) => (platform.env === "wsl" && isWindowsPath(p) ? winToWsl(p) : p);
+  const toLocal = (p: string) => (platform.env !== "wsl" ? p : isWindowsPath(p) ? winToWsl(p) : uncToWsl(p, platform.vars.WSL_DISTRO_NAME));
   return (cwd) => {
     if (!cwd) return null;
     const local = toLocal(cwd);

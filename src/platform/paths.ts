@@ -98,6 +98,24 @@ export function winToWsl(p: string, root = MOUNT_ROOT): string {
   return `${root}${m[1]!.toLowerCase()}${rest ? "/" + rest : ""}`;
 }
 
+/** `\\wsl.localhost\Ubuntu\x` or `\\wsl$\Ubuntu\x`: a WSL distribution's files as Windows names them. */
+const WSL_UNC = /^[\\/]{2}wsl(?:\.localhost|\$)[\\/]([^\\/]+)([\\/].*)?$/i;
+
+export function isWslUnc(p: string): boolean {
+  return WSL_UNC.test(p);
+}
+
+/**
+ * `\\wsl.localhost\Ubuntu\home\u` → `/home/u` inside that distribution (`distro`, from
+ * WSL_DISTRO_NAME), where it is a local path (plan §6 ⑪, F8). Other paths, and those
+ * into another distribution, are returned unchanged.
+ */
+export function uncToWsl(p: string, distro: string | undefined): string {
+  const m = WSL_UNC.exec(p);
+  if (!m || !distro || m[1]!.toLowerCase() !== distro.toLowerCase()) return p;
+  return (m[2] ?? "").replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+}
+
 /** `/mnt/c/x/y` → `C:\\x\\y`. Other paths are returned unchanged. */
 export function wslToWin(p: string, root = MOUNT_ROOT): string {
   const m = mounted(root).exec(p);

@@ -7,7 +7,7 @@
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { ENV_NAMES, type Env } from "../platform/env";
-import { isWindowsPath, pathKey, winToWsl, wslToWin, type Platform } from "../platform/paths";
+import { isWindowsPath, pathKey, uncToWsl, winToWsl, wslToWin, type Platform } from "../platform/paths";
 import { distroMountRoot, toHost, type WslPlace } from "../platform/wsl";
 
 /** The agent is not where the session ran: what the handoff's note says (rule 2). */
@@ -23,12 +23,18 @@ export interface Away {
 }
 
 /**
- * A session's start directory as a path where meme runs (rule 5): a Windows path
- * in WSL under the mount root; on Windows, a WSL path through `\\wsl.localhost`,
- * or the Windows drive it is when it is under the distribution's mount root.
+ * A session's start directory as a path where meme runs (rule 5): in WSL, a Windows
+ * path under the mount root, and one through `\\wsl.localhost` into this very
+ * distribution as the path it names (plan §6 ⑪, F8); on Windows, a WSL path through
+ * `\\wsl.localhost`, or the Windows drive it is when it is under the distribution's
+ * mount root.
  */
 export function localDir(dir: string, platform: Platform, wsl: WslPlace | null, mountRoot?: string): string {
-  if (platform.env === "wsl" && isWindowsPath(dir)) return winToWsl(dir);
+  if (platform.env === "wsl") {
+    const inHere = uncToWsl(dir, platform.vars.WSL_DISTRO_NAME);
+    if (inHere !== dir) return inHere;
+    if (isWindowsPath(dir)) return winToWsl(dir);
+  }
   if (platform.env === "win" && wsl && dir.startsWith("/")) {
     // `mountRoot` given: the distribution is stopped and its wsl.conf is not read (that would start it).
     const onDrive = wslToWin(dir, mountRoot ?? distroMountRoot(wsl));
@@ -51,10 +57,10 @@ export function gitRoot(dir: string): string | null {
   }
 }
 
-/** Symbolic links resolved; a path that is not there stays as it is. */
+/** Symbolic links resolved; a path that is not there stays as it is, and one that is not a path here is not resolved at all. */
 function real(p: string): string {
   try {
-    return realpathSync.native(p);
+    return path.isAbsolute(p) ? realpathSync.native(p) : p;
   } catch {
     return path.resolve(p);
   }
@@ -73,9 +79,11 @@ export function awayFrom(sessionDir: string | null, sessionEnv: Env, platform: P
   if (!sessionDir) return null;
   const there = real(localDir(sessionDir, platform, wsl));
   const here = real(cwd);
-  const sRoot = gitRoot(there);
+  // Not a path here (`\\wsl.localhost` into another distribution): somewhere else, whatever is around `here`.
+  const reachable = path.isAbsolute(there);
+  const sRoot = reachable ? gitRoot(there) : null;
   const cRoot = gitRoot(here);
-  const same = sRoot ? cRoot !== null && key(cRoot) === key(sRoot) : cRoot === null && inside(here, there);
+  const same = reachable && (sRoot ? cRoot !== null && key(cRoot) === key(sRoot) : cRoot === null && inside(here, there));
   if (same) return null;
   const env = wsl && platform.env === "win" ? `WSL: ${wsl.distro}` : ENV_NAMES[sessionEnv];
   return { ranIn: sessionDir, env, here: cwd, repo: sRoot !== null };
