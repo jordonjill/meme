@@ -8,7 +8,7 @@ import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Turn } fro
 import type { Env } from "../platform/env";
 import { isWindowsPath, isWslUnc, winToWsl } from "../platform/paths";
 import { toHost, type WslPlace } from "../platform/wsl";
-import { agentName, label } from "../render/labels";
+import { agentName, fullLabel } from "../render/labels";
 import { stepFacts } from "../render/show";
 import { ago, clip, numberList, plural, sliceChars, span, trimmedLines, truncate, turnsText, visible, when } from "../render/text";
 import type { SessionRow } from "../store/queries";
@@ -309,7 +309,7 @@ interface Section {
 
 function upstreamSection(u: Upstream, now: Date): Section {
   const heading = [`## Earlier session ${u.short} (handed over into ${u.into ?? "this one"})`];
-  if (u.session) heading.push(`${label(u.session.agent, u.session.env)} · ${u.session.title ?? "(untitled)"} · ${span(u.session.started_at, u.session.ended_at, now)}`);
+  if (u.session) heading.push(`${fullLabel(u.session.agent, u.session.env)} · ${u.session.title ?? "(untitled)"} · ${span(u.session.started_at, u.session.ended_at, now)}`);
   else if (u.from === "record") heading.push("The session is gone from meme's mirror; its messages below are from the handoff recorded after it.");
   const show = u.session ? u.short : null;
   return {
@@ -342,7 +342,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
   // A WSL session on a Windows drive (/mnt/c/...) is at C:\... from Windows: not slow there.
   const inDistro = wsl !== null && !isWindowsPath(localDir!);
   const facts = [
-    label(s.agent, s.env),
+    fullLabel(s.agent, s.env),
     `session ${sid}`,
     dir ? `dir ${localDir}${localDir !== dir ? ` (${dir}${wsl ? ` in WSL ${wsl.distro}` : ""})` : ""}` : null,
     s.branch ? `branch ${s.branch}` : null,

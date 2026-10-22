@@ -105,6 +105,11 @@ export function sessionCopies(db: Database, id: string): { source: string; env: 
   return [...copies.values()];
 }
 
+/** How many platforms the mirror has sessions of. */
+export function platformCount(db: Database): number {
+  return db.query<{ n: number }, []>("SELECT COUNT(DISTINCT env) AS n FROM sessions").get()!.n;
+}
+
 /** How many sessions are in more than one source. */
 export function inSeveralSources(db: Database): number {
   return db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM (SELECT session FROM files GROUP BY session HAVING COUNT(DISTINCT source) > 1)").get()!.n;

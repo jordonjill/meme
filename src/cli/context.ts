@@ -4,10 +4,10 @@ import { projectResolver } from "../model/project";
 import { fileLogger, type Logger } from "../platform/log";
 import { currentPlatform, type Platform } from "../platform/paths";
 import { readsWsl, runningDistros, toLinux, wslHomes, wslPlace, wslTimeout, type AbsentMemo, type WslAnswer } from "../platform/wsl";
-import { makeStyle, type Style } from "../render/labels";
+import { makeStyle, namePlatforms, type Style } from "../render/labels";
 import { getMeta, openStore, setMeta, type Store } from "../store/db";
 import { dropSources } from "../store/sync";
-import { sources } from "../store/queries";
+import { platformCount, sources } from "../store/queries";
 import { when } from "../render/text";
 import { importAll, type ImportResult } from "../store/import";
 
@@ -82,6 +82,7 @@ export async function createContext(): Promise<Context> {
     log.error("import failed", err);
   }
   if (distros) answer = await distros;
+  namePlatforms(platformCount(store.db) > 1);
   timings.ready = performance.now();
   const now = Date.now();
   return {

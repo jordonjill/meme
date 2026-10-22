@@ -41,8 +41,20 @@ export function makeStyle(color: boolean): Style {
 
 export const ENV_SHORT: Record<Env, string> = { wsl: "WSL", win: "Win", mac: "Mac", linux: "Linux" };
 
-/** The source label, `<short name>·WSL`: the agent's short name from its profile. */
+/** Labels name the platform only when the mirror has sessions of more than one, as the list's platform row does (plan §6 ⑫, item 9). */
+let withPlatform = true;
+
+export function namePlatforms(on: boolean): void {
+  withPlatform = on;
+}
+
+/** The source label, `<short name>·WSL`, or only `<short name>` when there is one platform: the agent's short name from its profile. */
 export function label(agent: Agent, env: Env): string {
+  return withPlatform ? fullLabel(agent, env) : (profileOf(agent)?.short ?? agent);
+}
+
+/** Always with the platform: a handoff tells the next agent which system a session ran on. */
+export function fullLabel(agent: Agent, env: Env): string {
   return `${profileOf(agent)?.short ?? agent}·${ENV_SHORT[env] ?? env}`;
 }
 
