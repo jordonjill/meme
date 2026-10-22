@@ -19,6 +19,17 @@ interface FilterRow<T> {
   at: number;
 }
 
+/** How the values of the filter rows are set out; the first that fits the window is used. */
+interface FilterLayout {
+  gap: number;
+  aligned: boolean;
+}
+const FILTER_LAYOUTS: FilterLayout[] = [
+  { gap: 4, aligned: true },
+  { gap: 2, aligned: true },
+  { gap: 2, aligned: false },
+];
+
 /** What the list's search matches; what was said is `meme search`. */
 const PLACEHOLDER = "Search titles, projects, branches, ids…";
 const ENV_ORDER: Env[] = ["wsl", "win", "mac", "linux"];
@@ -121,16 +132,17 @@ export class PickerView implements View {
 
   /**
    * `Platform   ● All    ○ WSL      ○ Win`: the row in focus has its name in cyan.
-   * Values line up in columns across the two rows, each as wide as its widest name.
+   * Values line up in columns across the two rows, each as wide as its widest name;
+   * short of room they are 2 spaces apart, then no longer lined up (plan §6 ⑪, F14).
    */
-  private filterLine(row: FilterRow<string>, focused: boolean, names: (v: string | null) => string, columns: number[]): string {
+  private filterLine(row: FilterRow<string>, focused: boolean, names: (v: string | null) => string, columns: number[], layout: FilterLayout): string {
     const st = this.out.st;
     const values = row.values.map((v, i) => {
-      const name = i < row.values.length - 1 ? padEnd(names(v), columns[i]!) : names(v);
+      const name = layout.aligned && i < row.values.length - 1 ? padEnd(names(v), columns[i]!) : names(v);
       return i === row.at ? st.bold(`● ${name}`) : st.dim(`○ ${name}`);
     });
     const title = row.name.padEnd(11);
-    return ` ${focused ? st.bold(st.cyan(title)) : st.dim(title)}${values.join("    ")}`;
+    return ` ${focused ? st.bold(st.cyan(title)) : st.dim(title)}${values.join(" ".repeat(layout.gap))}`;
   }
 
   private keys(): string[] {
@@ -172,7 +184,9 @@ export class PickerView implements View {
     const nameOf = (r: FilterRow<string>) => (v: string | null) => (v === null ? "All" : ((r === (this.platforms as FilterRow<string> | null) ? ENV_NAME : AGENT_NAME) as Record<string, string>)[v] ?? v);
     const columns: number[] = [];
     for (const r of filters) r.values.forEach((v, i) => (columns[i] = Math.max(columns[i] ?? 0, width(nameOf(r)(v)))));
-    filters.forEach((r, i) => out.push(this.filterLine(r, i === this.focus, nameOf(r), columns)));
+    const fits = (l: FilterLayout) => filters.every((r) => width(this.filterLine(r, false, nameOf(r), columns, l).replace(/\x1b\[[0-9;]*m/g, "")) <= cols - 1);
+    const layout = FILTER_LAYOUTS.find(fits) ?? FILTER_LAYOUTS.at(-1)!;
+    filters.forEach((r, i) => out.push(this.filterLine(r, i === this.focus, nameOf(r), columns, layout)));
     out.push(...this.searchBox(cols, out.length));
     // Only this project is shown: say how many more there are elsewhere (plan §3.1).
     const hint = this.all ? null : othersHint(this.visible(true).length - list.length, "Ctrl+A");
