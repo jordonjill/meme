@@ -3,13 +3,13 @@ import path from "node:path";
 import { ADAPTERS, adapterFor } from "../../adapters";
 import { PROFILES, profileOf } from "../../adapters/profiles";
 import type { Adapter, ForgetPlan } from "../../adapters/types";
-import { lastActive, mayBeRunning, quietAfter } from "../../model/turns";
+import { awaitsResult, lastActive, mayBeRunning, quietAfter } from "../../model/turns";
 import { removeDir, removeFile } from "../../platform/fs";
 import { displayPath } from "../../platform/paths";
 import { commandLine } from "../../platform/spawn";
 import { coloredLabel } from "../../render/labels";
 import { ago, padEnd, plural } from "../../render/text";
-import { ancestors, getSession, idPrefix, resolveSession, sessionCopies, type SessionRow } from "../../store/queries";
+import { ancestors, getSession, idPrefix, resolveSession, sessionCopies, sessionRecords, type SessionRow } from "../../store/queries";
 import { pickSession } from "../../tui/picker";
 import { deleteFile, recomputeCopied } from "../../store/sync";
 import { CommandError, parse, UsageError } from "../args";
@@ -135,10 +135,12 @@ export async function forget(argv: string[]): Promise<number> {
     // minutes, and it says when it can go (plan §6 ⑩.1).
     if (c.stateOf(s.id, allFiles(s.id)) === "closed") return null;
     const last = lastActive(s.ended_at);
-    if (last !== null && mayBeRunning(last, now)) {
+    const busy = last !== null && awaitsResult(sessionRecords(ctx.store.db, s.id));
+    if (last !== null && mayBeRunning(last, now, busy)) {
       const there = c.unsure.get(s.id)?.checkable;
       const elsewhere = there ? ` (or run \`meme forget ${s.short}\` ${there}, where meme can check)` : "";
-      return `${s.short} was written ${ago(s.ended_at, now, true)} and may still be open in ${name}; you can delete it after ${clock(quietAfter(last))}${elsewhere}.`;
+      const running = busy ? ", while a command was running," : "";
+      return `${s.short} was written ${ago(s.ended_at, now, true)}${running} and may still be open in ${name}; you can delete it after ${clock(quietAfter(last, busy))}${elsewhere}.`;
     }
     return null;
   };
@@ -240,10 +242,14 @@ export async function forget(argv: string[]): Promise<number> {
   const touched = new Set<string>();
   for (const { session: s, plan, files } of deletable) {
     const sid = s.short;
+    // What went before a step that failed, said with the failure (plan §6 ⑪, F5).
+    const removed: string[] = [];
     try {
       for (const step of plan.steps) {
-        if (step.kind === "remove") (step.dir ? removeDir : removeFile)(step.path);
-        else {
+        if (step.kind === "remove") {
+          (step.dir ? removeDir : removeFile)(step.path);
+          removed.push(step.what);
+        } else {
           const line = commandLine(step.cmd[0]!, step.cmd.slice(1));
           const env = step.env ? { ...process.env, ...step.env } : undefined;
           const p = Bun.spawnSync(line, { cwd: step.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout, windowsVerbatimArguments: line[0] === "cmd.exe" });
@@ -257,7 +263,8 @@ export async function forget(argv: string[]): Promise<number> {
     } catch (err) {
       failed++;
       ctx.log.error(`forget ${s.id}`, err);
-      write(`${st.red("✗")} ${sid}: ${(err as Error).message}. meme's copy is kept.\n`);
+      const already = removed.length ? ` Already deleted: ${[...new Set(removed)].join("; ")}.` : "";
+      write(`${st.red("✗")} ${sid}: ${(err as Error).message}.${already} meme's copy is kept.\n`);
       continue;
     }
     for (const f of files) for (const t of deleteFile(ctx.store.db, f)) touched.add(t);

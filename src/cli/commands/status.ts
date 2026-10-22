@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import pkg from "../../../package.json";
 import { sourceTrouble } from "../../adapters";
+import { NOT_JSON } from "../../adapters/read";
 import { displayPath } from "../../platform/paths";
 import { wslPlace } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
@@ -68,7 +69,10 @@ export async function status(argv: string[]): Promise<number> {
     const extra = [f.version ? `${agentName(f.agent)} ${f.version}` : null, f.as_of ? `shown as of ${when(f.as_of, new Date(ctx.now))}` : "never read"].filter(Boolean).join("; ");
     lines.push(`  ${padEnd(label(f.agent, f.env), lw)}  ${padEnd(f.short, 8)}  ${padEnd(displayPath(f.path, home), fw)}  ${f.error} (${extra})`);
   }
-  const unknown = unknownTypes(db);
+  // Lines that are not JSON are a damaged file, said apart from new record types (plan §6 ⑪, F22).
+  const all = unknownTypes(db);
+  const unknown = all.filter((u) => u.type !== NOT_JSON);
+  const damaged = all.filter((u) => u.type === NOT_JSON);
   const unread = unreadByVersion(db, "unread");
   if (!unknown.length && !unread.length) lines.push("Record types: all known and read");
   else {
@@ -85,6 +89,11 @@ export async function status(argv: string[]): Promise<number> {
     for (const u of unread) {
       lines.push(`  ${agentName(u.agent)} ${u.version || "(version unknown)"}: ${plural(u.lines, "record")} of known types meme couldn't read (${u.types.split(",").join(", ")}; ${plural(u.sessions, "session")})`);
     }
+  }
+  if (damaged.length) {
+    const n = damaged.reduce((a, u) => a + u.lines, 0);
+    const sessions = damaged.reduce((a, u) => a + u.sessions, 0);
+    lines.push(`Not JSON:     ${plural(n, "line")} in ${plural(sessions, "session")}, skipped (a damaged file?)`);
   }
   write(lines.join("\n") + "\n");
   return 0;

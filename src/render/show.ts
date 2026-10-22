@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { NOT_JSON } from "../adapters/read";
 import { isCompaction } from "../model/injected";
 import { callsOf, contentOf, promptText, shellOutput, type Rec } from "../model/record";
 import { firstLine } from "../model/title";
@@ -28,7 +29,10 @@ export function readNotes(db: Database, session: SessionRow, now: number): strin
   if (session.unreadable && session.readable_until) {
     notes.push(`meme can't read this session's file any more (${failureOf(db, session.id) ?? "unknown error"}): this is the session as of ${when(session.readable_until, new Date(now))}; what came after is missing. See \`meme status\`.`);
   }
-  const unknown = unknownIn(db, session.id, "unknown");
+  const all = unknownIn(db, session.id, "unknown");
+  const unknown = all.filter((u) => u.type !== NOT_JSON);
+  const bad = all.filter((u) => u.type === NOT_JSON).reduce((a, u) => a + u.count, 0);
+  if (bad) notes.push(`${plural(bad, "line")} that ${bad === 1 ? "is" : "are"} not JSON ${bad === 1 ? "was" : "were"} skipped (a damaged file?); see \`meme status\`.`);
   const n = unknown.reduce((a, u) => a + u.count, 0);
   if (n) notes.push(`${plural(n, "record")} meme couldn't read (${unknown.map((u) => u.type).join(", ")}); see \`meme status\`.`);
   // The second layer: lines of types meme knows that became nothing (plan §6 ⑦.1).
