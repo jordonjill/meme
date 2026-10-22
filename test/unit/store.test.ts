@@ -343,3 +343,58 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
     expect(statSync(file).mtimeMs).toBe(0);
   });
 });
+
+describe("F10 (plan §6 ⑪): one session in two sources", () => {
+  const ID = "33333333-0000-4000-8000-000000000003";
+  function twoSides() {
+    const { home, projects } = setup();
+    const users = path.join(home, "users");
+    const p = { ...testPlatform(home, "wsl", users) };
+    const windows = path.join(users, "me", ".claude", "projects");
+    return { p, projects, windows };
+  }
+  const row = (store: ReturnType<typeof importInto>["store"]) => allSessions(store.db).find((s) => s.id === ID)!;
+  const sources = (store: ReturnType<typeof importInto>["store"]) =>
+    store.db.query<{ source: string }, [string]>("SELECT source FROM files WHERE session = ? ORDER BY source").all(ID).map((r) => r.source.split(":")[1]);
+
+  test("Claude Desktop's copy of a WSL session, in Windows' projects/ssh-<id>, is not read", () => {
+    const { p, projects, windows } = twoSides();
+    const wslFile = sampleSession({ id: ID, cwd: "/work/demo" }).write(projects);
+    const copy = path.join(windows, `ssh-${ID}`, `${ID}.jsonl`);
+    require("node:fs").mkdirSync(path.dirname(copy), { recursive: true });
+    writeFileSync(copy, readFileSync(wslFile));
+    const { store, result } = importInto(p);
+    expect(result.changed).toBe(1);
+    expect(row(store).env).toBe("wsl");
+    expect(sources(store)).toEqual(["wsl"]);
+    expect(importInto(p, store).result.changed).toBe(0);
+  });
+
+  test("the copy with the newest last record is shown, and no run converts either again until one changes", () => {
+    const { p, projects, windows } = twoSides();
+    const s = new ClaudeSession({ id: ID, cwd: "/work/demo" });
+    s.user("one");
+    s.assistant("a");
+    const wslFile = s.write(projects);
+    s.user("two");
+    s.assistant("b");
+    const winFile = s.write(windows);
+    const { store } = importInto(p);
+    expect([row(store).env, row(store).turns]).toEqual(["win", 2]);
+    expect(row(store).size).toBe(statSync(winFile).size);
+    expect(sources(store)).toEqual(["win", "wsl"]);
+    for (let i = 0; i < 3; i++) expect(importInto(p, store).result.changed).toBe(0);
+    // The WSL copy goes ahead: it is shown from then on.
+    s.user("three");
+    s.assistant("c");
+    s.write(projects);
+    importInto(p, store);
+    expect([row(store).env, row(store).turns]).toEqual(["wsl", 3]);
+    expect(importInto(p, store).result.changed).toBe(0);
+    // The copy shown is deleted: the other one is shown again.
+    rmSync(wslFile);
+    importInto(p, store);
+    expect([row(store).env, row(store).turns]).toEqual(["win", 2]);
+    expect(sources(store)).toEqual(["win"]);
+  });
+});

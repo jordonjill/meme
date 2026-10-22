@@ -492,4 +492,19 @@ describe.skipIf(process.platform !== "linux")("meme forget: step 11 (plan §6 �
     expect(handoff).toContain("Warning: the session was active 2 hours ahead of this clock; it may still be running in another window.");
     expect(run(w, ["ls", "-a"], { env }).out).toMatch(/ 24242424 +Claude·Win +2h ahead /);
   });
+
+  test("F10: a session in two sources: status says so, and forget deletes both copies", () => {
+    const w = world();
+    const s = new ClaudeSession({ id: "25252525-0000-4000-8000-000000000025", cwd: "/work/both", start: "2026-09-20T08:00:00.000Z" });
+    s.user("one");
+    s.assistant("a");
+    const wslFile = s.write(path.join(w.home, ".claude", "projects"));
+    const winFile = s.write(path.join(w.users, "me", ".claude", "projects"));
+    expect(run(w, ["ls", "-a"]).out.match(/25252525/g)?.length).toBe(1);
+    expect(run(w, ["status"]).out).toContain("  1 session is in more than one source: meme shows the copy written last, and `meme forget` deletes every copy.\n");
+    const r = run(w, ["forget", "2525", "--yes"], { env: { PATH: MINIMAL_PATH } });
+    expect(r.out).toContain("✓ 25252525 deleted");
+    expect([existsSync(wslFile), existsSync(winFile)]).toEqual([false, false]);
+    expect(run(w, ["ls", "-a"]).out).not.toContain("25252525");
+  });
 });
