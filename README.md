@@ -131,6 +131,10 @@ Options: `-a` lists all projects, `--fresh` hands over only your messages (start
 over from the repository, not from the previous agent's approach), `--plain`
 prints the handoff instead of starting an agent.
 
+A command you ran in Pi with `!!`, which Pi keeps from its model, is not handed
+over either: the handoff only says one was run there. `meme show` and
+`meme search` still have it.
+
 The handoff stays under 15,000 tokens and under what the agent keeps of a
 command's output, so it arrives whole: 27,000 bytes in Claude Code (a longer
 output is saved to a file there), 36,000 bytes in Codex, 46,080 bytes and 1,800
@@ -191,7 +195,8 @@ do not say which session they have open: meme refuses the sessions of a folder
 one of them is running in, and deletes at once when none runs there. Where meme
 cannot tell (an older agent, a Codex lock on Windows, a process on the other side
 of WSL and Windows, OpenCode or Pi running in a folder meme cannot see), it
-refuses a session written in the last 5 minutes and says when it can go
+refuses a session written in the last 5 minutes, or in the last hour when it
+stopped on a command that may still be running, and says when it can go
 ("you can delete it after 17:21").
 
 - **Claude Code**: the session file and its folders (subagents and large tool

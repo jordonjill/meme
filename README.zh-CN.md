@@ -114,6 +114,8 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 选项：`-a` 列出所有项目；`--fresh` 只交接你说过的话，从仓库现状重新开始，
 不沿用上一个 Agent 的做法；`--plain` 只打印交接内容，不启动 Agent。
 
+在 Pi 里用 `!!` 运行的命令，Pi 不给它的模型看，交接里也不给：只写那里运行过一条这样的命令。`meme show` 和 `meme search` 里照样有。
+
 交接内容不超过 15,000 token，也不超过所在 Agent 对命令输出的上限，保证完整读到：
 在 Claude Code 里是 27,000 字节（更长的输出会被它存成文件），在 Codex 里是 36,000 字节，在 OpenCode 和 Pi 里是 46,080 字节、1,800 行（这两家对更长的输出只留结尾），认不出是哪家（接到管道，或在 Agent 外用 `--plain`）时取最紧的；在 Agent 里用 `--plain`，守的是那家的上限。
 会话太长时，依次删减：每句后面那一行（从最早的删起）、Agent 的压缩摘要（先截到 1,000 token，再去掉）、
@@ -156,7 +158,7 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ### 删除
 
 `meme forget` 列出要删的每一个文件，然后问 `[y/N]`，只按回车不会删除。
-它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。OpenCode 和 Pi 不说自己开着哪个会话：它们中哪个正在某个目录里运行，那个目录的会话 meme 都不删；那里没有它们的进程，就马上能删。判断不了的时候（老版本的 Agent、Windows 上 Codex 的锁、进程在 WSL 和 Windows 的另一边、OpenCode 或 Pi 在 meme 看不到的目录里运行），最近 5 分钟写过的会话不删，并说明几点以后能删（"you can delete it after 17:21"）。
+它不会删正在运行它的那个会话，也不会删在 Claude Code 或 Codex 里开着的会话（meme 会查开着它的那个进程）。OpenCode 和 Pi 不说自己开着哪个会话：它们中哪个正在某个目录里运行，那个目录的会话 meme 都不删；那里没有它们的进程，就马上能删。判断不了的时候（老版本的 Agent、Windows 上 Codex 的锁、进程在 WSL 和 Windows 的另一边、OpenCode 或 Pi 在 meme 看不到的目录里运行），最近 5 分钟写过的会话不删；停在一条可能还在跑的命令上的，最近一小时写过就不删；并说明几点以后能删（"you can delete it after 17:21"）。
 
 - **Claude Code**：会话文件和它的几个文件夹（子代理和大段工具输出、`file-history`、`session-env`，以及 `jobs/` 下这个会话的后台任务）。
   Claude Code 自己的输入历史（`~/.claude/history.jsonl`）里还会留着你输入过的话。
