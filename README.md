@@ -159,8 +159,9 @@ cut at a line and says so. The handoff says what it left out, and `meme show` or
 | `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`; `-a` all projects). `--tools` also lists matches in tool calls and output. |
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
-| `meme status` | Version, data location, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). Attach it when you report a problem. |
+| `meme status` | Version, data location, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). |
 | `meme install` / `uninstall` | Mirror everything once / remove meme's data. |
+| `meme report` | A report to paste into an issue when something goes wrong: versions, `status`, recent errors; no conversation content, and your home folder, user names and project paths masked. `--session <id>` adds that session's structure. Read it before you paste it. |
 
 Session ids can be shortened to any unique start, usually 8 characters; meme
 shows more when two sessions start the same way. `meme <command> --help` lists
