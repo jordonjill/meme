@@ -94,6 +94,8 @@ export type ForgetStep =
       /** What the user is shown instead of `cmd`, when that runs the agent on the other side (WSL, Windows). */
       shown?: string;
       cwd?: string;
+      /** Variables the command runs with, besides meme's own. */
+      env?: Record<string, string>;
     };
 
 export interface ForgetPlan {
@@ -179,6 +181,8 @@ export interface Adapter {
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan;
   /** Closes the files it holds open, so they can be removed (Windows removes no open file). */
   closeFiles?(): void;
+  /** Its folder in `<meme's folder>/cache`, for copies it keeps there; `meme uninstall` removes it. */
+  cacheDir?: string;
   /**
    * The command that starts the agent with a first message (plan §2.3). The message
    * asks it to run `meme continue <id>` itself, so the agent should be allowed to

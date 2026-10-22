@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, realpathSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { ADAPTERS } from "../../adapters";
 import { removeDir, removeFile } from "../../platform/fs";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
@@ -20,7 +21,10 @@ the question.
  * be a link (plan §6 ⑨, R22), or MEME_HOME may name one that holds other files, even
  * the home folder (plan §6 ⑪, F2).
  */
-const OWN = ["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs/meme.log", "logs/meme.log.1", "cache/opencode"];
+const OWN = [
+  ...["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs/meme.log", "logs/meme.log.1"],
+  ...ADAPTERS.flatMap((a) => (a.cacheDir ? [`cache/${a.cacheDir}`] : [])),
+];
 /** The folders that hold them, removed when that leaves them empty; the data folder itself last. */
 const OWN_DIRS = ["logs", "cache", ""];
 

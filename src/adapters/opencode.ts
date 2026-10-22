@@ -68,9 +68,11 @@ function stampOf(file: string): string {
   return `${one(file)}|${one(file + "-wal")}`;
 }
 
+const CACHE_DIR = "opencode";
+
 /** Where meme copies a database of the other side: `<meme's folder>/cache/opencode/<hash of its path>`. */
 export function copyDirFor(dataDir: string, file: string): string {
-  return path.join(dataDir, "cache", "opencode", createHash("sha256").update(file).digest("hex").slice(0, 16));
+  return path.join(dataDir, "cache", CACHE_DIR, createHash("sha256").update(file).digest("hex").slice(0, 16));
 }
 
 /** `copyDir`: read from a copy there; null: read it where it is. */
@@ -297,11 +299,16 @@ function fullOutputs(db: Database, id: string, dataDir: string): string[] {
   return [...out];
 }
 
+/** OpenCode 1.19 may update itself, to 2.0, which meme does not read (plan §6 ⑩); never when meme runs it. */
+const NO_UPDATE = { OPENCODE_DISABLE_AUTOUPDATE: "1" };
+
+type Runner = { line: (args: string[]) => string[]; cwd?: string; where: string; env: Record<string, string> };
+
 /** How to run the opencode of the side a session is on (as for Codex): here, in WSL from Windows, on Windows from WSL. */
-function runner(target: ForgetTarget, platform: Platform, db: string): { line: (args: string[]) => string[]; cwd?: string; where: string } | string {
+function runner(target: ForgetTarget, platform: Platform, db: string): Runner | string {
   if (target.env === platform.env) {
     const exe = findCommand(openCodeProfile.command, platform.vars);
-    return exe ? { line: (args) => [exe, ...args], where: "" } : "`opencode` is not available here";
+    return exe ? { line: (args) => [exe, ...args], where: "", env: NO_UPDATE } : "`opencode` is not available here";
   }
   if (platform.env === "win" && target.env === "wsl") {
     const place = wslPlace(platform, db);
@@ -309,7 +316,9 @@ function runner(target: ForgetTarget, platform: Platform, db: string): { line: (
     const linux = place && toLinux(place.root, db);
     const home = linux && /^(.*?)\/\.local\/share\/opencode\//.exec(linux)?.[1];
     if (!place || !exe || !home) return "this OpenCode session is in WSL, and wsl.exe is not available here";
-    return { line: (args) => wslCommand(exe, place.distro, home, [openCodeProfile.command, ...args]), where: `in WSL (${place.distro})` };
+    // Windows' variables do not reach WSL: set on the command line there (plan §6 ⑪, F23).
+    const set = Object.entries(NO_UPDATE).map(([k, v]) => `${k}=${v}`);
+    return { line: (args) => wslCommand(exe, place.distro, home, ["env", ...set, openCodeProfile.command, ...args]), where: `in WSL (${place.distro})`, env: {} };
   }
   if (platform.env === "wsl" && target.env === "win" && platform.windowsUsersDir) {
     const user = path.relative(platform.windowsUsersDir, db).split("/")[0];
@@ -318,17 +327,19 @@ function runner(target: ForgetTarget, platform: Platform, db: string): { line: (
     if (!exe) return "this OpenCode session is on the Windows side, and OpenCode is not installed there (or not on the PATH WSL sees)";
     const viaCmd = /\.(cmd|bat)$/i.test(exe);
     // cmd.exe cannot start in a WSL directory.
-    return { line: (args) => (viaCmd ? ["cmd.exe", "/d", "/c", wslToWin(exe), ...args] : [exe, ...args]), cwd: platform.windowsUsersDir, where: "on the Windows side" };
+    // WSLENV names the variables WSL passes on to a Windows program.
+    const env = { ...NO_UPDATE, WSLENV: [platform.vars.WSLENV, ...Object.keys(NO_UPDATE)].filter(Boolean).join(":") };
+    return { line: (args) => (viaCmd ? ["cmd.exe", "/d", "/c", wslToWin(exe), ...args] : [exe, ...args]), cwd: platform.windowsUsersDir, where: "on the Windows side", env };
   }
   return `this OpenCode session is on ${target.env}`;
 }
 
 /** Older versions have no `session delete`. */
-function canDelete(r: { line: (args: string[]) => string[]; cwd?: string }): boolean {
+function canDelete(r: Runner): boolean {
   try {
     const [exe, ...args] = r.line(["session", "delete", "--help"]);
     const line = commandLine(exe!, args);
-    const p = Bun.spawnSync(line, { cwd: r.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 30_000, env: { ...process.env, OPENCODE_DISABLE_AUTOUPDATE: "1" }, windowsVerbatimArguments: line[0] === "cmd.exe" });
+    const p = Bun.spawnSync(line, { cwd: r.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 30_000, env: { ...process.env, ...r.env }, windowsVerbatimArguments: line[0] === "cmd.exe" });
     return p.exitCode === 0 && /delete a session/i.test(p.stdout.toString() + p.stderr.toString());
   } catch {
     return false;
@@ -380,7 +391,7 @@ export const openCode: Adapter = {
     try {
       for (const out of fullOutputs(openDb(db, copy), id, path.dirname(db))) steps.push({ kind: "remove", path: out, dir: false, what: "the full output of a long command" });
     } catch {}
-    steps.push({ kind: "run", cmd: r.line(["session", "delete", id]), cwd: r.cwd, shown: r.where ? `opencode session delete ${id} ${r.where}` : undefined, what: "OpenCode removes the session from its database" });
+    steps.push({ kind: "run", cmd: r.line(["session", "delete", id]), cwd: r.cwd, env: r.env, shown: r.where ? `opencode session delete ${id} ${r.where}` : undefined, what: "OpenCode removes the session from its database" });
     // meme's copy still holds the session: it goes, and is made again when next needed.
     if (copy && existsSync(copy)) steps.push({ kind: "remove", path: copy, dir: true, what: "meme's copy of OpenCode's database, made again when needed" });
     // On this side, where its state folder is (XDG_STATE_HOME moves it); on the other, where it is by default.
@@ -389,6 +400,8 @@ export const openCode: Adapter = {
     // A session in a database leaves no file of its own to check: the command's exit code says.
     return { steps, gone: [], notes: [`OpenCode keeps what you typed in its own prompt history (${history}).`] };
   },
+
+  cacheDir: CACHE_DIR,
 
   /** The databases (and copies) it has open, closed: Windows does not remove an open file. */
   closeFiles(): void {
