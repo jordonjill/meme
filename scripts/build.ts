@@ -9,12 +9,16 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import pkg from "../package.json";
 
+// The baseline builds run on x64 CPUs without AVX2, which the others need; the install scripts pick one (release prep, item 1).
 const TARGETS: Record<string, { bun: string; file: string }> = {
   "linux-x64": { bun: "bun-linux-x64", file: "meme-linux-x64" },
+  "linux-x64-baseline": { bun: "bun-linux-x64-baseline", file: "meme-linux-x64-baseline" },
   "linux-arm64": { bun: "bun-linux-arm64", file: "meme-linux-arm64" },
   "darwin-x64": { bun: "bun-darwin-x64", file: "meme-darwin-x64" },
+  "darwin-x64-baseline": { bun: "bun-darwin-x64-baseline", file: "meme-darwin-x64-baseline" },
   "darwin-arm64": { bun: "bun-darwin-arm64", file: "meme-darwin-arm64" },
   "windows-x64": { bun: "bun-windows-x64", file: "meme-windows-x64.exe" },
+  "windows-x64-baseline": { bun: "bun-windows-x64-baseline", file: "meme-windows-x64-baseline.exe" },
 };
 
 /**
