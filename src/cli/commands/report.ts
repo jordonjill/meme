@@ -63,7 +63,7 @@ function rootsOf(ctx: Context): SourceRoot[] {
   return ADAPTERS.flatMap((a) => a.roots(ctx.platform));
 }
 
-/** Each source's agent version, from its newest session: `Claude Code 2.1.308 (WSL)`. */
+/** Each source's agent version, from its newest session: `<agent> 2.1.308 (WSL)`. */
 function agentVersions(ctx: Context): string[] {
   const roots = rootsOf(ctx);
   const out: string[] = [];
@@ -183,7 +183,7 @@ function fieldNames(obj: Record<string, unknown>): string[] {
 
 /**
  * Masks what would say who the user is or what they work on: project paths (as
- * written, and as Claude Code names a project's folder) become project-1,
+ * written, and as an agent names a folder after one) become project-1,
  * project-2, …; the home folder becomes ~; names in user folders and the user's
  * name anywhere else become <user>; then the secrets the mirror redacts.
  */
