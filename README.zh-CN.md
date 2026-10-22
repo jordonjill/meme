@@ -190,10 +190,12 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
   `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
   唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本，放在 `~/.meme/cache` 里，`meme uninstall` 会删掉它，`meme forget` 删了会话也会一并删掉它。
 - 还不支持 OpenCode 2.0（`@opencode/cli`）：它把会话用新格式存在同一个库里，`meme status` 会报这些会话没读出来。
-- 存进镜像之前，格式明确的密钥会被替换成 `[REDACTED:类型]`：Anthropic 和 OpenAI 的 API key、
-  GitHub token、AWS key id、私钥、Bearer token，以及 URL 里或 `password=` 后面的密码。
-- 在 Agent 里删掉的会话，下次运行 meme 时会从镜像里消失。`meme uninstall` 删除 `~/.meme`，
-  原来的会话不受影响。
+- 存进镜像之前，格式明确的密钥会被替换成 `[REDACTED:类型]`：Anthropic 和 OpenAI 的 API key，
+  GitHub、GitLab、Slack、npm、Stripe、Hugging Face 的 token，Google API key，AWS 的 key id 和 secret key，
+  私钥、JWT、Bearer token 和 Basic 认证，以及 URL 里或 `password=` 后面的密码。看不出格式的值
+  （`API_KEY=` 后面的一串十六进制）不遮：它们和哈希值长得一样。
+- 在 Agent 里删掉的会话，下次运行 meme 时会从镜像里消失。`meme uninstall` 删除 `~/.meme` 里 meme 自己的文件，
+  文件夹里没有别的东西就把文件夹也删掉；原来的会话不受影响。
 
 ## 开发
 
@@ -208,4 +210,5 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 `MEME_ENV`（强制为 `win`、`wsl`、`mac` 或 `linux`）、`MEME_WINDOWS_USERS_DIR`
 （WSL 在哪里找 Windows 的用户目录）、`MEME_WSL_CONF`（换一份 `/etc/wsl.conf`）、`MEME_WSL_DIR`、
 `MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`（从 Windows 看到的 WSL）、`MEME_TERMINAL`（当作在终端里）、
-`MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）。
+`MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）、
+`MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）。

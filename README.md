@@ -246,11 +246,14 @@ deletion.
 - OpenCode 2.0 (`@opencode/cli`) is not supported yet: it keeps sessions in a new
   format in the same database, and `meme status` reports them as not read.
 - Secrets with a clear format are replaced with `[REDACTED:type]` before
-  anything is stored: Anthropic and OpenAI API keys, GitHub tokens, AWS key ids,
-  private keys, bearer tokens, and passwords in URLs or after `password=`.
+  anything is stored: Anthropic and OpenAI API keys, GitHub, GitLab, Slack, npm,
+  Stripe and Hugging Face tokens, Google API keys, AWS key ids and secret keys,
+  private keys, JWTs, bearer tokens and Basic credentials, and passwords in URLs
+  or after `password=`. Values with no telling format (a hex string after
+  `API_KEY=`) are not: they look like hashes.
 - A session deleted in its agent disappears from the mirror the next time meme
-  runs. `meme uninstall` removes `~/.meme`; your original sessions are not
-  touched.
+  runs. `meme uninstall` removes meme's files from `~/.meme`, then the folder
+  if nothing else is in it; your original sessions are not touched.
 
 ## Development
 
@@ -265,5 +268,6 @@ Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_HOME` (data directory), `MEME_ENV` (force `win`, `wsl`, `mac` or `linux`),
 `MEME_WINDOWS_USERS_DIR` (where WSL finds the Windows user folders),
 `MEME_WSL_CONF` (another `/etc/wsl.conf`), `MEME_WSL_DIR`, `MEME_WSL_RUNNING` and
-`MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal)
-and `MEME_SLOW_MS` (log runs slower than this; 0 logs every run).
+`MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal),
+`MEME_SLOW_MS` (log runs slower than this; 0 logs every run) and
+`MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take).
