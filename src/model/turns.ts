@@ -97,8 +97,8 @@ export function endingOf(records: Rec[]): Ending {
       if (kind === "output") return "finished";
       // A `!` command recorded together with its output: nothing more to come (R26).
       if (shellOutput(rec.body.content) !== null) return "finished";
-      // A `/command` that got no reply is a local command such as /exit or /model.
-      return (contentOf(rec.body) ?? "").trimStart().startsWith("/") ? "finished" : "unfinished";
+      // A local command such as /exit or /model gets no reply; a message that only starts with a slash does (plan §6 ⑪, F7).
+      return rec.command ? "finished" : "unfinished";
     }
   }
   return "finished";
@@ -106,6 +106,8 @@ export function endingOf(records: Rec[]): Ending {
 
 /** A session whose file changed in the last few minutes may still be running. */
 const RUNNING_WINDOW_MS = 5 * 60_000;
+/** One that stopped on a call with no result yet may be running a command, which writes nothing until it ends (plan §6 ⑪, F11). */
+const BUSY_WINDOW_MS = 60 * 60_000;
 
 /** When a session was last active: its last record's time, which (unlike the file's mtime) agents do not bump by housekeeping. */
 export function lastActive(endedAt: string | null): number | null {
@@ -113,14 +115,25 @@ export function lastActive(endedAt: string | null): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-/** When a session written at `mtimeMs` no longer counts as maybe running. */
-export function quietAfter(mtimeMs: number): number {
-  return mtimeMs + RUNNING_WINDOW_MS;
+/** When a session written at `mtimeMs` no longer counts as maybe running; later when `busy`, on a call with no result. */
+export function quietAfter(mtimeMs: number, busy = false): number {
+  return mtimeMs + (busy ? BUSY_WINDOW_MS : RUNNING_WINDOW_MS);
 }
 
-export function mayBeRunning(mtimeMs: number | null, now = Date.now()): boolean {
+export function mayBeRunning(mtimeMs: number | null, now = Date.now(), busy = false): boolean {
   if (mtimeMs === null) return false;
   // In the future is a clock ahead of this one (Windows seen from WSL, which falls behind
   // after sleep): by however much, it may be now (plan §6 ⑪, F18).
-  return now - mtimeMs < RUNNING_WINDOW_MS;
+  return now - mtimeMs < (busy ? BUSY_WINDOW_MS : RUNNING_WINDOW_MS);
+}
+
+/** Did the session stop on a call whose result has not come: a command that may still be running? */
+export function awaitsResult(records: Rec[]): boolean {
+  for (let i = records.length - 1; i >= 0; i--) {
+    const rec = records[i]!;
+    const role = rec.body.role;
+    if (role === "meta" || role === "reasoning" || role === "system" || rec.injected) continue;
+    return role === "assistant" && "tool_calls" in rec.body;
+  }
+  return false;
 }

@@ -14,6 +14,7 @@ export const INTERRUPTS = all("interrupt");
 export const OUTPUTS = all("output");
 export const SHELL_INPUTS = all("shellInput");
 export const SHELL_OUTPUTS = all("shellOutput");
+export const HIDDEN = all("hidden");
 export const LONG_OUTPUTS = all("longOutput");
 export const RESULT_HEADERS = all("resultHeader");
 export const EXIT_CODES = all("exitCode");

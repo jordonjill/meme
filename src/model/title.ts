@@ -1,4 +1,4 @@
-import { promptText } from "./record";
+import { keptFromModel, promptText } from "./record";
 
 const MAX_TITLE = 200;
 
@@ -42,6 +42,7 @@ function titleLine(text: string): string {
 export function titleOf(custom: string | null, generated: string | null, prompts: string[]): string | null {
   if (custom?.trim()) return titleLine(custom);
   if (generated?.trim()) return titleLine(generated);
-  const texts = prompts.map((p) => titleLine(promptText(p))).filter(Boolean);
+  // A command kept from the model is never the title, which a handoff starts with (plan §6 ⑪, F9).
+  const texts = prompts.filter((p) => !keptFromModel(p)).map((p) => titleLine(promptText(p))).filter(Boolean);
   return texts.find((t) => !t.startsWith("/") && !t.startsWith("! ")) ?? texts[0] ?? null;
 }

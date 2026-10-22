@@ -1,5 +1,5 @@
 import type { NormalizedRecord } from "@letta-ai/trajectory";
-import { firstMatch, SHELL_INPUTS, SHELL_OUTPUTS } from "./formats";
+import { firstMatch, HIDDEN, SHELL_INPUTS, SHELL_OUTPUTS } from "./formats";
 import type { Injected } from "./injected";
 import { callText, parseArgs } from "./tools";
 
@@ -18,6 +18,8 @@ export interface Rec {
   role: string;
   ts: string | null;
   body: Body;
+  /** A local command the agent ran itself (`/model`): it gets no reply (plan §6 ⑪, F7). */
+  command?: boolean;
 }
 
 export function contentOf(body: Body): string | null {
@@ -43,10 +45,15 @@ export function searchText(body: Body): string | null {
   }
 }
 
-/** A user prompt as people read it: `! cmd` for shell input typed with `!`. */
+/** A user prompt as people read it: `! cmd` for shell input typed with `!`, `!! cmd` for one kept from the model. */
 export function promptText(content: string): string {
   const m = firstMatch(SHELL_INPUTS, content);
-  return m ? "! " + m[1] : content;
+  return m ? (keptFromModel(content) ? "!! " : "! ") + m[1] : content;
+}
+
+/** Did the user run this and keep it from the model (`!!`, plan §6 ⑪, F9)? */
+export function keptFromModel(content: string): boolean {
+  return HIDDEN.some((re) => re.test(content));
 }
 
 /** The output of a `!` command: some agents record it with the command, others in the next record. */
