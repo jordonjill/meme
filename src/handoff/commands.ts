@@ -119,16 +119,22 @@ export function resultOf(t: Turn, call: ParsedCall): Rec | undefined {
   return t.records.find((r) => r.body.role === "tool" && r.body.tool_call_id === call.id);
 }
 
+/** Did the user stop this call: the last call of a turn they interrupted (plan §6 ⑪, F17)? */
+export function stoppedByUser(t: Turn, call: ParsedCall): boolean {
+  if (!t.interrupted) return false;
+  return t.records.filter((r) => !r.injected).flatMap((r) => callsOf(r.body)).at(-1)?.id === call.id;
+}
+
 /**
- * `ok`, `✗ exit 1`, or `no result`. When the record has output but no verdict,
+ * `ok`, `✗ exit 1`, `interrupted` when the user stopped it, or `no result`. When the record has output but no verdict,
  * its first line: an agent's script tool can report a finished script even when
  * the command inside it failed.
  */
-export function outcome(result: Rec | undefined): string {
+export function outcome(result: Rec | undefined, stopped = false): string {
   if (!result || result.body.role !== "tool") return "no result";
   const content = contentOf(result.body) ?? "";
   const code = exitCodeOf(content);
-  if (resultFailed(result.body.ok, content)) return code !== null ? `✗ exit ${code}` : "✗ failed";
+  if (resultFailed(result.body.ok, content)) return stopped ? "interrupted" : code !== null ? `✗ exit ${code}` : "✗ failed";
   if (result.body.ok === true || code === 0) return "ok";
   const first = resultText(content).split("\n").find((l) => l.trim());
   return first ? `(no exit code) ${clip(oneLine(first), 100)}` : "(no exit code, no output)";
@@ -144,7 +150,7 @@ export function recentCommands(turns: Turn[], listed: Set<number>, max = RECENT_
       for (const call of callsOf(rec.body)) {
         const command = commandOf(call);
         if (!command || onlyReads(command)) continue;
-        all.push(`- turn ${t.n}: \`${clip(oneLine(command), COMMAND_CHARS)}\` → ${outcome(resultOf(t, call))}`);
+        all.push(`- turn ${t.n}: \`${clip(oneLine(command), COMMAND_CHARS)}\` → ${outcome(resultOf(t, call), stoppedByUser(t, call))}`);
       }
     }
   }

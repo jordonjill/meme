@@ -1,3 +1,4 @@
+import path from "node:path";
 import { summaryText } from "../model/compaction";
 import { isCompaction } from "../model/injected";
 import type { Rec } from "../model/record";
@@ -14,7 +15,7 @@ import type { SessionRow } from "../store/queries";
 import { cutToTokens, estimateTokens, fitSizes, limitsIn, measure, minus, plus, within, ZERO, type Limits, type Size } from "./budget";
 import { isMemeCommand, relayChain, type Chain, type Lookup, type Upstream } from "./chain";
 import type { Away } from "./place";
-import { RECENT_COMMANDS, recentCommands, recognized, resultOf } from "./commands";
+import { RECENT_COMMANDS, recentCommands, recognized, resultOf, stoppedByUser } from "./commands";
 import { PROFILES } from "../adapters/profiles";
 
 /** Each user message is cut at this many characters (plan §4.6.6). */
@@ -144,7 +145,7 @@ function stepLines(t: Turn): string[] {
     if (kindOf(rec) === "interrupt") out.push("- ⏹ Interrupted by the user");
     for (const call of callsOf(rec.body)) {
       const result = resultOf(t, call);
-      const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content);
+      const failed = result?.body.role === "tool" && resultFailed(result.body.ok, result.body.content) && !stoppedByUser(t, call);
       const first = result ? (trimmedLines(resultText(contentOf(result.body) ?? "")).find((l) => l.trim()) ?? "(empty)") : "(no result)";
       const { name, summary } = describeCall(call);
       // From the web: the text may say anything, instructions included (PRD §7).
@@ -156,7 +157,8 @@ function stepLines(t: Turn): string[] {
 }
 
 function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number, userRef: boolean): { lines: string[]; cut: boolean; stepsLeftOut: number } {
-  const facts = [plural(t.steps, "step"), plural(t.commands, "command")];
+  const counts = t.steps || t.commands ? [plural(t.steps, "step"), plural(t.commands, "command")] : [];
+  const facts: string[] = [];
   // Named when there are a few; "Edited files" below lists them all.
   if (t.edited.length) facts.push(t.edited.length <= NAMED_FILES ? `edited ${t.edited.join(", ")}` : `edited ${plural(t.edited.length, "file")}`);
   if (t.failed) facts.push(`${t.failed} failed`);
@@ -168,7 +170,9 @@ function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number, use
     .join("\n\n");
   // Short of room, the message is pointed to: it is under "User messages" already.
   const user = !t.prompt ? "(no message)" : userRef ? `(message ${t.n} under "User messages")` : cutMessage(promptOf(t), t.n, sid).text;
-  const out = [`### Turn ${t.n}`, `User: ${user}`, `Steps: ${facts.join(" · ")}`];
+  const out = [`### Turn ${t.n}`, `User: ${user}`];
+  // No steps: no line, unless something else happened in the turn (plan §6 ⑪, F24).
+  if (counts.length || facts.length) out.push(`Steps: ${[...(counts.length ? counts : ["none"]), ...facts].join(" · ")}`);
   let cut = false;
   if (said) {
     const c = cutToTokens(said, aiCap);
@@ -185,15 +189,22 @@ function lastTurnLines(t: Turn, sid: string, aiCap: number, stepCap: number, use
   return { lines: out, cut, stepsLeftOut };
 }
 
-function editedFiles(turns: Turn[], cap: number): { lines: string[]; left: number } {
-  const files = new Map<string, Set<number>>();
+function editedFiles(turns: Turn[], cap: number, dir: string | null): { lines: string[]; left: number } {
+  // One file however it was named, relative to the session's directory or in full, as first named (plan §6 ⑪, F16).
+  const p = dir && isWindowsPath(dir) ? path.win32 : path.posix;
+  const keyOf = (f: string) => {
+    const full = dir && !p.isAbsolute(f) ? p.join(dir, f) : p.normalize(f);
+    return p === path.win32 ? full.toLowerCase() : full;
+  };
+  const named = new Map<string, { shown: string; turns: Set<number> }>();
   for (const t of turns) {
     for (const rec of t.records) {
       for (const call of callsOf(rec.body)) {
-        for (const f of filesOfCall(call)) (files.get(f) ?? files.set(f, new Set()).get(f)!).add(t.n);
+        for (const f of filesOfCall(call)) (named.get(keyOf(f)) ?? named.set(keyOf(f), { shown: f, turns: new Set() }).get(keyOf(f))!).turns.add(t.n);
       }
     }
   }
+  const files = new Map([...named.values()].map((x) => [x.shown, x.turns]));
   let listed = [...files];
   if (listed.length > cap) {
     // The ones edited last, in their order.
@@ -227,7 +238,9 @@ function lastVerification(turns: Turn[], tailLines = OUTPUT_TAIL): { turn: numbe
       const status = !tool
         ? "no result"
         : resultFailed(tool.ok, raw)
-          ? `failed${exit ? ` (exit code ${exit})` : ""}`
+          ? stoppedByUser(t, call)
+            ? "interrupted"
+            : `failed${exit ? ` (exit code ${exit})` : ""}`
           : tool.ok === true || code === 0
             ? "passed"
             : "finished (no exit code)";
@@ -439,7 +452,7 @@ export function buildHandoff(input: HandoffInput, opts: HandoffOptions): Handoff
       if (r.cut) cut.push(t.n);
       if (r.stepsLeftOut) steps.push({ n: t.n, left: r.stepsLeftOut });
     }
-    const edited = editedFiles(turns, c.files);
+    const edited = editedFiles(turns, c.files, dir);
     out.push("", "## Edited files", ...edited.lines);
     const commands = recentCommands(turns, lastSet, c.commands);
     if (commands.lines.length) out.push("", "## Recent commands (newest last)", ...commands.lines);
