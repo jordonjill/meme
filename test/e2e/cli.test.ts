@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
+import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { run, world } from "./world";
 
 describe("meme CLI", () => {
@@ -219,5 +220,30 @@ describe("plan §6 ⑩.1: the width off a terminal, and long titles", () => {
     const hundred = LONG.slice(0, 100);
     const w2 = withTitle(hundred);
     expect(run(w2, ["continue", "33333333", "--plain"]).out.split("\n")[0]).toBe(`# Handoff: ${hundred}`);
+  });
+});
+
+describe("plan §6 ⑪, F13: every list off a terminal fits 119 columns", () => {
+  test("long titles, branches and project paths: ls -a, continue -a, a target's matches, search", () => {
+    const w = world();
+    const deep = path.join(w.home, "work", "clients", "acme-corporation", "internal-tools", "release-automation-service");
+    mkdirSync(deep, { recursive: true });
+    for (const [i, title] of ["Refactor the release pipeline so that every artifact is signed", "Refactor the release notes generator and its templates"].entries()) {
+      const s = new ClaudeSession({ id: `4${i}4${i}4${i}4${i}-0000-4000-8000-00000000004${i}`, cwd: deep, branch: "feature/sign-every-artifact-before-upload", start: "2026-10-12T08:00:00.000Z" });
+      s.user(`${title} ${"with more words ".repeat(12)}`);
+      s.assistant("Refactor done.");
+      s.write(path.join(w.home, ".claude", "projects"));
+    }
+    // A wider label.
+    resetOpenCodeIds();
+    const db = new OpenCodeDb(path.join(w.home, ".local", "share", "opencode", "opencode.db"));
+    sampleOpenCode(db, { directory: deep });
+    db.close();
+    const over: string[] = [];
+    for (const args of [["ls", "-a"], ["continue", "-a"], ["continue", "refactor"], ["search", "Refactor"], ["search", "Refactor", "-a"], ["search", "Refactor", "--tools"]]) {
+      const widest = Math.max(...run(w, args, { cwd: deep }).out.split("\n").map((l) => Bun.stringWidth(l)));
+      if (widest > 119) over.push(`${args.join(" ")}: ${widest}`);
+    }
+    expect(over).toEqual([]);
   });
 });

@@ -30,6 +30,10 @@ describe("text widths", () => {
     expect(ago("2026-10-08T10:00:00Z", now)).toBe("2h ago");
     expect(ago("2026-09-30T12:00:00Z", now)).toBe("1w ago");
     expect(ago("2026-10-08T11:59:40Z", now, true)).toBe("20 seconds ago");
+    // Ahead of this clock (plan §6 ⑪, F18): a few seconds are skew; more is said as it is.
+    expect(ago("2026-10-08T12:00:30Z", now)).toBe("0s ago");
+    expect(ago("2026-10-08T14:00:00Z", now)).toBe("2h ahead");
+    expect(ago("2026-10-08T14:00:00Z", now, true)).toBe("2 hours ahead of this clock");
     const n = new Date("2026-10-08T12:00:00Z");
     expect(span("2026-09-30T09:08:00Z", "2026-09-30T09:12:00Z", n)).toBe("09-30 09:08 → 09:12");
     expect(span("2026-09-18T14:56:00Z", "2026-09-21T10:12:00Z", n)).toBe("09-18 14:56 → 09-21 10:12");

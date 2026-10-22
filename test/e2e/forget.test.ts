@@ -475,3 +475,21 @@ describe.skipIf(process.platform === "win32")("meme forget: what Claude Code kee
     expect(run(w, ["forget", "2222", "--yes"]).out).not.toContain("jobs/");
   });
 });
+
+describe.skipIf(process.platform !== "linux")("meme forget: step 11 (plan §6 ⑪)", () => {
+  test("F18: a Windows session ahead of this clock, which meme cannot check from here, is not deleted", () => {
+    const w = world();
+    const ahead = new ClaudeSession({ id: "24242424-0000-4000-8000-000000000024", cwd: "C:\\Users\\me\\work\\demo-app", start: new Date(Date.now() + 2 * 3_600_000).toISOString() });
+    ahead.user("still working");
+    ahead.assistant("on it");
+    ahead.write(path.join(w.users, "me", ".claude", "projects"));
+    register(path.join(w.users, "me", ".claude"), 4545, ahead.id, null);
+    writeFileSync(path.join(w.home, "wsl.conf"), `[automount]\nroot = ${w.home}/no-drives/\n`);
+    const env = { PATH: MINIMAL_PATH, MEME_WSL_CONF: path.join(w.home, "wsl.conf") };
+    const r = run(w, ["forget", "2424", "--yes"], { env });
+    expect(r.err).toMatch(/^meme: 24242424 was written 2 hours ahead of this clock and may still be open in Claude Code; you can delete it after \d\d:\d\d .*Nothing deleted\.\n$/);
+    const handoff = run(w, ["continue", "2424"], { env }).out;
+    expect(handoff).toContain("Warning: the session was active 2 hours ahead of this clock; it may still be running in another window.");
+    expect(run(w, ["ls", "-a"], { env }).out).toMatch(/ 24242424 +Claude·Win +2h ahead /);
+  });
+});

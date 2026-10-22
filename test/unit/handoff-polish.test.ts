@@ -11,6 +11,7 @@ import { buildHandoff, plainMarkdown } from "../../src/handoff/build";
 import { isMemeCommand, parseHandoff } from "../../src/handoff/chain";
 import { onlyReads, outcome, recognized, runs, segments } from "../../src/handoff/commands";
 import { nullLogger } from "../../src/platform/log";
+import { firstLine, titleOf } from "../../src/model/title";
 import { numberList } from "../../src/render/text";
 import { openStore } from "../../src/store/db";
 import { importAll } from "../../src/store/import";
@@ -112,9 +113,9 @@ describe("A5: the preamble", () => {
     // Then user messages in the middle.
     const small = w.handoff(s.id, { limits: { tokens: 3000, chars: 1_000_000 } }).text;
     // Room the cut messages leave goes back to the newest `↳` lines.
-    const m = /Left out: (\d+) user messages in the middle \(turns 2–(\d+)\); AI replies and steps before turn 29(?:, except one line each from turn \d+ on)?\./.exec(small);
+    const m = /Left out: (\d+) user messages in the middle \(turns (2(?:–| and )\d+)\); AI replies and steps before turn 29(?:, except one line each from turn \d+ on)?\./.exec(small);
     expect(m).not.toBeNull();
-    expect(small).toContain(`… ${m![1]} messages left out (turns 2–${m![2]}); find them with`);
+    expect(small).toContain(`… ${m![1]} messages left out (turns ${m![2]}); find them with`);
     expect(estimateTokens(small)).toBeLessThanOrEqual(3000);
   });
 });
@@ -680,5 +681,71 @@ describe("step 9 (plan §6 ⑨)", () => {
     const text = w.handoff(big.id).text;
     expect(text).toContain("--hidden --full` has all of it)");
     expect(text).not.toContain("--all --full");
+  });
+});
+
+describe("step 11 (plan §6 ⑪): handoff details", () => {
+  test("F16: a file edited by a relative path and by an absolute one is one file", () => {
+    resetIds();
+    const w = world();
+    const c = compactedCodex();
+    w.codex(c);
+    const text = w.handoff(c.id).text;
+    expect(text).toContain("## Edited files\n- hello.py (turns 1, 3 and 4)\nFiles changed by commands");
+  });
+
+  test("F17: a command the user stopped is interrupted, not failed", () => {
+    resetIds();
+    const w = world();
+    const c = new ClaudeSession({ id: "e17e17e1-0000-4000-8000-000000000003" });
+    c.user("Run the tests");
+    const id = c.call("Bash", { command: "npm test" });
+    c.result(id, "[Request interrupted by user for tool use]", true);
+    c.interrupt(true);
+    for (const n of [1, 2]) {
+      c.user(`question ${n}`);
+      c.assistant(`answer ${n}`);
+    }
+    w.claude(c);
+    const text = w.handoff(c.id).text;
+    expect(text).toContain("## Recent commands (newest last)\n- turn 1: `npm test` → interrupted\n");
+    expect(text).toContain("## Last verification\nTurn 1: `npm test` → interrupted\n");
+  });
+
+  test("F17: a command that failed before the user stopped the turn still failed", () => {
+    resetIds();
+    const w = world();
+    const c = new ClaudeSession({ id: "e17e17e1-0000-4000-8000-000000000004" });
+    c.user("Run the tests");
+    c.tool("Bash", { command: "npm test" }, "1 failing", true);
+    c.tool("Bash", { command: "sleep 60" }, "[Request interrupted by user for tool use]", true);
+    c.interrupt(true);
+    for (const n of [1, 2]) {
+      c.user(`question ${n}`);
+      c.assistant(`answer ${n}`);
+    }
+    w.claude(c);
+    const text = w.handoff(c.id).text;
+    expect(text).toContain("- turn 1: `npm test` → ✗ failed\n- turn 1: `sleep 60` → interrupted\n");
+  });
+
+  test("F20: escape sequences leave a title whole, not as bracket codes", () => {
+    expect(firstLine("\x1b[31mred\x1b[0m alert")).toBe("red alert");
+    expect(titleOf(null, null, ["\x1b]0;my window\x07build \x1b[1mnow\x1b[0m"])).toBe("build now");
+  });
+
+  test("F24: a turn with no steps has no Steps line, unless something else happened in it", () => {
+    resetIds();
+    const w = world();
+    const c = new ClaudeSession({ id: "f24f24f2-0000-4000-8000-000000000001" });
+    c.user("What does this repository do?");
+    c.assistant("It mirrors sessions.");
+    c.user("Explain it in detail");
+    c.assistant("Well, first");
+    c.interrupt();
+    w.claude(c);
+    const text = w.handoff(c.id).text;
+    expect(text).toContain("### Turn 1\nUser: What does this repository do?\nAI said:\n> It mirrors sessions.\n");
+    expect(text).toContain("### Turn 2\nUser: Explain it in detail\nSteps: none · interrupted\nAI said:\n> Well, first\n");
   });
 });

@@ -14,6 +14,9 @@ import { nullLogger } from "../../src/platform/log";
 import { openStore } from "../../src/store/db";
 import { importAll } from "../../src/store/import";
 import { sampleCodex } from "../fixtures/gen-codex";
+import { ADAPTERS } from "../../src/adapters";
+import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
+import { samplePi } from "../fixtures/gen-pi";
 
 const st = makeStyle(false);
 const out: Output = { interactive: true, st, width: 80 };
@@ -249,5 +252,26 @@ describe("step 9 (plan §6 ⑨)", () => {
       for (const l of wrapLine(s, n)) expect(width(l), `wrapLine ${n}`).toBeLessThanOrEqual(n);
     }
     expect(clip("⚠️⚠️⚠️", 4)).toBe("⚠️⚠️");
+  });
+});
+
+describe("plan §6 ⑪, F14: the filter rows in a narrow window", () => {
+  test("the agent row tightens so every agent stays in sight", () => {
+    resetIds();
+    resetOpenCodeIds();
+    const home = tempDir();
+    const p = testPlatform(home);
+    sampleSession({ id: "aaaaaaaa-0000-4000-8000-000000000001", cwd: "/work/demo" }).write(projectsDir(home));
+    sampleCodex({ id: "cccccccc-0000-4000-8000-000000000003", cwd: "/work/demo" }).write(path.join(home, ".codex"));
+    samplePi({ cwd: "/work/demo" }).write(path.join(home, ".pi", "agent", "sessions"));
+    const db = new OpenCodeDb(path.join(home, ".local", "share", "opencode", "opencode.db"));
+    sampleOpenCode(db, { directory: "/work/demo" });
+    db.close();
+    const store = openStore(p.dataDir);
+    importAll(store, p, ADAPTERS, nullLogger);
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), wslStopped: [], now: Date.now() } as Context;
+    const view = new PickerView(new Tui(), ctx, out, { all: true, project: "/work/demo" });
+    expect(view.render(30, 100)[1]).toBe(" Agent      ● All    ○ Claude    ○ Codex    ○ OpenCode    ○ Pi");
+    expect(view.render(30, 60)[1]).toBe(" Agent      ● All  ○ Claude  ○ Codex  ○ OpenCode  ○ Pi");
   });
 });

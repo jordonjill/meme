@@ -380,5 +380,8 @@ describe("both", () => {
     // No process of Pi at all: closed.
     for (const pid of [4242, 4545]) rmSync(path.join(distro, "proc", String(pid)), { recursive: true });
     expect(openCheck(p).stateOf(PI, files)).toBe("closed");
+    // An OpenCode session's file is `<database>#<id>`: closed too once no OpenCode runs (plan §6 ⑪, F3).
+    rmSync(path.join(distro, "proc", "4343"), { recursive: true });
+    expect(openCheck(p).stateOf(OC_ID, [`${linux("/home/u/.local/share/opencode/opencode.db")}#ses_x`])).toBe("closed");
   });
 });

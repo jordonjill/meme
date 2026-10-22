@@ -76,7 +76,7 @@ describe("handoff (plan §4.6.6)", () => {
     );
     // The last two turns with AI activity; the trailing /model turn has none.
     expect(text).toContain("## Last 2 turns\n\n### Turn 3\nUser: Make it colorful, use secure_delete style names\nSteps: 2 steps · 0 commands · edited /home/u/.claude/statusline.sh, /home/u/notes.md · interrupted\nAI said: (nothing)\n");
-    expect(text).toContain("### Turn 4\nUser: 好的，换成彩色\nSteps: 0 steps · 0 commands\nAI said:\n> Done: the status line now uses colors.\n");
+    expect(text).toContain("### Turn 4\nUser: 好的，换成彩色\nAI said:\n> Done: the status line now uses colors.\n");
     expect(text).toContain("Each step:\n- Edit(/home/u/.claude/statusline.sh) → ok\n- Write(/home/u/notes.md) → ok\n- ⏹ Interrupted by the user\n");
     expect(text).toContain("## Edited files\n- /home/u/.claude/statusline.sh (turn 3)\n- /home/u/notes.md (turn 3)\nFiles changed by commands");
     // `cat ~/.bashrc` only reads; `npm test` failed without an exit code.

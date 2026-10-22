@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { ClaudeSession } from "../fixtures/gen-claude";
 import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { samplePi } from "../fixtures/gen-pi";
 import { run, world, type World } from "./world";
@@ -137,5 +138,60 @@ describe("OpenCode and Pi through the command line (plan §6 ⑩)", () => {
     const before = statSync(copy).mtimeMs;
     expect(run(w, ["show", OC], { env }).out).toContain("❯ ! git status --short");
     expect(statSync(copy).mtimeMs).toBe(before);
+  });
+});
+
+describe("step 11 (plan §6 ⑪)", () => {
+  test("F4: OpenCode sessions started in the same millisecond: a short id past 12 characters is named like any other", () => {
+    const w = world();
+    resetOpenCodeIds();
+    const demo = path.join(w.home, "work", "demo");
+    mkdirSync(demo, { recursive: true });
+    const db = new OpenCodeDb(path.join(w.home, ".local", "share", "opencode", "opencode.db"));
+    for (const [id, text] of [["ses_ecbbcc1dcffeZpypkWJpAl7rdU", "first"], ["ses_ecbbcc1dcffeAbCdEfGhIjKlMn", "second"]] as const) {
+      const s = db.session({ id, directory: demo, start: "2026-10-01T00:00:00.000Z" });
+      s.say(`say ${text}`);
+      s.assistant(`ok ${text}`);
+    }
+    db.close();
+    expect(run(w, ["ls", "-a"]).out).toMatch(/ ecbbcc1dcffez +OpenCode·WSL .*say first/);
+    expect(run(w, ["show", "ecbbcc1dcffez"]).out).toContain("❯ say first");
+    const handoff = run(w, ["continue", "ecbbcc1dcffez"]);
+    expect(handoff.code).toBe(0);
+    expect(handoff.out).toContain("session ecbbcc1dcffez ·");
+    // Pulled into a Claude Code session, the handoff is known again as this session's.
+    const c = new ClaudeSession({ id: "c1c1c1c1-0000-4000-8000-000000000001", cwd: demo, start: "2026-10-02T00:00:00.000Z" });
+    c.bash("meme continue ecbbcc1dcffez", handoff.out);
+    c.user("go on");
+    c.assistant("ok");
+    c.write(path.join(w.home, ".claude", "projects"));
+    expect(run(w, ["continue", "c1c1c1c1"]).out).toContain("## Earlier session ecbbcc1dcffez (handed over into this one)");
+    const fake = fakeAgent(w, "opencode", '[ "$3" = "--help" ] && { echo "delete a session"; exit 0; }');
+    const gone = run(w, ["forget", "ecbbcc1dcffez", "--yes"], { env: { PATH: `${fake.bin}:${MINIMAL_PATH}` } });
+    expect(gone.err).not.toContain("forget takes session ids");
+  });
+});
+
+describe("step 11 (plan §6 ⑪): OpenCode's delete command", () => {
+  const opencode = (w: World, deleting: string) => {
+    const seen = path.join(w.home, "opencode-env");
+    const { bin } = fakeAgent(w, "opencode", `printf '%s\\n' "$OPENCODE_DISABLE_AUTOUPDATE" >> "${seen}"\n[ "$3" = "--help" ] && { echo "delete a session"; exit 0; }\n${deleting}`);
+    return { bin, seen };
+  };
+
+  test("F12: one that does not finish is stopped, and the session kept", () => {
+    const { w } = withBoth();
+    const { bin } = opencode(w, "sleep 10; exit 0");
+    const r = run(w, ["forget", OC, "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}`, MEME_DELETE_TIMEOUT_MS: "1000" } });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`✗ ${OC}: \`session delete ses_ecbbcc1dcffeAbCdEfGhIjKlMn\` did not finish within 1 second. meme's copy is kept.`);
+    expect(run(w, ["ls", "-a"]).out).toContain(OC);
+  });
+
+  test("F23: it runs with OpenCode's updates turned off, as the check before it does", () => {
+    const { w } = withBoth();
+    const { bin, seen } = opencode(w, "exit 0");
+    expect(run(w, ["forget", OC, "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}` } }).out).toContain(`✓ ${OC} deleted`);
+    expect(readFileSync(seen, "utf8")).toBe("1\n1\n");
   });
 });

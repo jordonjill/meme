@@ -33,6 +33,21 @@ function mirror(write: (home: string) => void) {
 }
 
 describe("Claude Code", () => {
+  test("F25 (plan §6 ⑪): 2.1.304's logs of what it sent to the model are known, and skipped", () => {
+    const m = mirror((home) => {
+      const s = new ClaudeSession({ id: A });
+      s.user("Hello");
+      s.lines.push({ type: "api-request-shape", sessionId: A, shapeHash: "h1", timestamp: "2026-10-22T08:00:00.000Z", version: "2.1.304", shape: { system: "…" } });
+      s.lines.push({ type: "api-request-blob", sessionId: A, hash: "b1", message: { role: "user", content: "Hello" } });
+      s.lines.push({ type: "api-request", sessionId: A, id: "r1", timestamp: "2026-10-22T08:00:01.000Z", version: "2.1.304", shapeHash: "h1", base: [] });
+      s.assistant("Hi.");
+      s.write(projectsDir(home));
+    });
+    expect(m.messages(A)).toEqual(["Hello"]);
+    expect(unknownTypes(m.db, "unknown")).toEqual([]);
+    expect(m.unread()).toEqual([]);
+  });
+
   test("R1: a message the user sent while Claude Code worked is one of the user's messages, in its place", () => {
     const m = mirror((home) => {
       const s = new ClaudeSession({ id: A });

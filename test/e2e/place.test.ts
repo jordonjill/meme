@@ -132,3 +132,50 @@ describe.skipIf(process.platform === "win32")("where a session is continued (arc
     expect(run(w, ["ls", "--plain"], { cwd: path.join(work, "meme"), env }).out).toContain("fix work");
   });
 });
+
+describe.skipIf(process.platform === "win32")("F8 (plan §6 ⑪): a Windows session that ran in \\\\wsl.localhost", () => {
+  const UNC = "aaaa0004-0000-4000-8000-000000000004";
+  /** A Windows session in `<prefix>\<distro>` + a WSL path, as Claude Code on Windows writes it. */
+  function uncWorld(prefix: string, distro: string, dir: (work: string) => string) {
+    const p = placeWorld();
+    const s = new ClaudeSession({ id: UNC, cwd: `${prefix}\\${distro}${dir(p.work).replace(/\//g, "\\")}`, start: "2026-10-11T11:00:00.000Z" });
+    s.user("unc work");
+    s.assistant("ok");
+    s.write(path.join(p.drives, "c", "Users", "me", ".claude", "projects"));
+    return { ...p, env: { ...p.env, WSL_DISTRO_NAME: "Ubuntu" } };
+  }
+
+  for (const prefix of ["\\\\wsl.localhost", "\\\\wsl$"]) {
+    test(`${prefix}: in its repository, as usual, with no autocrlf note; in another, the note`, () => {
+      const { w, work, env } = uncWorld(prefix, "Ubuntu", (work) => path.join(work, "meme"));
+      const same = run(w, ["continue", "aaaa0004"], { cwd: path.join(work, "meme", "src"), env });
+      expect(same.out).toContain(`Source: Claude·Win · session aaaa0004 · dir ${path.join(work, "meme")} (${prefix}\\Ubuntu`);
+      expect(note(same.out)).toBeNull();
+      expect(same.out).not.toContain("autocrlf");
+      const other = run(w, ["continue", "aaaa0004"], { cwd: path.join(work, "notes"), env });
+      expect(note(other.out)).toContain(`You are in ${path.join(work, "notes")}, which is not that repository.`);
+      expect(other.out).not.toContain("autocrlf");
+    });
+  }
+
+  test("listed under its project in WSL, and pushed into its folder there", () => {
+    const { w, work, env } = uncWorld("\\\\wsl.localhost", "Ubuntu", (work) => path.join(work, "meme"));
+    expect(run(w, ["ls"], { cwd: path.join(work, "meme"), env }).out).toContain("aaaa0004");
+    const claude = fakeClaude(w);
+    const p = run(w, ["continue", "aaaa0004", "--in", "claude"], { cwd: w.home, env: { ...env, PATH: `${claude.bin}:${MINIMAL_PATH}`, MEME_TERMINAL: "1" } });
+    expect(p.code).toBe(0);
+    expect(claude.cwd()).toBe(path.join(work, "meme"));
+  });
+
+  test("in another distribution: never taken for a folder under the current directory", () => {
+    const { w, work, env } = uncWorld("\\\\wsl.localhost", "Debian", () => "/home/u/proj");
+    for (const cwd of [path.join(work, "meme"), path.join(work, "notes")]) {
+      const r = run(w, ["continue", "aaaa0004"], { cwd, env });
+      expect(note(r.out)).toBe(
+        `Note: This session ran in \\\\wsl.localhost\\Debian\\home\\u\\proj (Windows). You are in ${cwd}, which is not that directory. ` +
+          "Ask the user where to work before changing anything. They can also run `meme continue aaaa0004` in a terminal to open an agent in the right place.",
+      );
+      expect(r.out).not.toContain("autocrlf");
+    }
+  });
+});

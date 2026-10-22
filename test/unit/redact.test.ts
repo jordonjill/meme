@@ -117,3 +117,49 @@ describe("passwords and keys (plan §6 ⑨, R5 and R24)", () => {
     }
   });
 });
+
+describe("prefixed tokens from gitleaks (plan §6 ⑪, F1)", () => {
+  const awsSecret = fake("wJalrXUtnFEMI/K7", 24, "Q");
+  const jwt = `${fake("eyJ", 20, "h")}.${fake("eyJ", 24, "p")}.${fake("", 30, "s")}`;
+  const cases: [input: string, kind: string, secret: string][] = [
+    [`AWS_SECRET_ACCESS_KEY=${awsSecret}`, "aws-secret", awsSecret],
+    [`aws_secret_access_key = ${awsSecret}`, "aws-secret", awsSecret],
+    [`"SecretAccessKey": "${awsSecret}",`, "aws-secret", awsSecret],
+    [`SLACK_TOKEN=${fake("xoxb-123456789012-", 24, "k")}`, "slack-token", "kkkkkkkkkk"],
+    [`key=${fake("AIza", 35, "g")}`, "google-api-key", "gggggggggg"],
+    [`GITLAB_TOKEN=${fake("glpat-", 20, "l")}`, "gitlab-token", "llllllllll"],
+    [`//registry.npmjs.org/:_authToken=${fake("npm_", 36, "n")}`, "npm-token", "nnnnnnnnnn"],
+    [`STRIPE=${fake("sk_live_", 24, "t")}`, "stripe-key", "tttttttttt"],
+    [`STRIPE=${fake("sk_test_", 24, "t")}`, "stripe-key", "tttttttttt"],
+    [`STRIPE=${fake("rk_live_", 24, "t")}`, "stripe-key", "tttttttttt"],
+    [`HF_TOKEN=${fake("hf_", 34, "f")}`, "huggingface-token", "ffffffffff"],
+    [`token: ${jwt}`, "jwt", jwt],
+    [`curl -H "Authorization: Basic ${fake("dXNl", 24, "b")}=="`, "basic-auth", "bbbbbbbbbb"],
+  ];
+
+  test("each is replaced with [REDACTED:<kind>]", () => {
+    for (const [input, kind, secret] of cases) {
+      const out = redactText(input);
+      expect(out, input).toContain(`[REDACTED:${kind}]`);
+      expect(out, input).not.toContain(secret);
+    }
+  });
+
+  test("the cheap pre-check lets each of them through", () => {
+    for (const [input] of cases) expect(mayHoldSecret(input), input).toBe(true);
+  });
+
+  test("names, code and prose that only look alike are left alone", () => {
+    const keep = [
+      "npm_config_cache=/tmp/npm",
+      "from huggingface_hub import hf_hub_download",
+      "sk_live_mode_enabled = True",
+      "Basic usage: run `meme ls` first",
+      "the basic authentication scheme",
+      "aws_secret_access_key = os.environ['AWS_SECRET_ACCESS_KEY']",
+      // Not a prefixed format: a 32-character hex value is as likely a hash (plan §4.6.7, no entropy checks).
+      `API_KEY=${"0123456789abcdef".repeat(2)}`,
+    ];
+    for (const line of keep) expect(redactText(line), line).toBe(line);
+  });
+});

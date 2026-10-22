@@ -86,6 +86,10 @@ describe.skipIf(process.platform === "win32")("meme on Windows reads WSL", () =>
     expect(r.out).toContain("meme's copy of OpenCode's database, made again when needed");
     expect(r.out).toContain("✓ ecbbcc1d deleted");
     expect(readFileSync(args, "utf8")).toBe("session\ndelete\nses_ecbbcc1dcffeAbCdEfGhIjKlMn\n");
+    // Windows' variables do not reach WSL: OpenCode is told on its command line not to update itself (plan §6 ⑪, F23).
+    const deletes = fake.calls().filter((c) => c.includes("opencode session delete"));
+    expect(deletes.length).toBe(2);
+    for (const c of deletes) expect(c).toContain("env OPENCODE_DISABLE_AUTOUPDATE=1 opencode session delete");
     // No copy of the database is left holding the session.
     expect(readdirSync(cache)).toEqual([]);
   });

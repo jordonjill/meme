@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
+import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { run, runInTerminal, SCRIPT, world, type World } from "./world";
 
 /** A stand-in program on a PATH of its own. */
@@ -328,5 +329,80 @@ describe.skipIf(process.platform === "win32")("step 9 (plan §6 ⑨)", () => {
     const bin = fakeBin(w, "claude", "exit 0");
     const r = run(w, ["continue", "f00d", "--in", "claude"], { env: { PATH: `${bin}:${MINIMAL_PATH}`, MEME_TERMINAL: "1" } });
     expect(r.err).toBe("meme: meme does not know which directory f00df00d started in. To continue it, open the agent where you want to work and run `! meme continue f00df00d`.\n");
+  });
+});
+
+describe.skipIf(process.platform === "win32")("step 11 (plan §6 ⑪)", () => {
+  test("F2: uninstall removes only meme's files from a MEME_HOME that holds others", () => {
+    const w = world();
+    const data = path.join(w.home, "Sync", "notes");
+    mkdirSync(path.join(data, "sub"), { recursive: true });
+    writeFileSync(path.join(data, "todo.txt"), "mine");
+    writeFileSync(path.join(data, "sub", "draft.md"), "mine too");
+    run(w, ["ls"], { env: { MEME_HOME: data } });
+    expect(existsSync(path.join(data, "meme.sqlite"))).toBe(true);
+    const r = run(w, ["uninstall", "--yes"], { env: { MEME_HOME: data } });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Other files in ~/Sync/notes are kept.");
+    expect(readdirSync(data).sort()).toEqual(["sub", "todo.txt"]);
+    expect(readFileSync(path.join(data, "sub", "draft.md"), "utf8")).toBe("mine too");
+  });
+
+  test("F2: with MEME_HOME at home, uninstall leaves the home and its own logs and cache folders", () => {
+    const w = world();
+    for (const dir of ["logs", "cache"]) {
+      mkdirSync(path.join(w.home, dir), { recursive: true });
+      writeFileSync(path.join(w.home, dir, "mine.txt"), "mine");
+    }
+    run(w, ["ls"], { env: { MEME_HOME: w.home } });
+    expect(existsSync(path.join(w.home, "meme.sqlite"))).toBe(true);
+    const r = run(w, ["uninstall", "--yes"], { env: { MEME_HOME: w.home } });
+    expect(r.code).toBe(0);
+    expect(existsSync(path.join(w.home, "meme.sqlite"))).toBe(false);
+    expect(existsSync(path.join(w.home, "logs", "meme.log"))).toBe(false);
+    expect(readFileSync(path.join(w.home, "logs", "mine.txt"), "utf8")).toBe("mine");
+    expect(readFileSync(path.join(w.home, "cache", "mine.txt"), "utf8")).toBe("mine");
+    expect(readdirSync(projects(w)).length).toBe(1);
+  });
+
+  test("F6: install --dry-run in WSL lists an OpenCode database on Windows but copies nothing", () => {
+    const w = world();
+    const db = new OpenCodeDb(path.join(w.users, "me", ".local", "share", "opencode", "opencode.db"));
+    sampleOpenCode(db, { directory: "C:\\Users\\me\\work\\app" });
+    db.close();
+    const r = run(w, ["install", "--dry-run"]);
+    expect(r.out).toMatch(/OpenCode·Win +.*opencode\.db +database found \(\d+KB\)\n/);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+  });
+
+  test("F6: install --dry-run on Windows lists the sources in a running WSL, as install does", () => {
+    const w = world();
+    resetOpenCodeIds();
+    const linux = (p: string) => path.join(w.home, "wsl", "Ubuntu", ...p.split("/").filter(Boolean));
+    const db = new OpenCodeDb(linux("/home/u/.local/share/opencode/opencode.db"));
+    sampleOpenCode(db, { directory: "/home/u/work/app" });
+    db.close();
+    const env = { MEME_ENV: "win", MEME_WSL_DIR: path.join(w.home, "wsl"), MEME_WSL_RUNNING: "Ubuntu" };
+    const dry = run(w, ["install", "--dry-run"], { env });
+    expect(dry.out).toMatch(/OpenCode·WSL +.*opencode\.db +database found \(\d+KB\)\n/);
+    expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
+    const real = run(w, ["install"], { env });
+    expect(real.out).toMatch(/OpenCode·WSL +.* 1 session\n/);
+  });
+
+  test("F15: install names each instruction file once, and the agents as a list", () => {
+    const w = world();
+    const help = run(w, ["install", "--help"]).out;
+    expect(help).toContain("no\nskills, no CLAUDE.md or AGENTS.md, no settings, no hooks.");
+    const r = run(w, ["install"], { env: { PATH: MINIMAL_PATH } });
+    expect(r.out).toContain("works inside Claude Code, Codex, OpenCode and Pi.");
+  });
+
+  test("F19: install --dry-run lists the sources in the order install does", () => {
+    const w = world();
+    const labels = (out: string) => [...out.split("\nSessions\n")[1]!.matchAll(/^  (\S+·\S+) /gm)].map((m) => m[1]);
+    const dry = labels(run(w, ["install", "--dry-run"]).out);
+    expect(dry).toEqual(labels(run(w, ["install"]).out));
+    expect(dry.slice(0, 2)).toEqual(["Claude·Win", "Claude·WSL"]);
   });
 });

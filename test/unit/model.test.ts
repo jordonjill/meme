@@ -74,6 +74,9 @@ describe("turn summaries and endings", () => {
     expect(mayBeRunning(Date.now() - 60_000)).toBe(true);
     expect(mayBeRunning(Date.now() - 3_600_000)).toBe(false);
     expect(mayBeRunning(null)).toBe(false);
+    // Ahead of this clock, by any amount: it may be now (plan §6 ⑪, F18).
+    expect(mayBeRunning(Date.now() + 60_000)).toBe(true);
+    expect(mayBeRunning(Date.now() + 2 * 3_600_000)).toBe(true);
   });
 });
 
