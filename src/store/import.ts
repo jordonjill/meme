@@ -321,7 +321,7 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
     const redacted = mayHoldSecret(raw) ? redactDeep(rec.body) : rec.body;
     const body = redacted === rec.body ? raw : JSON.stringify(redacted);
     const text = searchText(redacted);
-    const hash = Bun.hash(JSON.stringify([rec.uid, rec.part, rec.turn, rec.injected, rec.role, rec.ts, body])).toString(36);
+    const hash = Bun.hash(JSON.stringify([rec.uid, rec.part, rec.turn, rec.injected, rec.role, rec.ts, body, rec.command ?? null])).toString(36);
     return { seq, rec, body, text, hash };
   });
 
@@ -339,11 +339,11 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
        size = excluded.size, mtime = excluded.mtime`,
   );
   const upsertRecord = db.prepare(
-    `INSERT INTO records (session, seq, uid, part, turn, injected, copied, role, ts, body, text, hash)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+    `INSERT INTO records (session, seq, uid, part, turn, injected, copied, role, ts, body, text, hash, command)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(session, seq) DO UPDATE SET uid = excluded.uid, part = excluded.part, turn = excluded.turn,
        injected = excluded.injected, copied = 0, role = excluded.role, ts = excluded.ts,
-       body = excluded.body, text = excluded.text, hash = excluded.hash`,
+       body = excluded.body, text = excluded.text, hash = excluded.hash, command = excluded.command`,
   );
 
   db.transaction(() => {
@@ -364,7 +364,7 @@ export function writeSession(db: Database, converted: Converted, files: FileStat
     for (const row of rows) {
       if (existing.get(row.seq) === row.hash) continue;
       const r = row.rec;
-      upsertRecord.run(s.id, row.seq, r.uid, r.part, r.turn, r.injected, r.role, r.ts, row.body, row.text, row.hash);
+      upsertRecord.run(s.id, row.seq, r.uid, r.part, r.turn, r.injected, r.role, r.ts, row.body, row.text, row.hash, r.command ? 1 : null);
     }
     db.run("DELETE FROM records WHERE session = ? AND seq >= ?", [s.id, rows.length]);
     // Read again: no longer unreadable; and the record types it does not know, as of now.

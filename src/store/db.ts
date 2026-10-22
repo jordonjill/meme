@@ -9,7 +9,7 @@ import { errorCode, removeFile } from "../platform/fs";
  * original sessions (plan §4.4); there are no migrations. A newer one, written by
  * a later meme, is left alone: this one works on a copy in memory.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA = `
 CREATE TABLE meta    (key TEXT PRIMARY KEY, value TEXT);
@@ -52,6 +52,8 @@ CREATE TABLE records (
   body     TEXT NOT NULL,
   text     TEXT,
   hash     TEXT NOT NULL,
+  -- 1: a local command the agent ran itself (/model), which gets no reply.
+  command  INTEGER,
   PRIMARY KEY (session, seq)
 );
 -- Files meme could not convert (arch.md §6.1, point 2); tried again when the file or meme changes.

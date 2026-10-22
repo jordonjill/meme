@@ -156,11 +156,12 @@ interface RecordRow {
   role: string;
   ts: string | null;
   body: string;
+  command: number | null;
 }
 
 export function sessionRecords(db: Database, session: string): Rec[] {
   return db
-    .query<RecordRow, [string]>("SELECT seq, uid, part, turn, injected, copied, role, ts, body FROM records WHERE session = ? ORDER BY seq")
+    .query<RecordRow, [string]>("SELECT seq, uid, part, turn, injected, copied, role, ts, body, command FROM records WHERE session = ? ORDER BY seq")
     .all(session)
     .map((r) => ({
       seq: r.seq,
@@ -172,6 +173,7 @@ export function sessionRecords(db: Database, session: string): Rec[] {
       role: r.role,
       ts: r.ts,
       body: JSON.parse(r.body) as Body,
+      ...(r.command ? { command: true } : {}),
     }));
 }
 
