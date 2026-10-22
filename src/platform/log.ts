@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import path from "node:path";
+import pkg from "../../package.json";
 
 export interface Logger {
   info(message: string): void;
@@ -26,7 +27,8 @@ export function fileLogger(dataDir: string): Logger {
   };
   return {
     info: (message) => write("INFO", message),
-    error: (message, err) => write("ERROR", err ? `${message}: ${describe(err)}` : message),
+    // Which meme wrote it: a log pasted into an issue may span an upgrade (arch.md 6.5).
+    error: (message, err) => write("ERROR", `[meme ${pkg.version}] ${err ? `${message}: ${describe(err)}` : message}`),
   };
 }
 
