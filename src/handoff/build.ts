@@ -2,7 +2,7 @@ import path from "node:path";
 import { summaryText } from "../model/compaction";
 import { isCompaction } from "../model/injected";
 import type { Rec } from "../model/record";
-import { callsOf, contentOf, promptText } from "../model/record";
+import { callsOf, contentOf, keptFromModel, promptText } from "../model/record";
 import { commandOf, describeCall, editedFiles as filesOfCall, exitCodeOf, oneLine, resultFailed, resultText, type ParsedCall } from "../model/tools";
 import { endingOf, groupTurns, kindOf, lastActive, mayBeRunning, type Turn } from "../model/turns";
 import type { Env } from "../platform/env";
@@ -93,7 +93,10 @@ function startDir(records: Rec[], session: SessionRow): string | null {
 
 /** The user's message as text: control characters (a pasted escape sequence) shown, not passed on (R23). */
 function promptOf(t: Turn): string {
-  return visible(promptText(contentOf(t.prompt!.body) ?? "").trim());
+  const content = contentOf(t.prompt!.body) ?? "";
+  // Kept from the model where the user ran it, so from the next one too (plan §6 ⑪, F9).
+  if (keptFromModel(content)) return "(a command the user ran and kept from the model)";
+  return visible(promptText(content).trim());
 }
 
 /** A user message, cut at 1,500 characters; `show` says how to read the rest while the session is in the mirror. */
