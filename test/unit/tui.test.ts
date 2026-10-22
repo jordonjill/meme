@@ -54,7 +54,8 @@ describe("choosing in a terminal (meme continue)", () => {
     const s = sampleSession({ cwd: "/work/demo", branch: "feature/a-branch-name-that-goes-on-and-on" });
     s.write(projectsDir(home));
     const { store } = importInto(p);
-    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), wslStopped: [], now: Date.now() } as Context;
+    // A fixed clock: the label below says how long ago the session was.
+    const ctx = { platform: p, store, log: { info() {}, error() {} }, imported: null, project: "/work/demo", current: new Set<string>(), wslStopped: [], now: Date.parse("2026-10-08T12:00:00.000Z") } as Context;
     const view = new PickerView(new Tui(), ctx, out, { all: false, project: "/work/demo" }, { title: "Delete which session?", verb: "choose", onPick() {} });
     const wide = view.render(12, 120);
     expect(wide[0]).toContain("Delete which session?");
