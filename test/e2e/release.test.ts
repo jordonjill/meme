@@ -154,7 +154,7 @@ describe.skipIf(process.platform === "win32")("item 8: install mentions agents o
     const env = { MEME_ENV: "win", MEME_WSL_DIR: wsl, MEME_WSL_RUNNING: "Ubuntu", MEME_WSL_EXE: path.join(w.home, "wsl.exe"), PATH: `${bin}:/usr/bin:/bin` };
     return { env, calls: () => (existsSync(log) ? readFileSync(log, "utf8").trimEnd().split("\n") : []) };
   }
-  const HINT = /Agents also in WSL \(Ubuntu\): Claude Code, Codex\. To use `! meme continue` in them, install meme there too:\n {2}\S/;
+  const HINT = /Agents also in WSL \(Ubuntu\): Claude Code, Codex\. To use `! meme continue` in them, install meme there too:\n {2}curl -fsSL https:\/\/github\.com\/jordonjill\/meme\/releases\/latest\/download\/install\.sh \| sh\n/;
 
   test("on Windows: claude and codex in a running WSL with no meme there", () => {
     const w = world();
@@ -176,7 +176,7 @@ describe.skipIf(process.platform === "win32")("item 8: install mentions agents o
 
   test("in WSL: an agent on Windows and no meme there", () => {
     const w = world();
-    expect(run(w, ["install"]).out).toMatch(/Agents also on Windows: Claude Code\. To use `! meme continue` in them, install meme on Windows too:\n {2}\S/);
+    expect(run(w, ["install"]).out).toMatch(/Agents also on Windows: Claude Code\. To use `! meme continue` in them, install meme on Windows too:\n {2}irm https:\/\/github\.com\/jordonjill\/meme\/releases\/latest\/download\/install\.ps1 \| iex\n/);
     // meme has run on Windows: its folder is there.
     mkdirSync(path.join(w.users, "me", ".meme"), { recursive: true });
     expect(run(w, ["install"]).out).not.toContain("Agents also on Windows");
