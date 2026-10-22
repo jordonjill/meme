@@ -148,3 +148,18 @@ describe.skipIf(process.platform === "win32")("agent upgrades", () => {
     expect(run(w, ["show", "11111111", "--plain"]).out).not.toContain("couldn't read");
   });
 });
+
+describe("plan §6 ⑪, F22: lines that are not JSON", () => {
+  test("are a damaged file, not a new agent version", () => {
+    const w = world();
+    const c = new ClaudeSession({ id: "c1a0de97-0000-4000-8000-0000000000b6", cwd: demoDir(w) });
+    c.user("hello");
+    c.assistant("hi");
+    const lines = c.text().split("\n");
+    c.write(path.join(w.home, ".claude", "projects"), [lines[0], "this is not json", ...lines.slice(1)].join("\n"));
+    const status = run(w, ["status"]).out;
+    expect(status).toContain("Record types: all known and read\n");
+    expect(status).toContain("Not JSON:     1 line in 1 session, skipped (a damaged file?)\n");
+    expect(run(w, ["show", "c1a0de97", "--plain"]).out).toContain("\n1 line that is not JSON was skipped (a damaged file?); see `meme status`.\n");
+  });
+});

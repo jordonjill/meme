@@ -64,7 +64,9 @@ describe("turn summaries and endings", () => {
     expect(endingOf(records.slice(0, 4))).toBe("unfinished");
     expect(endingOf(records.slice(0, 3))).toBe("unfinished");
     expect(endingOf([...records.slice(0, 3), rec(9, 1, { role: "user", content: "[Request interrupted by user for tool use]", timestamp: ts })])).toBe("interrupted");
-    expect(endingOf([...records, rec(9, 2, { role: "user", content: "/exit", timestamp: ts })])).toBe("finished");
+    // A local command the agent ran itself gets no reply (plan §6 ⑪, F7); a message that only starts with a slash does.
+    expect(endingOf([...records, { ...rec(9, 2, { role: "user", content: "/exit", timestamp: ts }), command: true }])).toBe("finished");
+    expect(endingOf([...records, rec(9, 2, { role: "user", content: "/etc/hosts is broken, please fix it", timestamp: ts })])).toBe("unfinished");
     expect(endingOf([...records, rec(9, 2, { role: "user", content: "and then?", timestamp: ts })])).toBe("unfinished");
     // Injected records at the end do not count.
     expect(endingOf([...records, rec(9, 1, { role: "user", content: "<system-reminder>x</system-reminder>", timestamp: ts }, "harness")])).toBe("finished");

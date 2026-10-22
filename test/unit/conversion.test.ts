@@ -33,6 +33,23 @@ function mirror(write: (home: string) => void) {
 }
 
 describe("Claude Code", () => {
+  test("F7 (plan §6 ⑪): a message that starts with a slash, last and unanswered, is unfinished; a local command is not", () => {
+    const m = mirror((home) => {
+      const s = new ClaudeSession({ id: A });
+      s.user("Check the network");
+      s.assistant("It works.");
+      s.user("/etc/hosts is broken, please fix it");
+      s.write(projectsDir(home));
+      const t = new ClaudeSession({ id: X });
+      t.user("Check the network");
+      t.assistant("It works.");
+      t.user("<command-name>/exit</command-name>\n            <command-message>exit</command-message>\n            <command-args></command-args>");
+      t.write(projectsDir(home));
+    });
+    expect(endingOf(m.records(A))).toBe("unfinished");
+    expect(endingOf(m.records(X))).toBe("finished");
+  });
+
   test("F25 (plan §6 ⑪): 2.1.304's logs of what it sent to the model are known, and skipped", () => {
     const m = mirror((home) => {
       const s = new ClaudeSession({ id: A });

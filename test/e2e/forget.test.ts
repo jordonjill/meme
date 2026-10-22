@@ -508,6 +508,24 @@ describe.skipIf(process.platform !== "linux")("meme forget: step 11 (plan §6 �
     expect(run(w, ["ls", "-a"]).out).not.toContain("25252525");
   });
 
+  test("F11: a Windows session that stopped on a running command is kept for an hour, not five minutes", () => {
+    const w = world();
+    const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+    const running = new ClaudeSession({ id: "27272727-0000-4000-8000-000000000027", cwd: "C:\\Users\\me\\work\\build", start: at(20) });
+    running.user("Build the release");
+    running.call("Bash", { command: "make release" });
+    running.write(path.join(w.users, "me", ".claude", "projects"));
+    const done = new ClaudeSession({ id: "28282828-0000-4000-8000-000000000028", cwd: "C:\\Users\\me\\work\\build", start: at(20) });
+    done.user("Build the release");
+    done.assistant("Built.");
+    done.write(path.join(w.users, "me", ".claude", "projects"));
+    writeFileSync(path.join(w.home, "wsl.conf"), `[automount]\nroot = ${w.home}/no-drives/\n`);
+    const env = { PATH: MINIMAL_PATH, MEME_WSL_CONF: path.join(w.home, "wsl.conf") };
+    const r = run(w, ["forget", "2727", "--yes"], { env });
+    expect(r.err).toMatch(/^meme: 27272727 was written 1\d minutes ago, while a command was running, and may still be open in Claude Code; you can delete it after \d\d:\d\d/);
+    expect(run(w, ["forget", "2828", "--yes"], { env }).out).toContain("✓ 28282828 deleted");
+  });
+
   test("F10: deleting a session Claude Desktop ran in WSL also deletes Desktop's copy on Windows", () => {
     const w = world();
     const id = "26262626-0000-4000-8000-000000000026";

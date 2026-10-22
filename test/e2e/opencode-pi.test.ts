@@ -188,6 +188,24 @@ describe("step 11 (plan §6 ⑪): OpenCode's delete command", () => {
     expect(run(w, ["ls", "-a"]).out).toContain(OC);
   });
 
+  test("F5: when it fails after the full outputs went, it says they did", () => {
+    const w = world();
+    resetOpenCodeIds();
+    const data = path.join(w.home, ".local", "share", "opencode");
+    const db = new OpenCodeDb(path.join(data, "opencode.db"));
+    const s = db.session({ id: "ses_ecbbcc1dcffeAbCdEfGhIjKlMn", directory: path.join(w.home, "work", "demo"), start: "2026-10-01T00:00:00.000Z" });
+    s.say("build it");
+    const out = path.join(data, "tool-output", "tool_abc123");
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, "very long output\n");
+    s.tool("bash", { command: "make" }, "...output truncated...", { metadata: { output: "x", exit: 0, outputPath: out } });
+    s.assistant("done");
+    db.close();
+    const { bin } = opencode(w, 'echo "database is locked" >&2; exit 1');
+    const r = run(w, ["forget", OC, "--yes"], { env: { PATH: `${bin}:${MINIMAL_PATH}` } });
+    expect(r.out).toContain(`✗ ${OC}: \`session delete ses_ecbbcc1dcffeAbCdEfGhIjKlMn\` failed: database is locked. Already deleted: the full output of a long command. meme's copy is kept.`);
+  });
+
   test("F23: it runs with OpenCode's updates turned off, as the check before it does", () => {
     const { w } = withBoth();
     const { bin, seen } = opencode(w, "exit 0");

@@ -77,7 +77,7 @@ describe("Pi (session format 3, 1.2.0)", () => {
       "Run the tests",
       "Change hello to hi",
       "! git status --short",
-      "! echo private-123",
+      "!! echo private-123",
       "Wait for the build",
       "[Pi: the user stopped this turn]",
       "Skip the build; check the zebra config instead",
@@ -383,5 +383,17 @@ describe("both", () => {
     // An OpenCode session's file is `<database>#<id>`: closed too once no OpenCode runs (plan §6 ⑪, F3).
     rmSync(path.join(distro, "proc", "4343"), { recursive: true });
     expect(openCheck(p).stateOf(OC_ID, [`${linux("/home/u/.local/share/opencode/opencode.db")}#ses_x`])).toBe("closed");
+  });
+});
+
+describe("plan §6 ⑪, F9: what the user kept from Pi's model", () => {
+  test("a `!!` command stays out of a handoff, and is in show and search as `!!`", () => {
+    const m = mirror((home) => samplePi().write(piSessions(home)));
+    const text = m.handoff(PI).text;
+    expect(text).not.toContain("private-123");
+    expect(text).toContain("5. (a command the user ran and kept from the model)\n");
+    const bang = m.records(PI).find((r) => promptText((r.body as { content: string }).content ?? "") === "!! echo private-123");
+    expect(bang).toBeDefined();
+    expect(shellOutput((bang!.body as { content: string }).content)).toBe("private-123\n");
   });
 });
