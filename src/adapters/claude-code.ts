@@ -74,6 +74,9 @@ export const claudeCode: Adapter = {
   forgetPlan(target: ForgetTarget, platform: Platform): ForgetPlan {
     const steps: ForgetStep[] = [];
     const homes = new Set<string>();
+    // Claude Desktop's copy of a session it ran in WSL, in Windows' projects/ssh-<id>, which meme does not read (plan §6 ⑪, F10).
+    const copies = claudeCode.roots(platform).map((r) => path.join(r.path, `ssh-${target.id}`)).filter(isDir);
+    for (const dir of copies) steps.push({ kind: "remove", path: dir, dir: true, what: "Claude Desktop's copy of the session on Windows" });
     for (const file of target.files) {
       const projectDir = path.dirname(file);
       const home = path.dirname(path.dirname(projectDir));
@@ -90,7 +93,7 @@ export const claudeCode: Adapter = {
       homes.add(home);
     }
     const notes = [...homes].map((h) => `${claudeCodeProfile.name} keeps what you typed in its own input history (${displayPath(path.join(h, "history.jsonl"), platform.home)}).`);
-    return { steps, gone: target.files, notes };
+    return { steps, gone: [...copies, ...target.files], notes };
   },
 
   launch(firstMessage: string) {
