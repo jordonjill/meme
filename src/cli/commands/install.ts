@@ -6,13 +6,13 @@ import { PROFILES } from "../../adapters/profiles";
 import type { SourceRoot } from "../../adapters/types";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
-import { readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
+import { findInWsl, readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
 import { padEnd, plural, size } from "../../render/text";
 import { counts, sources } from "../../store/queries";
 import { parse, UsageError } from "../args";
-import { createContext, write } from "../context";
-import { HOW_TO_CONTINUE } from "../usage";
+import { createContext, write, type Context } from "../context";
+import { HOW_TO_CONTINUE, INSTALL_HINT } from "../usage";
 
 export const installHelp = `Usage: meme install [--dry-run]
 
@@ -29,6 +29,34 @@ const inWords = (words: string[]) => (words.length <= 1 ? (words[0] ?? "") : `${
 /** Is the agent on this machine (its home folder, or its command on PATH)? */
 export function agentPresent(platform: Platform, home: string, command: string): boolean {
   return existsSync(home) || findCommand(command, platform.vars) !== null;
+}
+
+/**
+ * Agents on the other side of WSL and Windows where meme is not installed, so
+ * `! meme continue` would not work in them (plan §6 ⑫, item 8). From Windows only
+ * running distributions are asked, through the user's shell there; none is started.
+ * From WSL, an agent's folder in a Windows user folder, and no `.meme` beside it.
+ */
+function elsewhere(ctx: Context): string[] {
+  const p = ctx.platform;
+  const out: string[] = [];
+  if (p.env === "win") {
+    for (const distro of [...new Set(p.wsl.map((h) => h.distro))]) {
+      const place = p.wsl.find((h) => h.distro === distro)!;
+      const tools = findInWsl(p, place, place.home, ["meme", ...PROFILES.map((x) => x.command)]);
+      if (!tools.ok || tools.found.meme) continue;
+      const agents = PROFILES.filter((x) => tools.found[x.command]).map((x) => x.name);
+      if (agents.length) out.push(`Agents also in WSL (${distro}): ${agents.join(", ")}. To use \`! meme continue\` in them, install meme there too:`, `  ${INSTALL_HINT.linux}`);
+    }
+  } else if (p.env === "wsl" && p.windowsUsersDir) {
+    const users = p.windowsUsersDir;
+    const roots = ADAPTERS.flatMap((a) => a.roots(p)).filter((r) => r.env === "win" && installedAt(r));
+    const userOf = (dir: string) => path.relative(users, dir).split(/[\\/]/)[0]!;
+    const without = roots.filter((r) => !existsSync(path.join(users, userOf(r.path), ".meme")));
+    const agents = PROFILES.filter((x) => without.some((r) => r.agent === x.agent)).map((x) => x.name);
+    if (agents.length) out.push(`Agents also on Windows: ${agents.join(", ")}. To use \`! meme continue\` in them, install meme on Windows too:`, `  ${INSTALL_HINT.windows}`);
+  }
+  return out;
 }
 
 export async function install(argv: string[]): Promise<number> {
@@ -53,6 +81,7 @@ export async function install(argv: string[]): Promise<number> {
   lines.push("", "Sessions");
   const table: [string, string, string][] = [];
   let summary: string;
+  let otherSide: string[] = [];
   if (dry) {
     // The sources a real run reads: on Windows also those in running WSL distributions, none started (plan §6 ⑪, F6).
     if (readsWsl(platform)) {
@@ -85,11 +114,13 @@ export async function install(argv: string[]): Promise<number> {
     }
     const c = counts(ctx.store.db);
     summary = `mirrored ${plural(c.sessions, "session")} into ${ctx.store.memory ? "memory (nothing here can be written)" : displayPath(ctx.store.file, home)}`;
+    otherSide = elsewhere(ctx);
   }
   const lw = Math.max(0, ...table.map((r) => r[0].length));
   const w = Math.max(0, ...table.map((r) => r[1].length));
   for (const [lab, dir, n] of table) lines.push(`  ${padEnd(lab, lw)}  ${padEnd(dir, w)}  ${n}`);
   lines.push(`  ${summary}`);
+  if (otherSide.length) lines.push("", ...otherSide);
 
   if (!findCommand("meme", platform.vars)) {
     lines.push("", `Note: \`meme\` is not on your PATH yet; add the folder that holds it, so \`! meme continue\` works inside ${inWords(PROFILES.map((p) => p.name))}.`);
