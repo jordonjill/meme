@@ -5,7 +5,7 @@
  *   bun scripts/build.ts linux-x64     only the named targets
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import pkg from "../package.json";
 
@@ -57,6 +57,9 @@ for (const [name, t] of Object.entries(TARGETS)) {
     { stdout: "inherit", stderr: "inherit" },
   );
   if (p.exitCode !== 0) process.exit(p.exitCode ?? 1);
+  // The map is inside the single file, which names source lines on its own; the copy Bun also writes
+  // beside it, with all of meme's source in it, is not shipped (found in the first draft release).
+  rmSync(`${outfile}.map`, { force: true });
   const size = Bun.file(outfile).size;
   console.log(`${name}: ${path.relative(root, outfile)} (meme ${pkg.version}, ${(size / 1024 / 1024).toFixed(1)} MB, ${Math.round(performance.now() - started)} ms)`);
 }
