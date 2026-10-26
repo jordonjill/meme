@@ -50,12 +50,22 @@ const memeId = (id: string): string => id.replace(/^ses_/, "").toLowerCase();
 
 /**
  * The database is read where it is when it is on this side; meme never writes it.
- * With no write-ahead log next to it, nothing writes it now and it is opened
- * `immutable`, so SQLite creates no files there. On the other side (Windows
+ * With no write-ahead log next to it, or an empty one (macOS's SQLite keeps it
+ * after closing, plan §6 ⑬), nothing waits to be folded into it and it is opened
+ * `immutable`, so SQLite creates or changes no files there. On the other side (Windows
  * reading WSL, WSL reading Windows) SQLite's locks do not work: it is read from a
  * copy in meme's own folder, which `meme uninstall` removes (plan §6 ⑩.1).
  */
 const handles = new Map<string, { stamp: string; db: Database }>();
+
+/** A file's size; 0 when it is not there. */
+function sizeOf(file: string): number {
+  try {
+    return statSync(file).size;
+  } catch {
+    return 0;
+  }
+}
 function stampOf(file: string): string {
   const one = (f: string) => {
     try {
@@ -99,7 +109,7 @@ function openDb(file: string, copyDir: string | null): Database {
       writeFileSync(stampFile, stamp);
     }
     db = new Database(copy, { readonly: true });
-  } else if (existsSync(file + "-wal")) db = new Database(file, { readonly: true });
+  } else if (sizeOf(file + "-wal") > 0) db = new Database(file, { readonly: true });
   else {
     const uri = "file:" + encodeURI(file.replace(/\\/g, "/").replace(/^(?=[A-Za-z]:)/, "/")).replace(/[?#]/g, encodeURIComponent);
     db = new Database(`${uri}?immutable=1`, constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI);
