@@ -88,8 +88,11 @@ export function othersHint(others: number, how: string): string | null {
   return others > 0 ? `+${plural(others, "session")} in other projects (${how})` : null;
 }
 
-export function fallbackNotice(project: string, home: string): string {
-  return `No sessions in ${displayPath(project, home)} — showing all projects`;
+/** Within `width` when given: the folder is shortened (plan §6 ⑬, found on macOS); the picker wraps its notices instead. */
+export function fallbackNotice(project: string, home: string, width = Infinity): string {
+  const words = ["No sessions in ", " — showing all projects"];
+  const room = Math.max(MIN_PROJECT, width - words.join("").length);
+  return `${words[0]}${shortPath(displayPath(project, home), room)}${words[1]}`;
 }
 
 export interface LsTextOptions {
@@ -126,7 +129,7 @@ export function lsText({ rows, filter, fellBack, others, unreadable }: Listing, 
   const fixed = 2 + wId + 2 + wLabel + 2 + wAgo + 2 + wBranch + 2 + wSize + 2;
   const full = colW("project");
   const wProject = narrowProject(cells, full, o.width - fixed - (full ? full + 2 : 0) - wMarks, MIN_TITLE);
-  const out = [fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`];
+  const out = [fellBack ? fallbackNotice(filter.project, o.home, o.width) : `Sessions in ${where} (newest first):`];
   for (const c of cells) {
     let line = `  ${padEnd(c.id, wId)}  ${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  ${padEnd(c.branch, wBranch)}  ${padEnd(c.size, wSize)}  `;
     if (filter.all) line += padEnd(c.project, wProject) + "  ";
@@ -177,7 +180,7 @@ export function numberedText({ rows, filter, fellBack, others, unreadable }: Lis
   const titleCols = Math.min(48, Math.max(MIN_TITLE, room + full - wProject));
   for (const c of cells) c.title = truncate(c.title, titleCols) + c.marks;
   const wTitle = Math.max(...cells.map((c) => width(c.title)));
-  const out = [o.heading ?? (fellBack ? fallbackNotice(filter.project, o.home) : `Sessions in ${where} (newest first):`)];
+  const out = [o.heading ?? (fellBack ? fallbackNotice(filter.project, o.home, o.width) : `Sessions in ${where} (newest first):`)];
   for (const c of cells) {
     let line = `  ${o.numbered ? c.n.padStart(wN) + "  " : ""}${c.labelColored}${" ".repeat(wLabel - width(c.label))}  ${padEnd(c.ago, wAgo)}  `;
     if (filter.all) line += padEnd(c.project, wProject) + "  ";

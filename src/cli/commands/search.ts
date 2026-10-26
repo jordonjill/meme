@@ -1,4 +1,5 @@
 import { displayPath, samePath } from "../../platform/paths";
+import { shortPath } from "../../render/text";
 import { searchText } from "../../render/search";
 import { allSessions, ancestors, resolveSession } from "../../store/queries";
 import { compile, groupByChain, PatternError, search as runSearch } from "../../store/search";
@@ -51,9 +52,11 @@ export async function search(argv: string[]): Promise<number> {
   const ctx = await createContext();
   const db = ctx.store.db;
   const rows = allSessions(db);
+  const out = output(Boolean(values.plain));
   // The current project by default, like `meme ls` (plan §3.3): all projects when it
   // has no sessions; when it has, the matches in other projects are counted too.
-  const where = displayPath(ctx.project, ctx.platform.home);
+  // Named in lines of its own: within the width with the words around it (plan §6 ⑬).
+  const where = shortPath(displayPath(ctx.project, ctx.platform.home), Math.max(20, out.width - 40));
   let scope: string[] | null;
   let notice: string | undefined;
   let mine = false;
@@ -78,7 +81,6 @@ export async function search(argv: string[]): Promise<number> {
     const others = runSearch(db, { ...query, context: 0, sessions: null }).filter((h) => !here.has(h.session));
     if (others.length) elsewhere = { groups: groupByChain(db, others, byId), where };
   }
-  const out = output(Boolean(values.plain));
   const tools = Boolean(values.tools);
   write(searchText(groups, { st: out.st, width: out.width, now: ctx.now, tools, perSession: tools || values.session ? Infinity : 3, notice, elsewhere }));
   return 0;
