@@ -26,6 +26,8 @@ jobs:
           name: unix
           path: dist/meme-*
           if-no-files-found: error
+          # Used within this run only; a private repository has 500 MB for artifacts.
+          retention-days: 1
 
   # Bun sets meme.exe's version information only when it compiles on Windows (item 10).
   build-windows:
@@ -51,6 +53,8 @@ jobs:
           name: windows
           path: dist/meme-windows-*.exe
           if-no-files-found: error
+          # Used within this run only; a private repository has 500 MB for artifacts.
+          retention-days: 1
 
   # Item 13: each file on its own kind of machine, the end-to-end tests against it, and install.sh from the build.
   test:
