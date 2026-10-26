@@ -24,7 +24,7 @@ import { importAll } from "../../src/store/import";
 import { getSession, handedOver, sessionRecords, unknownTypes } from "../../src/store/queries";
 import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { PiSession, samplePi } from "../fixtures/gen-pi";
-import { tempDir, testPlatform } from "../helpers";
+import { snapshot, tempDir, testPlatform } from "../helpers";
 
 const PI = "9a9a9a9a-0000-4000-8000-000000000001";
 const OC = "ses_ecbbcc1dcffeAbCdEfGhIjKlMn";
@@ -257,13 +257,17 @@ describe("OpenCode (opencode.db, 1.19)", () => {
 
   test("its database is read where it is and never written: with OpenCode closed, SQLite makes no file next to it", () => {
     let dir = "";
+    let before: string[] = [];
     const m = mirror((home) => {
       const db = new OpenCodeDb(openCodeDb(home));
       sampleOpenCode(db);
       db.close();
       dir = path.dirname(openCodeDb(home));
+      // macOS's SQLite keeps an empty -wal and -shm after closing (plan §6 ⑬): whatever is there, meme leaves as it is.
+      before = snapshot(dir);
     });
-    expect(readdirSync(dir)).toEqual(["opencode.db"]);
+    expect(snapshot(dir)).toEqual(before);
+    if (process.platform === "linux") expect(readdirSync(dir)).toEqual(["opencode.db"]);
     expect(m.records(OC_ID).length).toBeGreaterThan(20);
   });
 

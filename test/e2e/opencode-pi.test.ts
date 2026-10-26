@@ -8,6 +8,7 @@ import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
 import { samplePi } from "../fixtures/gen-pi";
+import { snapshot } from "../helpers";
 import { run, world, type World } from "./world";
 
 const PI = "9a9a9a9a";
@@ -124,10 +125,12 @@ describe("OpenCode and Pi through the command line (plan §6 ⑩)", () => {
     const tmp = path.join(w.home, "tmp");
     mkdirSync(tmp);
     const env = { MEME_ENV: "win", MEME_WSL_DIR: path.join(w.home, "wsl"), MEME_WSL_RUNNING: "Ubuntu", TMPDIR: tmp };
+    const untouched = snapshot(linux("/home/u/.local/share/opencode"));
     const ls = run(w, ["ls", "-a"], { env }).out;
     expect(ls).toMatch(new RegExp(`  ${PI}  Pi·WSL +.* /home/u/work/app `));
     expect(ls).toMatch(new RegExp(`  ${OC}  OpenCode·WSL +.* /home/u/work/app `));
-    expect(readdirSync(linux("/home/u/.local/share/opencode"))).toEqual(["opencode.db"]);
+    // Nothing written next to the database (macOS's SQLite keeps an empty -wal and -shm after closing; plan §6 ⑬).
+    expect(snapshot(linux("/home/u/.local/share/opencode"))).toEqual(untouched);
     // The copy is in meme's own folder, which `meme uninstall` removes; none in the temporary folder (plan §6 ⑩.1).
     expect(readdirSync(tmp)).toEqual([]);
     const cache = path.join(w.home, ".meme", "cache", "opencode");

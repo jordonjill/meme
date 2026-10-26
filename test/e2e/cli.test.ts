@@ -244,6 +244,13 @@ describe("plan §6 ⑪, F13: every list off a terminal fits 119 columns", () => 
       const widest = Math.max(...run(w, args, { cwd: deep }).out.split("\n").map((l) => Bun.stringWidth(l)));
       if (widest > 119) over.push(`${args.join(" ")}: ${widest}`);
     }
+    // From a deep folder with no sessions: the line saying so names it within the width too (found on macOS, plan §6 ⑬).
+    const nowhere = path.join(w.home, "a-folder-with-a-long-name", "and-another-one-below-it", "and-a-third-one-to-make-it-long", "with-no-sessions-in-it");
+    mkdirSync(nowhere, { recursive: true });
+    for (const args of [["ls"], ["continue"], ["search", "Refactor"]]) {
+      const widest = Math.max(...run(w, args, { cwd: nowhere }).out.split("\n").map((l) => Bun.stringWidth(l)));
+      if (widest > 119) over.push(`${args.join(" ")} in a deep folder: ${widest}`);
+    }
     expect(over).toEqual([]);
   });
 });
