@@ -271,6 +271,21 @@ describe("OpenCode (opencode.db, 1.19)", () => {
     expect(m.records(OC_ID).length).toBeGreaterThan(20);
   });
 
+  test("an empty write-ahead log, as macOS's SQLite leaves one when OpenCode closes, is no reason to write anything there (plan §6 ⑬)", () => {
+    let dir = "";
+    let before: string[] = [];
+    const m = mirror((home) => {
+      const db = new OpenCodeDb(openCodeDb(home));
+      sampleOpenCode(db);
+      db.close();
+      dir = path.dirname(openCodeDb(home));
+      writeFileSync(openCodeDb(home) + "-wal", "");
+      before = snapshot(dir);
+    });
+    expect(m.records(OC_ID).length).toBeGreaterThan(20);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
   test("with OpenCode open (a write-ahead log next to it), what it has not folded in yet is read too", () => {
     const home = tempDir();
     const db = new OpenCodeDb(openCodeDb(home));
