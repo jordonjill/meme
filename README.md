@@ -294,14 +294,16 @@ meme memory update --dry-run    # what would be read and sent; sends nothing
 meme memory update
 ```
 
-- **This sends the text of those sessions to that model**, shortened and with
-  secrets masked, and to nowhere else. With no model set up nothing is sent; a
-  model on your own machine keeps everything there. The sessions of an excluded
-  project are never sent, and what you ask to remember there is kept in your own
-  words.
+- **This sends the text of those sessions to that model**, with secrets masked,
+  and to nowhere else: what you and the AI said (long messages shortened), one
+  short line for each command or tool the AI used, and a tool's output only when
+  it failed. The AI's reasoning and its own task lists are not sent. With no
+  model set up nothing is sent; a model on your own machine keeps everything
+  there. The sessions of an excluded project are never sent, and what you ask to
+  remember there is kept in your own words.
 - The model decides what to keep and how to word it. meme keeps an entry only
   when the words the model quotes for it are really in the session. What you
-  said, or a tool printed, is in force at once; what only the AI said, or what
+  said, or a failing tool printed, is in force at once; what only the AI said, or what
   was read out of what happened, waits until it is seen in a second session.
 - A session is read once it has been quiet for 2 hours, and only its new part
   when it goes on later. A session that ended over 14 days ago and was never read
