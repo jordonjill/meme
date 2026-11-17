@@ -99,11 +99,12 @@ function lineOf(e: Entry): string {
   return `- [${e.id}] ${e.text}${e.when ? ` (when: ${e.when})` : ""}`;
 }
 
-/** The text an agent reads; empty when memory has nothing for here. */
-export function contextText(ctx: AgentContext): string {
-  if (!ctx.sections.length) return "";
+/** The text an agent reads; empty when there is nothing for here. `tasks` are lines about work left unfinished (tasks.ts). */
+export function contextText(ctx: AgentContext, tasks: string[] = []): string {
+  if (!ctx.sections.length && !tasks.length) return "";
   const lines = [NOTICE];
   for (const s of ctx.sections) lines.push("", s.title, ...s.entries.map(lineOf));
+  if (tasks.length) lines.push("", "Unfinished here", ...tasks);
   if (ctx.left) lines.push("", `${ctx.left} more in memory for here: \`meme recall <words>\` finds them.`);
   return lines.join("\n") + "\n";
 }
