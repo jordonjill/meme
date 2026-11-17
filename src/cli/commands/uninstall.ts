@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync, rmdirSync, statSync }
 import path from "node:path";
 import { ADAPTERS } from "../../adapters";
 import { removeDir, removeFile } from "../../platform/fs";
+import { SQLITE_SIDE_FILES } from "../../platform/layout";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { size } from "../../render/text";
@@ -22,11 +23,13 @@ the question.
  * the home folder (plan §6 ⑪, F2).
  */
 const OWN = [
-  ...["meme.sqlite", "meme.sqlite-journal", "meme.sqlite-wal", "meme.sqlite-shm", "logs/meme.log", "logs/meme.log.1"],
+  // The mirror, where it is now and where 0.1.0 kept it.
+  ...["raw/sessions.sqlite", "meme.sqlite"].flatMap((f) => [f, ...SQLITE_SIDE_FILES.map((s) => f + s)]),
+  ...["logs/meme.log", "logs/meme.log.1"],
   ...ADAPTERS.flatMap((a) => (a.cacheDir ? [`cache/${a.cacheDir}`] : [])),
 ];
 /** The folders that hold them, removed when that leaves them empty; the data folder itself last. */
-const OWN_DIRS = ["logs", "cache", ""];
+const OWN_DIRS = ["raw", "logs", "cache", ""];
 
 /** Is anything in the data folder not meme's? */
 function holdsOthers(dir: string): boolean {

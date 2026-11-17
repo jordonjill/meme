@@ -5,6 +5,7 @@ import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { CodexSession, sampleCodex } from "../fixtures/gen-codex";
 import { statStart } from "../../src/platform/process";
+import { layout } from "../../src/platform/layout";
 import { run, runInTerminal, SCRIPT, world, type World } from "./world";
 
 const MINIMAL_PATH = "/usr/bin:/bin";
@@ -56,7 +57,7 @@ describe.skipIf(process.platform === "win32")("meme forget: Claude Code", () => 
     expect(r.out).toContain("✓ 11111111 deleted");
     for (const p of [file, ...folders]) expect(existsSync(p)).toBe(false);
     expect(run(w, ["ls", "-a"]).out).not.toContain("11111111");
-    expect(readFileSync(path.join(w.home, ".meme", "meme.sqlite")).includes("状态栏现在显示哪些内容")).toBe(false);
+    expect(readFileSync(layout(path.join(w.home, ".meme")).mirror).includes("状态栏现在显示哪些内容")).toBe(false);
   });
 
   test("a Windows session is deleted from WSL too", () => {

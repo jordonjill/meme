@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import path from "node:path";
 import { Database } from "bun:sqlite";
 import { ClaudeSession } from "../fixtures/gen-claude";
+import { layout } from "../../src/platform/layout";
 import { run, world, type World } from "./world";
 
 const WSL_ID = "a6a6a6a6-0000-4000-8000-0000000000a6";
@@ -63,7 +64,7 @@ describe.skipIf(process.platform === "win32")("items 6 and 7: Windows without WS
     run(w, ["status"], { env });
     expect(calls().length).toBe(after);
     // A day later it asks again.
-    const db = new Database(path.join(w.home, ".meme", "meme.sqlite"));
+    const db = new Database(layout(path.join(w.home, ".meme")).mirror);
     db.run("UPDATE meta SET value = ? WHERE key = 'wsl_absent'", [new Date(Date.now() - 25 * 3600_000).toISOString()]);
     db.close();
     run(w, ["ls", "-a"], { env });

@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSyn
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
 import { OpenCodeDb, resetOpenCodeIds, sampleOpenCode } from "../fixtures/gen-opencode";
+import { layout } from "../../src/platform/layout";
 import { run, runInTerminal, SCRIPT, world, type World } from "./world";
 
 /** A stand-in program on a PATH of its own. */
@@ -233,7 +234,7 @@ describe.skipIf(process.platform === "win32")("meme install and uninstall", () =
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/\n {2}Claude Code {2}found: .*fake-bin\/claude\n/);
     expect(r.out).toMatch(/Claude·WSL +~\/\.claude\/projects +1 session/);
-    expect(r.out).toContain("mirrored 2 sessions into ~/.meme/meme.sqlite");
+    expect(r.out).toContain("mirrored 2 sessions into ~/.meme/raw/sessions.sqlite");
     expect(r.out).toContain("In a terminal:   meme continue");
     expect(r.out).toContain("In Claude Code:  ! meme continue");
     expect(existsSync(path.join(w.home, ".claude", "skills"))).toBe(false);
@@ -305,14 +306,14 @@ describe.skipIf(process.platform === "win32")("step 9 (plan §6 ⑨)", () => {
     writeFileSync(path.join(real, "notes.txt"), "mine");
     symlinkSync(real, path.join(w.home, ".meme"));
     run(w, ["ls"]);
-    expect(existsSync(path.join(real, "meme.sqlite"))).toBe(true);
+    expect(existsSync(layout(real).mirror)).toBe(true);
     // Copies of agents' databases meme keeps there go too (plan §6 ⑩.1).
     mkdirSync(path.join(real, "cache", "opencode", "0123456789abcdef"), { recursive: true });
     writeFileSync(path.join(real, "cache", "opencode", "0123456789abcdef", "opencode.db"), "copy");
     const r = run(w, ["uninstall", "--yes"]);
     expect(r.out).toContain("~/.meme -> ~/elsewhere/meme-data");
     expect(existsSync(path.join(w.home, ".meme"))).toBe(false);
-    expect(existsSync(path.join(real, "meme.sqlite"))).toBe(false);
+    expect(existsSync(layout(real).mirror)).toBe(false);
     expect(existsSync(path.join(real, "logs"))).toBe(false);
     expect(existsSync(path.join(real, "cache"))).toBe(false);
     expect(readFileSync(path.join(real, "notes.txt"), "utf8")).toBe("mine");
@@ -340,7 +341,7 @@ describe.skipIf(process.platform === "win32")("step 11 (plan §6 ⑪)", () => {
     writeFileSync(path.join(data, "todo.txt"), "mine");
     writeFileSync(path.join(data, "sub", "draft.md"), "mine too");
     run(w, ["ls"], { env: { MEME_HOME: data } });
-    expect(existsSync(path.join(data, "meme.sqlite"))).toBe(true);
+    expect(existsSync(layout(data).mirror)).toBe(true);
     const r = run(w, ["uninstall", "--yes"], { env: { MEME_HOME: data } });
     expect(r.code).toBe(0);
     expect(r.out).toContain("Other files in ~/Sync/notes are kept.");
@@ -355,10 +356,10 @@ describe.skipIf(process.platform === "win32")("step 11 (plan §6 ⑪)", () => {
       writeFileSync(path.join(w.home, dir, "mine.txt"), "mine");
     }
     run(w, ["ls"], { env: { MEME_HOME: w.home } });
-    expect(existsSync(path.join(w.home, "meme.sqlite"))).toBe(true);
+    expect(existsSync(layout(w.home).mirror)).toBe(true);
     const r = run(w, ["uninstall", "--yes"], { env: { MEME_HOME: w.home } });
     expect(r.code).toBe(0);
-    expect(existsSync(path.join(w.home, "meme.sqlite"))).toBe(false);
+    expect(existsSync(layout(w.home).mirror)).toBe(false);
     expect(existsSync(path.join(w.home, "logs", "meme.log"))).toBe(false);
     expect(readFileSync(path.join(w.home, "logs", "mine.txt"), "utf8")).toBe("mine");
     expect(readFileSync(path.join(w.home, "cache", "mine.txt"), "utf8")).toBe("mine");

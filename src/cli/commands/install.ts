@@ -4,6 +4,7 @@ import pkg from "../../../package.json";
 import { ADAPTERS, installedAt, sourceTrouble } from "../../adapters";
 import { PROFILES } from "../../adapters/profiles";
 import type { SourceRoot } from "../../adapters/types";
+import { layout } from "../../platform/layout";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
 import { findInWsl, readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
@@ -105,7 +106,7 @@ export async function install(argv: string[]): Promise<number> {
     const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     found.sort(([a], [b]) => cmp(a.agent, b.agent) || cmp(a.env, b.env) || cmp(a.path, b.path));
     for (const [root, n] of found) table.push([label(root.agent, root.env), displayPath(root.path, home), n]);
-    summary = `would mirror them into ${displayPath(path.join(platform.dataDir, "meme.sqlite"), home)}`;
+    summary = `would mirror them into ${displayPath(layout(platform.dataDir).mirror, home)}`;
   } else {
     const ctx = await createContext();
     for (const s of sources(ctx.store.db)) {
