@@ -237,6 +237,8 @@ export interface ToolKnowledge {
   edited(name: string, args: Record<string, unknown>): string[];
   /** How a call reads in a list when its name says little (a script that runs commands); null for the usual way. */
   describe?(name: string, args: Record<string, unknown>, command: string | null): { name: string; summary: string } | null;
+  /** Its tools that keep its own lists and screens (a task list, a recap in its app): not the work, so memory does not read them. */
+  bookkeeping?: RegExp;
 }
 
 /** How the agent compacts its context (handoff.md §7.8, point 3). */

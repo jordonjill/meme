@@ -133,6 +133,8 @@ export const claudeCodeProfile: Profile = {
       const p = a.file_path ?? a.notebook_path;
       return typeof p === "string" ? [p] : [];
     },
+    // Its task list, and the desktop app's own tools (the plan under a message, the recap box, chapters, panes).
+    bookkeeping: /^(TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet|mcp__ccd_\w+)$/,
   },
   recordTypes: {
     user: "read: the user's messages and tool results",

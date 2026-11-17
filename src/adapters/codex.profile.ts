@@ -142,6 +142,8 @@ export const codexProfile: Profile = {
       if (name === "apply_patch") return { name, summary: edited(name, a).join(", ") };
       return null;
     },
+    // Its plan, shown to the user as a checklist.
+    bookkeeping: /^update_plan$/,
   },
   recordTypes: {
     session_meta: "read: id, start directory, version, fork and rollback base",

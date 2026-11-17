@@ -48,6 +48,11 @@ export function toolEdits(name: string, args: Record<string, unknown>): string[]
   return [];
 }
 
+/** A call that keeps an agent's own lists or screens, not the work (memory leaves it out). */
+export function toolBookkeeping(name: string): boolean {
+  return PROFILES.some((p) => p.tools.bookkeeping?.test(name));
+}
+
 export function toolDescription(name: string, args: Record<string, unknown>, command: string | null): { name: string; summary: string } | null {
   for (const p of PROFILES) {
     const d = p.tools.describe?.(name, args, command);
