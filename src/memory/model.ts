@@ -8,7 +8,7 @@ const TIMEOUT_MS = 180_000;
 export type Ask = (system: string, user: string) => Promise<string>;
 
 /** One question, one answer, over the OpenAI chat format. Nothing is set that only some services take. */
-export function asker(model: ModelConfig, fetcher: typeof fetch = fetch): Ask {
+export function asker(model: ModelConfig, fetcher: typeof fetch = fetch, timeoutMs = TIMEOUT_MS): Ask {
   return async (system, user) => {
     let res: Response;
     try {
@@ -16,7 +16,7 @@ export function asker(model: ModelConfig, fetcher: typeof fetch = fetch): Ask {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(model.key ? { Authorization: `Bearer ${model.key}` } : {}) },
         body: JSON.stringify({ model: model.name, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       throw new ModelError(`could not reach the model at ${model.url}: ${(err as Error).message}`);
