@@ -60,11 +60,11 @@ export async function runAsync(w: World, args: string[], o: { cwd?: string; env?
 export const SCRIPT = process.platform === "linux" ? Bun.which("script") : null;
 
 /** meme in a pseudo-terminal, as if typed in one, with `input` typed into it. Needs SCRIPT. Output and input echo mixed. */
-export function runInTerminal(w: World, args: string[], input: string) {
+export function runInTerminal(w: World, args: string[], input: string, o: { env?: Record<string, string> } = {}) {
   const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
   const p = Bun.spawnSync([SCRIPT!, "-qec", [...BIN, ...args].map(quote).join(" "), "/dev/null"], {
     cwd: w.home,
-    env: worldEnv(w, { TERM: "dumb" }),
+    env: worldEnv(w, { TERM: "dumb", ...o.env }),
     stdin: Buffer.from(input),
     stdout: "pipe",
     stderr: "pipe",

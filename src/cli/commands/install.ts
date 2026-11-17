@@ -7,19 +7,25 @@ import type { SourceRoot } from "../../adapters/types";
 import { layout } from "../../platform/layout";
 import { currentPlatform, displayPath, type Platform } from "../../platform/paths";
 import { findCommand } from "../../platform/spawn";
-import { findInWsl, readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
+import { readsWsl, runningDistros, wslHomes } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
 import { padEnd, plural, size } from "../../render/text";
 import { counts, sources } from "../../store/queries";
 import { parse, UsageError } from "../args";
-import { createContext, write, type Context } from "../context";
-import { HOW_TO_CONTINUE, INSTALL_HINT } from "../usage";
+import { agreed, createContext, insideAgent, write } from "../context";
+import { hintLines, installThere, otherSides, question, todoFor, type OtherSide } from "../other-side";
+import { HOW_TO_CONTINUE } from "../usage";
 
 export const installHelp = `Usage: meme install [--dry-run]
 
 Set meme up on this machine: find the agents and their sessions, and mirror
 all sessions once. Safe to run again. It changes nothing outside ~/.meme: no
 skills, no ${[...new Set(PROFILES.map((p) => p.instructionFile))].join(" or ")}, no settings, no hooks.
+
+meme runs where it is installed. With WSL and Windows both in use, it looks
+whether the other side has agents and no meme, or another version of it, and
+in a terminal offers to install this version there too, with that side's own
+installer. It asks first; elsewhere it only shows the line to run there.
 
   --dry-run   show what would happen, change nothing
 `;
@@ -30,34 +36,6 @@ const inWords = (words: string[]) => (words.length <= 1 ? (words[0] ?? "") : `${
 /** Is the agent on this machine (its home folder, or its command on PATH)? */
 export function agentPresent(platform: Platform, home: string, command: string): boolean {
   return existsSync(home) || findCommand(command, platform.vars) !== null;
-}
-
-/**
- * Agents on the other side of WSL and Windows where meme is not installed, so
- * `! meme continue` would not work in them (plan §6 ⑫, item 8). From Windows only
- * running distributions are asked, through the user's shell there; none is started.
- * From WSL, an agent's folder in a Windows user folder, and no `.meme` beside it.
- */
-function elsewhere(ctx: Context): string[] {
-  const p = ctx.platform;
-  const out: string[] = [];
-  if (p.env === "win") {
-    for (const distro of [...new Set(p.wsl.map((h) => h.distro))]) {
-      const place = p.wsl.find((h) => h.distro === distro)!;
-      const tools = findInWsl(p, place, place.home, ["meme", ...PROFILES.map((x) => x.command)]);
-      if (!tools.ok || tools.found.meme) continue;
-      const agents = PROFILES.filter((x) => tools.found[x.command]).map((x) => x.name);
-      if (agents.length) out.push(`Agents also in WSL (${distro}): ${agents.join(", ")}. To use \`! meme continue\` in them, install meme there too:`, `  ${INSTALL_HINT.linux}`);
-    }
-  } else if (p.env === "wsl" && p.windowsUsersDir) {
-    const users = p.windowsUsersDir;
-    const roots = ADAPTERS.flatMap((a) => a.roots(p)).filter((r) => r.env === "win" && installedAt(r));
-    const userOf = (dir: string) => path.relative(users, dir).split(/[\\/]/)[0]!;
-    const without = roots.filter((r) => !existsSync(path.join(users, userOf(r.path), ".meme")));
-    const agents = PROFILES.filter((x) => without.some((r) => r.agent === x.agent)).map((x) => x.name);
-    if (agents.length) out.push(`Agents also on Windows: ${agents.join(", ")}. To use \`! meme continue\` in them, install meme on Windows too:`, `  ${INSTALL_HINT.windows}`);
-  }
-  return out;
 }
 
 export async function install(argv: string[]): Promise<number> {
@@ -82,7 +60,9 @@ export async function install(argv: string[]): Promise<number> {
   lines.push("", "Sessions");
   const table: [string, string, string][] = [];
   let summary: string;
+  // The other side of WSL and Windows: what to say about it, and what to ask once the rest is shown.
   let otherSide: string[] = [];
+  let toAsk: OtherSide[] = [];
   if (dry) {
     // The sources a real run reads: on Windows also those in running WSL distributions, none started (plan §6 ⑪, F6).
     if (readsWsl(platform)) {
@@ -115,7 +95,10 @@ export async function install(argv: string[]): Promise<number> {
     }
     const c = counts(ctx.store.db);
     summary = `mirrored ${plural(c.sessions, "session")} into ${ctx.store.memory ? "memory (nothing here can be written)" : displayPath(ctx.store.file, home)}`;
-    otherSide = elsewhere(ctx);
+    const sides = otherSides(ctx.platform).filter((s) => todoFor(s, pkg.version));
+    // A question needs a person at a terminal; a pipe or an agent gets the line to run by hand.
+    if (process.stdin.isTTY && process.stdout.isTTY && !insideAgent(platform.vars)) toAsk = sides;
+    else otherSide = sides.flatMap((s) => hintLines(s, pkg.version));
   }
   const lw = Math.max(0, ...table.map((r) => r[0].length));
   const w = Math.max(0, ...table.map((r) => r[1].length));
@@ -129,5 +112,15 @@ export async function install(argv: string[]): Promise<number> {
   lines.push("", HOW_TO_CONTINUE);
   lines.push("", "To give your agents meme's memory, connect them once: `meme mcp --help` shows how.");
   write(lines.join("\n") + "\n");
+
+  for (const side of toAsk) {
+    write("\n");
+    if (!agreed(question(side, pkg.version)!)) {
+      write(`Not installed ${side.where}. To do it yourself, run there:\n  ${side.hint}\n`);
+      continue;
+    }
+    const code = installThere(side, pkg.version);
+    write(code === 0 ? `meme ${pkg.version} is installed ${side.where}.\n` : `The installer ${side.where} did not finish${code === null ? "" : ` (exit ${code})`}. To do it yourself, run there:\n  ${side.hint}\n`);
+  }
   return 0;
 }

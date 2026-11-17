@@ -178,8 +178,12 @@ describe.skipIf(process.platform === "win32")("item 8: install mentions agents o
   test("in WSL: an agent on Windows and no meme there", () => {
     const w = world();
     expect(run(w, ["install"]).out).toMatch(/Agents also on Windows: Claude Code\. To use `! meme continue` in them, install meme on Windows too:\n {2}irm https:\/\/github\.com\/jordonjill\/meme\/releases\/latest\/download\/install\.ps1 \| iex\n/);
-    // meme has run on Windows: its folder is there.
-    mkdirSync(path.join(w.users, "me", ".meme"), { recursive: true });
+    // A `.meme` folder there says nothing by itself: WSL keeps its memory in it (plan-m2 F6, F7).
+    mkdirSync(path.join(w.users, "me", ".meme", "memory"), { recursive: true });
+    expect(run(w, ["install"]).out).toContain("Agents also on Windows");
+    // meme has run on Windows: its mirror of the sessions is there.
+    mkdirSync(path.join(w.users, "me", ".meme", "raw"), { recursive: true });
+    writeFileSync(path.join(w.users, "me", ".meme", "raw", "sessions.sqlite"), "");
     expect(run(w, ["install"]).out).not.toContain("Agents also on Windows");
   });
 });
