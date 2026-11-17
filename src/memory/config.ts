@@ -14,6 +14,8 @@ export interface Config {
   model: ModelConfig | null;
   /** Projects whose sessions are never sent to the model: paths, or what a project is known by. */
   exclude: string[];
+  /** The pipeline starts by itself now and then (plan-m2 F9); `"auto": false` in the file stops that. */
+  auto: boolean;
 }
 
 export function configFile(dataDir: string): string {
@@ -26,7 +28,7 @@ export function configFile(dataDir: string): string {
  * variable (`keyEnv`), so that it need not be in the file.
  */
 export function loadConfig(dataDir: string, vars: Record<string, string | undefined>): Config {
-  let file: { model?: { url?: unknown; key?: unknown; keyEnv?: unknown; name?: unknown }; exclude?: unknown } = {};
+  let file: { model?: { url?: unknown; key?: unknown; keyEnv?: unknown; name?: unknown }; exclude?: unknown; auto?: unknown } = {};
   const text = readText(configFile(dataDir));
   if (text !== null) {
     try {
@@ -43,6 +45,7 @@ export function loadConfig(dataDir: string, vars: Record<string, string | undefi
   return {
     model: url && name ? { url: url.replace(/\/+$/, ""), key, name } : null,
     exclude: Array.isArray(file.exclude) ? file.exclude.map(str).filter(Boolean) : [],
+    auto: file.auto !== false && vars.MEME_NO_AUTO_UPDATE !== "1",
   };
 }
 

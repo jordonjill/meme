@@ -1,6 +1,7 @@
 import { apply, type Change, type Origin } from "./apply";
 import { ConfigError, loadConfig } from "./config";
 import { asker, ModelError, type Ask } from "./model";
+import { noteDeclined } from "./digest";
 import { isExcluded, KEEP_SYSTEM, proposeAndKeep, type Kept } from "./pipeline";
 import type { ProjectRef } from "./projects";
 import { entriesIn, memoryPaths } from "./store";
@@ -61,8 +62,8 @@ export interface Remembered {
   kept: (Kept & { text: string })[];
   /** Why something proposed was not kept. */
   dropped: string[];
-  /** Worded by the model, or the user's words as they are. */
-  by: "model" | "words";
+  /** Worded by the model; the user's words as they are; or not kept, the model judging it meant for that time only. */
+  by: "model" | "words" | "declined";
   /** The model was asked and failed; the words were kept as they are. */
   modelError?: string;
 }
@@ -103,13 +104,18 @@ export async function rememberWords(r: RememberRequest): Promise<Remembered> {
         salt: r.salt,
       });
       if (got.kept.length) return { kept: got.kept.map((k) => ({ ...k, text: textOf(r.dataDir, k.id) })), dropped: got.dropped, by: "model" };
+      // The model judged there is nothing lasting in it, a request for this time only, say: that is its call (plan-m2 F9).
+      if (!got.proposed) {
+        noteDeclined(memoryPaths(r.dataDir), { at: r.at.toISOString(), words: r.words, from: r.label });
+        return { kept: [], dropped: [], by: "declined" };
+      }
       dropped.push(...got.dropped);
     } catch (err) {
       if (!(err instanceof ModelError)) throw err;
       modelError = err.message;
     }
   }
-  // The user asked for it to be kept: when the model kept nothing, or could not be asked, the words go in as they are.
+  // No model to judge, or it could not be asked, or what it wrote could not be checked: the user asked, so the words go in as they are.
   const record = r.records.find((s) => s.seq === r.focus) ?? r.records[0]!;
   const shelf = shelfOf(r.about, r.project);
   // The source was checked by whoever found the words: in a session, or typed after `meme remember`.

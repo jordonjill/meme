@@ -7,7 +7,7 @@ import { allSessions, sessionRecords, type SessionRow } from "../store/queries";
 import { apply, type Change, type NewEvidence, type Op, type Origin } from "./apply";
 import { ModelError, parseAnswer, type Ask, type Proposed } from "./model";
 import { projectRef, type ProjectRef } from "./projects";
-import { memoryPaths, readText, shelvesIn, type MemoryPaths } from "./store";
+import { memoryPaths, readText, shelvesIn, writeFileAtomic, type MemoryPaths } from "./store";
 import { pieces, shown, transcript, type Shown } from "./transcript";
 import { normalize, type Entry, type Shelf, type Tier } from "./types";
 
@@ -21,7 +21,7 @@ import { normalize, type Entry, type Shelf, type Tier } from "./types";
 /** How a memory is written, whoever asks for it: the same rules for the pipeline and for `remember`. */
 const WRITING = `Every memory must rest on words that are in the records. Copy them exactly into "quote", and give the number of the record they are in as "at": the number after # in that record's heading. A memory whose quote is not found in that record is thrown away. Prefer the user's own words.
 
-Write each memory as one clear sentence that stands on its own, in the language the user writes in. One memory says one thing.
+Write each memory as one clear sentence that stands on its own, in the language the user writes in. One memory says one thing. A memory about the project is kept with that project: do not name the project in it.
 
 If a memory makes an entry of the existing memory out of date, give that entry's id as "replaces". If an existing entry already says the same, do not repeat it; return it with that entry's id as "supports" when the records give new support for it.
 
@@ -116,6 +116,8 @@ export interface PickOptions {
   /** Only this session, quiet or not. */
   only?: string;
   exclude: string[];
+  /** The most sessions to read in one run, the latest first; the rest wait for the next. */
+  limit?: number;
 }
 
 export interface Picked {
@@ -150,7 +152,17 @@ export function pick(db: Database, p: MemoryPaths, opts: PickOptions): Picked {
     }
     out.due.push({ session: s, items, upto: records.at(-1)?.seq ?? -1, tokens: estimateTokens(transcript(items)), project: refOf(s.project) });
   }
+  if (opts.limit !== undefined) out.due = out.due.slice(0, opts.limit);
   return out;
+}
+
+/** When the pipeline last started, for starting it by itself only now and then. */
+export function lastUpdate(p: MemoryPaths): number {
+  return Date.parse(readText(path.join(p.state, "last-update"))?.trim() ?? "") || 0;
+}
+
+export function markUpdate(p: MemoryPaths, now: number): void {
+  writeFileAtomic(path.join(p.state, "last-update"), new Date(now).toISOString() + "\n");
 }
 
 export interface SessionResult {

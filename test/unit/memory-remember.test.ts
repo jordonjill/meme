@@ -9,6 +9,7 @@ import { projectRef } from "../../src/memory/projects";
 import { modelFor, rememberWords, type RememberRequest } from "../../src/memory/remember";
 import { entriesIn, memoryPaths } from "../../src/memory/store";
 import { readAll } from "../../src/memory/evidence";
+import { digest } from "../../src/memory/digest";
 import { tempDir, testPlatform } from "../helpers";
 
 const AT = new Date(2026, 10, 17, 14, 32);
@@ -62,13 +63,18 @@ describe("remembering what the user asked to keep (plan-m2 F8)", () => {
     expect(JSON.stringify(readAll(memoryPaths(r.dataDir).evidence))).not.toContain("twice");
   });
 
-  test("when the model keeps nothing, or quotes words that are not there, the user's words go in as they are", async () => {
-    for (const memories of [[], [{ text: "Use tabs.", quote: "the user likes tabs", at: 0 }]]) {
-      const r = typed("Use pnpm.", { model: { ask: answering(memories) } });
-      const done = await rememberWords(r);
-      expect(done).toMatchObject({ by: "words", kept: [{ change: "added", text: "Use pnpm." }] });
-      expect(entriesIn(memoryPaths(r.dataDir).memory)[0]).toMatchObject({ shelf: { level: "user", file: "RULES" } });
-    }
+  test("when the model keeps nothing, nothing is kept: it judged the words meant for that time only (plan-m2 F9)", async () => {
+    const r = typed("这次先别跑测试", { model: { ask: answering([]) } });
+    expect(await rememberWords(r)).toEqual({ kept: [], dropped: [], by: "declined" });
+    expect(entriesIn(memoryPaths(r.dataDir).memory)).toEqual([]);
+    expect(digest(memoryPaths(r.dataDir)).declined).toMatchObject([{ words: "这次先别跑测试", from: "meme remember" }]);
+  });
+
+  test("when what the model wrote cannot be checked against the words, the words go in as they are", async () => {
+    const r = typed("Use pnpm.", { model: { ask: answering([{ text: "Use tabs.", quote: "the user likes tabs", at: 0 }]) } });
+    const done = await rememberWords(r);
+    expect(done).toMatchObject({ by: "words", kept: [{ change: "added", text: "Use pnpm." }] });
+    expect(entriesIn(memoryPaths(r.dataDir).memory)[0]).toMatchObject({ shelf: { level: "user", file: "RULES" } });
   });
 
   test("when the model cannot be asked, the words go in as they are, and that is said", async () => {
