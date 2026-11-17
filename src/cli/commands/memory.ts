@@ -1,6 +1,7 @@
 import { forget } from "../../memory/apply";
 import { readAll } from "../../memory/evidence";
 import { LockTimeout } from "../../memory/lock";
+import { storeDir } from "../../memory/place";
 import { entriesIn, memoryPaths, NewerFormat, shelvesIn, type Placed } from "../../memory/store";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { plural } from "../../render/text";
@@ -88,7 +89,8 @@ export async function memory(argv: string[]): Promise<number> {
 
   const platform = currentPlatform();
   const home = platform.home;
-  const p = memoryPaths(platform.dataDir);
+  const store = storeDir(platform);
+  const p = memoryPaths(store);
 
   if (!action) {
     const shelves = shelvesIn(p.memory).filter((s) => s.entries.length);
@@ -130,10 +132,10 @@ export async function memory(argv: string[]): Promise<number> {
     }
   }
   try {
-    await forget(platform.dataDir, e.id);
+    await forget(store, e.id);
   } catch (err) {
     if (err instanceof NewerFormat || err instanceof LockTimeout) throw new CommandError(`${err.message}; nothing was forgotten`);
-    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(platform.dataDir, home)} cannot be written); nothing was forgotten`);
+    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(store, home)} cannot be written); nothing was forgotten`);
     throw err;
   }
   write(`Forgotten ${e.id}. It will not be learned again from your sessions; \`meme remember\` brings it back.\n`);

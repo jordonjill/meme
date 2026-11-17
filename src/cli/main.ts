@@ -4,6 +4,7 @@ import path from "node:path";
 import pkg from "../../package.json";
 import { fileLogger } from "../platform/log";
 import { currentPlatform } from "../platform/paths";
+import { StoreUnreachable } from "../memory/place";
 import { LookupError } from "../store/queries";
 import { CommandError, UsageError } from "./args";
 import { timings } from "./context";
@@ -130,7 +131,7 @@ async function run(argv: string[]): Promise<number> {
       process.stderr.write(`meme ${command}: ${err.message}\nRun \`meme ${command} --help\` for usage.\n`);
       return 2;
     }
-    if (err instanceof LookupError || err instanceof CommandError) {
+    if (err instanceof LookupError || err instanceof CommandError || err instanceof StoreUnreachable) {
       process.stderr.write(`meme: ${err.message}\n`);
       return 1;
     }

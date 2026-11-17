@@ -1,5 +1,6 @@
 import { apply, type Applied } from "../../memory/apply";
 import { LockTimeout } from "../../memory/lock";
+import { storeDir } from "../../memory/place";
 import { projectRef } from "../../memory/projects";
 import { NewerFormat } from "../../memory/store";
 import type { Shelf } from "../../memory/types";
@@ -36,6 +37,7 @@ export async function remember(argv: string[]): Promise<number> {
 
   const platform = currentPlatform();
   const home = platform.home;
+  const store = storeDir(platform);
   const now = new Date();
   let shelf: Shelf = { level: "user", file: values["about-me"] ? "USER" : "RULES" };
   let scope = "user";
@@ -49,7 +51,7 @@ export async function remember(argv: string[]): Promise<number> {
 
   let done: Applied;
   try {
-    done = await apply(platform.dataDir, {
+    done = await apply(store, {
       origin: "user",
       // The user's own words are the evidence; each time they are said counts.
       evidence: [{ kind: "fact", tier: "stated", speaker: "user", scope, source: "cli", content: text, at: now, label: "meme remember", salt: now.toISOString() }],
@@ -57,7 +59,7 @@ export async function remember(argv: string[]): Promise<number> {
     });
   } catch (err) {
     if (err instanceof NewerFormat || err instanceof LockTimeout) throw new CommandError(`${err.message}; nothing was remembered`);
-    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(platform.dataDir, home)} cannot be written); nothing was remembered`);
+    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(store, home)} cannot be written); nothing was remembered`);
     throw err;
   }
   const outcome = done.outcomes[0]!;

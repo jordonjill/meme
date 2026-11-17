@@ -7,6 +7,7 @@ import { CommandError } from "../cli/args";
 import { apply, type NewEvidence } from "../memory/apply";
 import { recall, type Scope } from "../memory/context";
 import { parseShelf } from "../memory/entries";
+import { storeDir } from "../memory/place";
 import { projectRef } from "../memory/projects";
 import { entriesIn, memoryPaths, readText } from "../memory/store";
 import { normalize, type Shelf } from "../memory/types";
@@ -32,14 +33,16 @@ const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const CWD = { type: "string", description: "The directory you work in, as an absolute path; needed only when it is not the one this server was started in." };
 
 export function memoryTools(platform: Platform): Tool[] {
-  const p = memoryPaths(platform.dataDir);
+  // Looked up at each call: the folder can be on a drive that is mounted later.
+  const store = () => storeDir(platform);
+  const paths = () => memoryPaths(store());
   const rootOf = (args: Record<string, unknown>) => {
     const cwd = text(args.cwd);
     return projectOf(platform, cwd && path.isAbsolute(cwd) ? cwd : process.cwd());
   };
   const scopeOf = (args: Record<string, unknown>, client: string): Scope & { root: string } => {
     const root = rootOf(args);
-    return { root, memoryDir: p.memory, project: projectRef(root), agent: agentOfClient(client) ?? runningAgent(platform.vars)?.agent ?? null };
+    return { root, memoryDir: paths().memory, project: projectRef(root), agent: agentOfClient(client) ?? runningAgent(platform.vars)?.agent ?? null };
   };
 
   const context: Tool = {
@@ -75,7 +78,7 @@ export function memoryTools(platform: Platform): Tool[] {
       const id = text(args.id);
       if (!id) throw new ToolError("explain needs `id`: an entry's id, like m-3f2a91c0");
       try {
-        return entryText(resolveEntry(entriesIn(p.memory), id), p.evidence, platform.home);
+        return entryText(resolveEntry(entriesIn(paths().memory), id), paths().evidence, platform.home);
       } catch (err) {
         if (err instanceof CommandError) throw new ToolError(err.message);
         throw err;
@@ -119,10 +122,10 @@ export function memoryTools(platform: Platform): Tool[] {
       const evidence: NewEvidence = said
         ? { kind: "fact", tier: "stated", speaker: "user", scope, source: `session:${said.session}#${said.seq}`, content: what, quote, at: said.at ?? now, label }
         : { kind: "fact", tier: "reported", speaker: "agent", scope, source: `mcp:${client.replace(/\s+/g, "-") || "agent"}`, content: what, ...(quote ? { quote } : {}), at: now, label, salt: now.toISOString() };
-      const done = await apply(platform.dataDir, { origin: "agent", evidence: [evidence], ops: [{ op: "add", shelf, text: what, kind: "fact", evidence: [0], project }] }, { verify: () => true });
+      const done = await apply(store(), { origin: "agent", evidence: [evidence], ops: [{ op: "add", shelf, text: what, kind: "fact", evidence: [0], project }] }, { verify: () => true });
       const outcome = done.outcomes[0]!;
       if (!outcome.ok) throw new ToolError(`not remembered: ${outcome.reason}`);
-      const entry = entriesIn(p.memory).find((e) => e.entry.id === outcome.id)!.entry;
+      const entry = entriesIn(paths().memory).find((e) => e.entry.id === outcome.id)!.entry;
       if (entry.status === "active") return outcome.change === "added" ? `Remembered as ${outcome.id}; it is in force now.` : `Already in memory as ${outcome.id}; noted again.`;
       const why = quote ? "the quoted words were not found in what the user said in any session" : "no words of the user were given as `quote`";
       return `Kept as a candidate, ${outcome.id}: it is not in force yet, because ${why}. Tell the user it takes effect once they confirm it by running: meme remember "${entry.text}"`;

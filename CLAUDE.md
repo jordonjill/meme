@@ -23,6 +23,7 @@ The design docs are in Chinese and live outside this repo, in `/home/jihd/work/p
 - `bun test` runs the unit and end-to-end tests; `bun run typecheck`; `bun scripts/build.ts [linux-x64|windows-x64]` writes single files to `dist/`. `MEME_BIN=dist/meme-linux-x64 bun test test/e2e` runs the end-to-end tests against a built file.
 - `MEME_REAL_SESSIONS=1 bun test test/unit/real-sessions.test.ts` reads this machine's own sessions in place and prints counts only. Run it before upgrading trajectory.
 - Test hooks: `MEME_HOME` (data directory), `MEME_ENV` (force win|wsl|mac|linux), `MEME_WINDOWS_USERS_DIR` (WSL: where the Windows user folders are, normally `/mnt/c/Users`).
+- Memory is kept in the Windows user's `.meme` folder, also when meme runs in WSL; `MEME_HOME` keeps it in the data directory instead, and `MEME_STORE` names another place. When trying meme by hand in WSL, set `MEME_HOME` (and `MEME_ENV=linux` unless Windows sessions are wanted), so that nothing is read from or written to the real Windows side.
 
 ## Commits
 

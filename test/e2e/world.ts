@@ -34,6 +34,8 @@ function worldEnv(w: World, extra?: Record<string, string>): Record<string, stri
     USERPROFILE: w.home,
     MEME_ENV: "wsl",
     MEME_WINDOWS_USERS_DIR: w.users,
+    // Memory beside the mirror, so that tests of memory need not know where it goes in WSL; the tests of that set it to "".
+    MEME_STORE: path.join(w.home, ".meme"),
     TZ: "UTC",
     // Run from sources, Bun would cache its transpiled files in the fake HOME.
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",

@@ -28,6 +28,8 @@ const OWN = [
   ...["raw/sessions.sqlite", "meme.sqlite"].flatMap((f) => [f, ...SQLITE_SIDE_FILES.map((s) => f + s)]),
   ...["logs/meme.log", "logs/meme.log.1"],
   ...ADAPTERS.flatMap((a) => (a.cacheDir ? [`cache/${a.cacheDir}`] : [])),
+  // In WSL, the link to where memory is kept on the Windows side; the memory itself is not meme's to remove from here.
+  "store",
   // The plugins meme wrote for agents: wiring, made again by `meme plugin`.
   ...PROFILES.flatMap((p) => (p.plugin ? [`plugins/${p.agent}`] : [])),
 ];

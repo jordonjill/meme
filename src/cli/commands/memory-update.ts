@@ -2,6 +2,7 @@ import { profileOf } from "../../adapters/profiles";
 import { ConfigError, configFile, loadConfig } from "../../memory/config";
 import { LockTimeout, withLock } from "../../memory/lock";
 import { asker, ModelError } from "../../memory/model";
+import { storeDir } from "../../memory/place";
 import { FIRST_RUN_DAYS, pick, run, type SessionResult } from "../../memory/pipeline";
 import { memoryPaths, NewerFormat } from "../../memory/store";
 import { displayPath } from "../../platform/paths";
@@ -19,10 +20,11 @@ export async function update(o: { dryRun: boolean; all: boolean; session?: strin
   const ctx = await createContext();
   const { platform } = ctx;
   const home = platform.home;
-  const p = memoryPaths(platform.dataDir);
+  const store = storeDir(platform);
+  const p = memoryPaths(store);
   let config;
   try {
-    config = loadConfig(platform.dataDir, platform.vars);
+    config = loadConfig(store, platform.vars);
   } catch (err) {
     if (err instanceof ConfigError) throw new CommandError(err.message);
     throw err;
@@ -49,7 +51,7 @@ export async function update(o: { dryRun: boolean; all: boolean; session?: strin
     throw new CommandError(
       [
         "no model is set up. Reading sessions sends their text to a model you choose, so meme needs to know which:",
-        `  put {"model": {"url": "https://…/v1", "key": "…", "name": "…"}} in ${displayPath(configFile(platform.dataDir), home)}`,
+        `  put {"model": {"url": "https://…/v1", "key": "…", "name": "…"}} in ${displayPath(configFile(store), home)}`,
         "  (any service that speaks the OpenAI chat format; one on this machine keeps everything here)",
         "`meme memory update --dry-run` shows what would be sent.",
       ].join("\n"),
@@ -63,12 +65,12 @@ export async function update(o: { dryRun: boolean; all: boolean; session?: strin
   };
   let results: SessionResult[] = [];
   try {
-    results = await withLock(path.join(p.state, "update.lock"), () => run(due, older, asker(model), { dataDir: platform.dataDir, model: model.name, now: ctx.now, secret: model.key, onSession: say }), RUNNING);
+    results = await withLock(path.join(p.state, "update.lock"), () => run(due, older, asker(model), { dataDir: store, model: model.name, now: ctx.now, secret: model.key, onSession: say }), RUNNING);
   } catch (err) {
     if (err instanceof LockTimeout) throw new CommandError("another `meme memory update` is running");
     if (err instanceof ModelError) throw new CommandError(`${err.message}\nStopped there. What was read before it is kept; the rest is read by the next run.`);
     if (err instanceof NewerFormat) throw new CommandError(err.message);
-    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(platform.dataDir, home)} cannot be written)`);
+    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(store, home)} cannot be written)`);
     throw err;
   }
   const kept = results.reduce((n, r) => n + r.kept, 0);
