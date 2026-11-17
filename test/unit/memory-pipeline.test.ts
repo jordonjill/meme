@@ -124,13 +124,15 @@ describe("the model's answer (plan-m2 F5)", () => {
 describe("the model's setup (plan-m2 F5)", () => {
   test("from config.json, with the environment on top; without an address and a name there is no model", () => {
     const dataDir = path.join(tempDir(), ".meme");
-    expect(loadConfig(dataDir, {})).toEqual({ model: null, exclude: [] });
+    expect(loadConfig(dataDir, {})).toEqual({ model: null, exclude: [], auto: true });
     mkdirSync(dataDir);
     writeFileSync(configFile(dataDir), JSON.stringify({ model: { url: "https://host/v1/", keyEnv: "MY_KEY", name: "small" }, exclude: ["/work/secret", "github.com/me/private"] }));
-    expect(loadConfig(dataDir, { MY_KEY: "k-1" })).toEqual({ model: { url: "https://host/v1", key: "k-1", name: "small" }, exclude: ["/work/secret", "github.com/me/private"] });
+    expect(loadConfig(dataDir, { MY_KEY: "k-1" })).toEqual({ model: { url: "https://host/v1", key: "k-1", name: "small" }, exclude: ["/work/secret", "github.com/me/private"], auto: true });
+    expect(loadConfig(dataDir, { MEME_NO_AUTO_UPDATE: "1" }).auto).toBe(false);
     expect(loadConfig(dataDir, { MEME_MODEL_URL: "http://localhost:11434/v1", MEME_MODEL_NAME: "local", MEME_MODEL_KEY: "k-2" }).model).toEqual({ url: "http://localhost:11434/v1", key: "k-2", name: "local" });
-    writeFileSync(configFile(dataDir), JSON.stringify({ model: { url: "https://host/v1" } }));
+    writeFileSync(configFile(dataDir), JSON.stringify({ model: { url: "https://host/v1" }, auto: false }));
     expect(loadConfig(dataDir, {}).model).toBeNull();
+    expect(loadConfig(dataDir, {}).auto).toBe(false);
     writeFileSync(configFile(dataDir), "{ not json");
     expect(() => loadConfig(dataDir, {})).toThrow(ConfigError);
   });

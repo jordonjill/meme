@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
 import { redactText } from "../redact/rules";
 import { formatShelf, preambleFor, shelfFile, shelfKey } from "./entries";
-import { appended, dayAndTime, dayFile, days, parseDay, without } from "./evidence";
+import { appended, dayAndTime, dayFile, days, parseDay, readAll, without } from "./evidence";
 import { withLock, type LockOptions } from "./lock";
 import {
   addTombstones,
@@ -117,6 +118,34 @@ const strongest = (tiers: Tier[]): Tier => TIERS.find((t) => tiers.includes(t)) 
 /** Said by the user or looked up: in force at once. Read out of behaviour or reported: a candidate until there is more. */
 const statusFor = (basis: Tier) => (basis === "stated" || basis === "observed" ? "active" : "candidate");
 
+/** In how many different places what is only inferred or reported has to be seen before it takes effect (memory.md v0.2 §6.2). */
+const SEEN = 2;
+
+/** One change to memory, as the digest tells it (state/changes.jsonl). */
+export interface ChangeRecord {
+  at: string;
+  id: string;
+  change: "added" | "replaced" | "updated" | "in force" | "forgotten";
+  text: string;
+  /** The conclusion file it is in, as shelfKey() names it. */
+  shelf?: string;
+  /** In force, or waiting to be seen again. */
+  status?: string;
+  replaces?: string;
+  /** Where it was learned: the label of its evidence. */
+  from?: string;
+}
+
+export function changesFile(p: MemoryPaths): string {
+  return path.join(p.state, "changes.jsonl");
+}
+
+function logChanges(p: MemoryPaths, records: ChangeRecord[]): void {
+  if (!records.length) return;
+  mkdirSync(p.state, { recursive: true, mode: 0o700 });
+  appendFileSync(changesFile(p), records.map((r) => JSON.stringify(r) + "\n").join(""), { mode: 0o600 });
+}
+
 export async function apply(dataDir: string, proposal: Proposal, opts: ApplyOptions = {}): Promise<Applied> {
   const p = memoryPaths(dataDir);
   return withLock(p.lock, () => applyLocked(p, proposal, opts), opts.lock);
@@ -177,6 +206,31 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
 
   let changes = 0;
   const refuse = (gate: Gate, reason: string): Outcome => ({ ok: false, gate, reason });
+  const at = new Date().toISOString();
+  const log: ChangeRecord[] = [];
+  const note = (e: Entry, s: OpenShelf, change: ChangeRecord["change"], proof: Evidence[]) =>
+    log.push({ at, id: e.id, change, text: e.text, shelf: shelfKey(s.shelf), status: e.status, ...(e.replaces ? { replaces: e.replaces } : {}), ...(proof[0] ? { from: proof[0].label } : {}) });
+
+  // Where each piece of evidence was seen, to tell one place from two: what is on file, and what comes now.
+  let sources: Map<string, string> | null = null;
+  const placeOf = (id: string): string => {
+    const now = pieces.find((x) => x?.id === id);
+    if (now) return now.source.replace(/#.*$/, "");
+    sources ??= new Map(readAll(p.evidence).map((x) => [x.id, x.source]));
+    return (sources.get(id) ?? id).replace(/#.*$/, "");
+  };
+  /** Said by the user or looked up: in force at once. Inferred or reported: once seen in two different places. */
+  const statusOf = (e: Entry) => (statusFor(e.basis) === "active" || new Set(e.evidence.map(placeOf)).size >= SEEN ? "active" : "candidate");
+  /** An entry that replaces another takes its place once it is in force. */
+  const retireReplaced = (e: Entry) => {
+    if (e.status !== "active" || !e.replaces) return;
+    const old = find(e.replaces);
+    if (old && old.entry.status === "active") {
+      old.entry.status = "replaced";
+      old.entry.replacedBy = e.id;
+      old.s.dirty = true;
+    }
+  };
 
   /** Adds an entry, or more evidence to the entry that already says the same. */
   const add = (n: NewEntry, replaces?: Entry): Outcome => {
@@ -201,12 +255,15 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
       const before = entry.evidence.length;
       entry.evidence = [...new Set([...entry.evidence, ...proof.map((e) => e.id)])];
       if (TIERS.indexOf(basis) < TIERS.indexOf(entry.basis)) entry.basis = basis;
-      const status = change === "added" ? statusFor(entry.basis) : entry.status === "candidate" ? statusFor(entry.basis) : entry.status;
+      const status = change === "added" || entry.status === "candidate" ? statusOf(entry) : entry.status;
+      const promoted = entry.status === "candidate" && status === "active";
       if (change === "more evidence" && entry.evidence.length === before && status === entry.status && !replaces) return { ok: true, id: entry.id, shelf: s.shelf, file: s.file, change };
       entry.status = status;
       if (change === "added") delete entry.replacedBy;
+      if (promoted && !replaces) note(entry, s, "in force", proof);
     } else {
-      entry = { id: `m-${short(`${shelfKey(n.shelf)}\n${normalize(text.text)}`)}`, text: text.text, kind: n.kind, agents: n.agents ?? "all", basis, status: statusFor(basis), evidence: proof.map((e) => e.id) };
+      entry = { id: `m-${short(`${shelfKey(n.shelf)}\n${normalize(text.text)}`)}`, text: text.text, kind: n.kind, agents: n.agents ?? "all", basis, status: "candidate", evidence: proof.map((e) => e.id) };
+      entry.status = statusOf(entry);
       s.entries.push(entry);
       change = "added";
     }
@@ -222,6 +279,7 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
       }
       change = "replaced";
     }
+    if (change === "added" || change === "replaced") note(entry, s, change, proof);
     return { ok: true, id: entry.id, shelf: s.shelf, file: s.file, change };
   };
 
@@ -255,6 +313,11 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
         if (why) e.why = why.text;
         if (when) e.when = when.text;
         at.s.dirty = true;
+        if (e.status === "candidate" && statusOf(e) === "active") {
+          e.status = "active";
+          retireReplaced(e);
+          note(e, at.s, "in force", proof);
+        } else if (rewording) note(e, at.s, "updated", proof);
         outcome = { ok: true, id: e.id, shelf: at.s.shelf, file: at.s.file, change: rewording ? "updated" : "more evidence" };
       }
     }
@@ -291,6 +354,7 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
     throw err;
   }
   pruneSnapshots(p);
+  logChanges(p, log);
   return { evidence: pieces.map((e) => e?.id ?? null), outcomes, masked, version: bumpVersion(p) };
 }
 
@@ -348,6 +412,10 @@ export async function forget(dataDir: string, id: string, opts: { lock?: LockOpt
         }
       }
       addTombstones(p, stones);
+      // The log of changes keeps no words of it either: its lines go, and one without them says it was forgotten.
+      const log = readText(changesFile(p));
+      if (log !== null) writeFileAtomic(changesFile(p), log.split("\n").filter((l) => l.trim() && !l.includes(`"id":"${id}"`)).map((l) => l + "\n").join(""));
+      logChanges(p, [{ at: (opts.now ?? new Date()).toISOString(), id, change: "forgotten", text: "" }]);
       bumpVersion(p);
       return { entry, file: home.file, evidence: [...drop] };
     },
