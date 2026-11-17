@@ -118,4 +118,10 @@ case ":$PATH:" in
 esac
 
 say ""
-"$dir/meme" install || fail "meme install did not finish; run it again: $dir/meme install"
+# Piped into sh, this script's input is the pipe. meme may have a question (install on the other side of
+# WSL and Windows too?), which it asks only at a terminal: it gets the terminal when there is one.
+if [ -t 1 ] && (: </dev/tty) 2>/dev/null; then
+  "$dir/meme" install </dev/tty || fail "meme install did not finish; run it again: $dir/meme install"
+else
+  "$dir/meme" install || fail "meme install did not finish; run it again: $dir/meme install"
+fi
