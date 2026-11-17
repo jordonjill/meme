@@ -11,6 +11,8 @@ import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
+import { memory, memoryHelp } from "./commands/memory";
+import { remember, rememberHelp } from "./commands/remember";
 import { report, reportHelp } from "./commands/report";
 import { search, searchHelp } from "./commands/search";
 import { show, showHelp } from "./commands/show";
@@ -23,6 +25,8 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   search: { run: search, help: searchHelp },
   continue: { run: continueSession, help: continueHelp },
   forget: { run: forget, help: forgetHelp },
+  remember: { run: remember, help: rememberHelp },
+  memory: { run: memory, help: memoryHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -39,6 +43,8 @@ Commands:
   search      search past sessions, like rg
   continue    hand a session over to a new agent session
   forget      permanently delete sessions, from the agent and from meme
+  remember    keep a rule or a fact in memory, in your own words
+  memory      what meme remembers: list it, trace an entry, forget one
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data

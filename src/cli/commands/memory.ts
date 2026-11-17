@@ -1,0 +1,119 @@
+import { forget } from "../../memory/apply";
+import { readAll } from "../../memory/evidence";
+import { LockTimeout } from "../../memory/lock";
+import { entriesIn, memoryPaths, NewerFormat, shelvesIn, type OpenShelf, type Placed } from "../../memory/store";
+import { currentPlatform, displayPath } from "../../platform/paths";
+import { plural } from "../../render/text";
+import { isReadOnlyError } from "../../store/db";
+import { CommandError, parse, UsageError } from "../args";
+import { agreed, write } from "../context";
+
+export const memoryHelp = `Usage: meme memory [show <id> | forget <id> [--yes]]
+
+What meme remembers: the rules and facts you gave it with \`meme remember\`.
+
+  (no argument)   every entry, file by file
+  show <id>       one entry with the evidence it rests on
+  forget <id>     remove an entry for good, with the evidence only it rests
+                  on; asks first ([y/N]), --yes skips the question
+
+An id can be shortened to any unique prefix.
+`;
+
+/** The first heading of a conclusion file, and for a project's file what the project is. */
+function titleOf(s: OpenShelf): string {
+  const title = /^# (.+)$/m.exec(s.preamble)?.[1] ?? s.shelf.file;
+  const project = /^Project: (.+)$/m.exec(s.preamble)?.[1];
+  return project ? `${title} (${project})` : title;
+}
+
+function resolve(entries: Placed[], arg: string): Placed {
+  const id = arg.toLowerCase().startsWith("m-") ? arg.toLowerCase() : `m-${arg.toLowerCase()}`;
+  const found = entries.filter((e) => e.entry.id.startsWith(id));
+  if (found.length === 1) return found[0]!;
+  if (!found.length) throw new CommandError(`no entry ${arg} in memory; \`meme memory\` lists them`);
+  throw new CommandError(`${arg} matches ${found.length} entries: ${found.map((e) => e.entry.id).join(", ")}`);
+}
+
+export async function memory(argv: string[]): Promise<number> {
+  const { values, positionals } = parse(argv, { yes: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+  if (values.help) {
+    write(memoryHelp);
+    return 0;
+  }
+  const [action, arg, ...more] = positionals;
+  if (action !== undefined && action !== "show" && action !== "forget") throw new UsageError(`memory does not know ${action}; it takes show <id> or forget <id>`);
+  if (action && !arg) throw new UsageError(`memory ${action} needs an entry's id; \`meme memory\` lists them`);
+  if (more.length) throw new UsageError(`too many arguments: ${more.join(" ")}`);
+  if (values.yes && action !== "forget") throw new UsageError("--yes goes with forget");
+
+  const platform = currentPlatform();
+  const home = platform.home;
+  const p = memoryPaths(platform.dataDir);
+
+  if (!action) {
+    const shelves = shelvesIn(p.memory).filter((s) => s.entries.length);
+    if (!shelves.length) {
+      write('Nothing remembered yet. `meme remember "…"` keeps a rule or a fact.\n');
+      return 0;
+    }
+    const lines: string[] = [];
+    for (const s of shelves) {
+      if (lines.length) lines.push("");
+      lines.push(`${titleOf(s)}  ${displayPath(s.file, home)}`);
+      for (const e of s.entries) lines.push(`  ${e.id}  ${e.text}${e.status === "active" ? "" : `  [${e.status}]`}`);
+    }
+    write(lines.join("\n") + "\n");
+    return 0;
+  }
+
+  const entries = entriesIn(p.memory);
+  const at = resolve(entries, arg!);
+  const e = at.entry;
+
+  if (action === "show") {
+    const lines = [`${e.id}  ${e.text}`, `  ${e.kind}, for ${e.agents === "all" ? "all agents" : e.agents}; ${e.basis}; ${e.status}`, `  in ${displayPath(at.file, home)}`];
+    if (e.when) lines.push(`  when: ${e.when}`);
+    if (e.why) lines.push(`  why: ${e.why}`);
+    if (e.replaces) lines.push(`  replaces ${e.replaces}`);
+    if (e.replacedBy) lines.push(`  replaced by ${e.replacedBy}`);
+    lines.push("", "Evidence");
+    const all = new Map(readAll(p.evidence).map((x) => [x.id, x]));
+    for (const id of e.evidence) {
+      const x = all.get(id);
+      if (!x) {
+        lines.push(`  ${id}  (no longer in the evidence files)`);
+        continue;
+      }
+      lines.push(`  ${x.id}  ${x.day} ${x.time}  ${x.label || x.source}`, `    ${x.content}`);
+      if (x.quote) lines.push(`    > ${x.quote}`);
+    }
+    if (!e.evidence.length) lines.push("  (none)");
+    write(lines.join("\n") + "\n");
+    return 0;
+  }
+
+  // forget
+  const others = new Set(entries.filter((x) => x.entry.id !== e.id).flatMap((x) => x.entry.evidence));
+  const own = e.evidence.filter((id) => !others.has(id)).length;
+  write(`This removes for good:\n  ${e.id}  ${e.text}\n  and ${plural(own, "piece")} of evidence that only it rests on.\n`);
+  if (!values.yes) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      process.stderr.write("meme: nothing forgotten. Forgetting needs the user's confirmation: run it in a terminal, or add --yes only if the user has explicitly asked to forget this.\n");
+      return 1;
+    }
+    if (!agreed("Forget it?")) {
+      write("Nothing forgotten.\n");
+      return 1;
+    }
+  }
+  try {
+    await forget(platform.dataDir, e.id);
+  } catch (err) {
+    if (err instanceof NewerFormat || err instanceof LockTimeout) throw new CommandError(`${err.message}; nothing was forgotten`);
+    if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(platform.dataDir, home)} cannot be written); nothing was forgotten`);
+    throw err;
+  }
+  write(`Forgotten ${e.id}. It will not be learned again from your sessions; \`meme remember\` brings it back.\n`);
+  return 0;
+}
