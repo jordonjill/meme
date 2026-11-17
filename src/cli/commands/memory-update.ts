@@ -51,7 +51,7 @@ export async function update(o: { dryRun: boolean; all: boolean; session?: strin
     throw new CommandError(
       [
         "no model is set up. Reading sessions sends their text to a model you choose, so meme needs to know which:",
-        `  put {"model": {"url": "https://…/v1", "key": "…", "name": "…"}} in ${displayPath(configFile(store), home)}`,
+        "  meme model set",
         "  (any service that speaks the OpenAI chat format; one on this machine keeps everything here)",
         "`meme memory update --dry-run` shows what would be sent.",
       ].join("\n"),

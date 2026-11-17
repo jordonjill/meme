@@ -64,50 +64,45 @@ describe("meme mcp", () => {
     expect(tools.map((t) => t.name)).toEqual(["context", "recall", "explain", "remember"]);
   });
 
-  test("remember with the user's own words: found in the session, in force at once, traced to that message", () => {
+  test("remember without a model: the user's words go in as they are, in force, traced to the message they were said in", () => {
     const { w, tool } = working();
     const t = talk(w, tool, [
-      ["remember", { text: "Install dependencies with pnpm, never npm.", quote: "装依赖一律用 pnpm", about: "project" }],
+      ["remember", { quote: "装依赖一律用 pnpm", about: "project", note: "the user wants pnpm from now on" }],
       ["context", { task: "add a dependency" }],
       ["recall", { words: "pnpm" }],
     ]);
     const id = /m-[0-9a-f]{8}/.exec(t.text(1))![0];
-    expect(t.text(1)).toBe(`Remembered as ${id}; it is in force now.`);
-    expect(t.text(2)).toContain(`This project (tool)\n- [${id}] Install dependencies with pnpm, never npm.\n`);
-    expect(t.text(3)).toBe(`[${id}] Install dependencies with pnpm, never npm. (github.com/me/tool)`);
+    expect(t.text(1)).toBe(`Remembered: [${id}] 装依赖一律用 pnpm\nKept in the user's own words: no model is set up to word it.`);
+    expect(t.text(2)).toContain(`This project (tool)\n- [${id}] 装依赖一律用 pnpm\n`);
+    expect(t.text(3)).toBe(`[${id}] 装依赖一律用 pnpm (github.com/me/tool)`);
     const [day] = readdirSync(path.join(w.home, ".meme", "evidence"));
     const evidence = readFileSync(path.join(w.home, ".meme", "evidence", day!), "utf8");
-    expect(evidence).toMatch(new RegExp(`\\n## \\d\\d:\\d\\d · claude-code over MCP\\n- e-[0-9a-f]{8} · fact · stated · user · project:tool-[0-9a-f]{8} · session:${SESSION}#\\d+\\n  Install dependencies with pnpm, never npm\\.\\n  > 装依赖一律用 pnpm\\n$`));
+    expect(evidence).toMatch(new RegExp(`\\n## \\d\\d:\\d\\d · claude-code over MCP\\n- e-[0-9a-f]{8} · fact · stated · user · project:tool-[0-9a-f]{8} · session:${SESSION}#\\d+\\n  装依赖一律用 pnpm\\n$`));
+    // The agent's note is read by the model only; nothing of it is written.
+    expect(evidence).not.toContain("the user wants");
     // Explained to the agent the way `meme memory show` explains it to the user.
     const again = talk(w, tool, [["explain", { id }]]);
-    expect(again.text(1)).toContain(`${id}  Install dependencies with pnpm, never npm.\n  fact, for all agents; stated; active\n`);
-    expect(again.text(1)).toContain("    > 装依赖一律用 pnpm\n");
+    expect(again.text(1)).toContain(`${id}  装依赖一律用 pnpm\n  fact, for all agents; stated; active\n`);
     expect(run(w, ["memory", "show", id]).out).toBe(again.text(1));
   });
 
-  test("remember with words the user never said, or with none: a candidate, not given to agents, until the user confirms", () => {
+  test("remember with words the user never said is refused, and nothing is written", () => {
     const { w, tool } = working();
-    const t = talk(w, tool, [
-      ["remember", { text: "The user prefers tabs.", quote: "I always use tabs" }],
-      ["remember", { text: "Tests run with bun test." }],
-      ["context", {}],
-    ]);
-    expect(t.text(1)).toMatch(/^Kept as a candidate, m-[0-9a-f]{8}: it is not in force yet, because the quoted words were not found in what the user said in any session\. Tell the user it takes effect once they confirm it by running: meme remember "The user prefers tabs\."$/);
-    expect(t.text(2)).toContain("because no words of the user were given as `quote`");
-    expect(t.text(3)).toBe("meme has nothing in memory for here yet.");
-    expect(run(w, ["memory"]).out).toMatch(/The user prefers tabs\. {2}\[candidate\]\n/);
-    // The user confirming it puts it in force.
-    expect(run(w, ["remember", "The user prefers tabs."]).out).toContain("Already remembered");
-    expect(run(w, ["context"]).out).toContain("] The user prefers tabs.\n");
+    const t = talk(w, tool, [["remember", { quote: "I always use tabs" }]]);
+    expect(t.replies.find((m) => m.id === 1)!.result).toMatchObject({
+      isError: true,
+      content: [{ text: 'not remembered: these words are not in anything the user said in a session. Copy them exactly from the user\'s message, or ask the user to run: meme remember "I always use tabs"' }],
+    });
+    expect(run(w, ["memory"]).out).toStartWith("Nothing remembered yet.");
   });
 
   test("an agent cannot bring back what the user had forgotten, even with the user's words", () => {
     const { w, tool } = working();
-    const first = talk(w, tool, [["remember", { text: "Install with pnpm.", quote: WORDS }]]);
+    const first = talk(w, tool, [["remember", { quote: WORDS }]]);
     const id = /m-[0-9a-f]{8}/.exec(first.text(1))![0];
     expect(run(w, ["memory", "forget", id, "--yes"]).code).toBe(0);
-    const again = talk(w, tool, [["remember", { text: "Install with pnpm.", quote: WORDS }]]);
-    expect(again.replies.find((m) => m.id === 1)!.result).toMatchObject({ isError: true, content: [{ text: "not remembered: none of its evidence could be checked" }] });
+    const again = talk(w, tool, [["remember", { quote: WORDS }]]);
+    expect(again.replies.find((m) => m.id === 1)!.result).toMatchObject({ isError: true });
     expect(run(w, ["memory"]).out).toStartWith("Nothing remembered yet.");
   });
 
@@ -115,12 +110,12 @@ describe("meme mcp", () => {
     const { w, tool } = working();
     const t = talk(w, tool, [
       ["remember", {}],
-      ["remember", { text: "x", about: "everyone" }],
+      ["remember", { quote: WORDS, about: "everyone" }],
       ["recall", {}],
       ["explain", { id: "m-ffffffff" }],
     ]);
     expect(t.replies.slice(1).map((m) => [m.result!.isError, m.result!.content![0]!.text])).toEqual([
-      [true, "remember needs `text`: what to keep, as one sentence"],
+      [true, "remember needs `quote`: the user's own words, copied exactly from their message"],
       [true, "`about` is one of rule, user, project"],
       [true, "recall needs `words`: what to look for"],
       [true, "no entry m-ffffffff in memory; `meme memory` lists them"],

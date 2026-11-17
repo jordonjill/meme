@@ -162,7 +162,7 @@ describe("meme memory", () => {
 
   test("usage errors name what is wrong", () => {
     const w = world();
-    expect(run(w, ["memory", "list"]).err.split("\n")[0]).toBe("meme memory: memory does not know list; it takes show <id>, forget <id> or update");
+    expect(run(w, ["memory", "list"]).err.split("\n")[0]).toBe("meme memory: memory does not know list; it takes show <id>, forget <id>, update or exclude");
     expect(run(w, ["memory", "--dry-run"]).err.split("\n")[0]).toBe("meme memory: --dry-run, --all and --session go with update");
     expect(run(w, ["memory", "show"]).err.split("\n")[0]).toBe("meme memory: memory show needs an entry's id; `meme memory` lists them");
     expect(run(w, ["memory", "--yes"]).err.split("\n")[0]).toBe("meme memory: --yes goes with forget");

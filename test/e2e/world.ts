@@ -50,10 +50,24 @@ export function run(w: World, args: string[], o: { cwd?: string; env?: Record<st
 }
 
 /** Like `run`, without stopping this process meanwhile: for when meme talks to a server the test itself runs. */
-export async function runAsync(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
-  const p = Bun.spawn([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe" });
+export async function runAsync(w: World, args: string[], o: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
+  const p = Bun.spawn([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe", stdin: o.input === undefined ? "ignore" : new Blob([o.input]) });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { code, out, err };
+}
+
+/**
+ * meme in a pseudo-terminal with `lines` typed one after another, `pause` ms apart,
+ * the way a person types them: for input read line by line and then key by key. Needs SCRIPT.
+ */
+export async function runTyped(w: World, args: string[], lines: string[], o: { env?: Record<string, string>; pause?: number } = {}) {
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const pause = (o.pause ?? 800) / 1000;
+  const feed = lines.map((l) => `sleep ${pause}; printf '%s\\r' ${quote(l)}`).join("; ");
+  const command = [...BIN, ...args].map(quote).join(" ");
+  const p = Bun.spawn(["sh", "-c", `(${feed}; sleep 2) | ${SCRIPT!} -qec ${quote(command)} /dev/null`], { cwd: w.home, env: worldEnv(w, { TERM: "dumb", ...o.env }), stdout: "pipe", stderr: "pipe" });
+  const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+  return { code, out: out.replace(/\r\n/g, "\n") };
 }
 
 /** util-linux `script`, to run meme in a pseudo-terminal; null where there is none (macOS's takes other options). */
