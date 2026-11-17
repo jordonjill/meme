@@ -10,11 +10,16 @@ want to go on with a session in another agent (or in a fresh session of the same
 one), meme hands it over: the new agent runs `meme continue <id>` and gets a
 handoff built word for word from the old session.
 
-It works across **WSL and Windows**: meme in WSL also sees your Windows sessions,
-and meme on Windows also sees the sessions in your running WSL distributions.
+It also keeps a **memory** that the agents share: the rules and facts you tell
+it, what an agent keeps for you, and what a model you choose reads out of your
+sessions. Every entry points at the words it rests on.
 
-> Status: early (0.1.0). No prebuilt releases or install scripts yet; build it
-> from source (below).
+It works across **WSL and Windows**: meme in WSL also sees your Windows sessions,
+and meme on Windows also sees the sessions in your running WSL distributions;
+the memory is one for both.
+
+> Status: early. Memory is new and has been tried little with real agents and
+> models so far.
 
 ## What it does
 
@@ -31,6 +36,11 @@ and meme on Windows also sees the sessions in your running WSL distributions.
   nothing to disk.
 - **Forget.** `meme forget` deletes a session for good, from the agent and from
   meme, after showing exactly what will go.
+- **Remember.** A memory your agents share: `meme remember` keeps a rule or a
+  fact in your own words, an agent can keep one for you, and with a model set up
+  meme reads your sessions for what is worth keeping. `meme context` gives an
+  agent what holds where it works, with the work left unfinished there. See
+  [Memory](#memory).
 
 ## Install
 
@@ -52,8 +62,10 @@ your system and CPU, checks it against the release's `SHA256SUMS`, puts it in
 PATH if it is not there yet, and runs `meme install`, which finds the agents and
 mirrors all sessions once. `MEME_VERSION=v0.1.0` installs that release;
 `MEME_NO_MODIFY_PATH=1` leaves PATH alone. To use `! meme continue` in agents on
-both sides of WSL and Windows, install meme on both: `meme install` says so when it
-finds agents on the other side.
+both sides of WSL and Windows, meme has to be on both: when `meme install` finds
+agents on the other side and no meme, it offers to install the same version
+there too, with that side's installer. It asks first, and only in a terminal;
+elsewhere it shows the line to run there.
 
 `meme install` changes nothing outside `~/.meme`: no skills, no `CLAUDE.md` or
 `AGENTS.md`, no settings, no hooks. `meme install --dry-run` shows what it would
@@ -166,6 +178,113 @@ last of all messages from the middle. If that is still too long, the handoff is
 cut at a line and says so. The handoff says what it left out, and `meme show` or
 `meme search --session` finds it.
 
+## Memory
+
+meme keeps a memory that all your agents share: what you told one of them holds
+in the others. It has three kinds of things:
+
+- **Facts**: your rules for how agents should work with you, facts about you and
+  your machines, and facts about a project.
+- **Experience**: what was learned from how something turned out, and when it
+  applies.
+- **Unfinished work**: the sessions of a project that you stopped, or that ended
+  in the middle of a step. Nothing is stored for these; meme works them out from
+  the sessions each time.
+
+Memory is new, and has been tried little with real agents and models so far.
+
+### Tell it something
+
+```sh
+meme remember "Reply in Chinese; keep everything in the repository in English"
+meme remember --project "Tests need the database running"
+meme remember --about-me "I work in WSL and on Windows"
+```
+
+Without an option it is a rule for every agent; `--project` makes it a fact about
+the project of the current directory, `--about-me` a fact about you. No model is
+asked. Saying the same thing again adds no second entry.
+
+- `meme memory` lists what is remembered, file by file.
+- `meme memory show <id>` shows the words an entry rests on and when they were
+  said.
+- `meme memory forget <id>` removes an entry for good, asking first: the entry,
+  the evidence only it rested on, and its text in meme's own backups. What stays
+  is a hash, so that the same words are not learned again from your sessions;
+  saying them again yourself brings the entry back.
+
+Memory is plain Markdown you can read: the entries in `~/.meme/memory`
+(`RULES.md`, `USER.md` and `EXPERIENCE.md`, and a `MEMORY.md` and an
+`EXPERIENCE.md` for each project), and the evidence, one file per day, in
+`~/.meme/evidence`. Secrets are masked before anything is written, as in the
+mirror.
+
+### Give it to your agents
+
+`meme context` prints what memory holds for the current directory: your rules,
+facts about you and about the project, the work left unfinished there and, given
+the task in a few words (`meme context "add rate limiting"`), the entries that
+have to do with it. It says it is reference, not instructions. Inside an agent,
+`! meme context` puts it into the conversation. For an agent to get it by itself:
+
+- **MCP.** `meme mcp` serves memory over the Model Context Protocol. Connect it
+  once, with the agent's own command (`meme mcp --help` lists them):
+
+  ```sh
+  claude mcp add -s user meme -- meme mcp
+  codex mcp add meme -- meme mcp
+  ```
+
+  The agent then has four tools: `context`, `recall` (look something up),
+  `explain` (where an entry comes from) and `remember`.
+- **A plugin, for Claude Code.** `meme plugin` writes a plugin into
+  `~/.meme/plugins/claude-code` and shows the two commands that install it. With
+  it Claude Code is given `meme context` at the start of every session, and has
+  the tools above.
+
+meme itself changes none of the agents' files: you run those commands.
+
+When an agent keeps something for you with `remember`, it passes on your own
+words. meme looks for them in your sessions. Found, the entry is in force at once
+and points at the message you said it in. Not found, it waits as a candidate: it
+is given to no agent, and takes effect when you confirm it with `meme remember`.
+An agent cannot change what you said yourself, or bring back what you forgot.
+
+### Let a model read your sessions
+
+With a model set up, meme reads the sessions that have gone quiet and keeps what
+is worth keeping:
+
+```sh
+meme memory update --dry-run    # what would be read and sent; sends nothing
+meme memory update
+```
+
+The model is any service that speaks the OpenAI chat format, set in
+`~/.meme/config.json`:
+
+```json
+{
+  "model": { "url": "https://…/v1", "key": "…", "name": "…" },
+  "exclude": ["github.com/me/private", "/home/me/work/secret"]
+}
+```
+
+- **This sends the text of those sessions to that model**, shortened and with
+  secrets masked, and to nowhere else. With no model set up nothing is sent; a
+  model on your own machine keeps everything there. The sessions of a project
+  under `exclude` (a path, or the address of its remote) are never sent.
+- The model decides what to keep and how to word it. meme keeps an entry only
+  when the words the model quotes for it are really in the session. What you
+  said, or a tool printed, is in force at once; what only the AI said waits as a
+  candidate.
+- A session is read once it has been quiet for 2 hours, and only its new part
+  when it goes on later. A session that ended over 14 days ago and was never read
+  is left alone unless you add `--all`; `--session <id>` reads one session.
+- `MEME_MODEL_URL`, `MEME_MODEL_NAME` and `MEME_MODEL_KEY` set the model from the
+  environment; `"keyEnv": "NAME"` in the file takes the key from a variable
+  instead of keeping it in the file.
+
 ## Commands
 
 | Command | What it does |
@@ -175,7 +294,13 @@ cut at a line and says so. The handoff says what it left out, and `meme show` or
 | `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`; `-a` all projects). `--tools` also lists matches in tool calls and output. |
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
-| `meme status` | Version, data location, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). |
+| `meme remember "<words>"` | Keep a rule or a fact in memory, in your own words (`--project`, `--about-me`). |
+| `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing). |
+| `meme context [<task>]` | What memory holds for the current directory, for an agent to read before it starts. |
+| `meme recall <words>` | Find what meme remembers about something (`--all`: in other projects too). |
+| `meme mcp` | Serve memory to an agent over MCP; `--help` shows how to connect each agent. |
+| `meme plugin [<agent>]` | Write meme's plugin for an agent (Claude Code) and show how to install it. |
+| `meme status` | Version, data location, where memory is, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). |
 | `meme install` / `uninstall` | Mirror everything once / remove meme's data. |
 | `meme report` | A report to paste into an issue when something goes wrong: versions, `status`, recent errors; no conversation content, and your home folder, user names and project paths masked. `--session <id>` adds that session's structure. Read it before you paste it. |
 
@@ -252,6 +377,11 @@ deletion.
   skips these copies; `meme forget` deletes the copy with the session. Any other session found in two places (a home folder copied
   to the other side) is listed once, from the copy written last; `meme status`
   says how many there are, and `meme forget` deletes every copy.
+- **Memory is one, on the Windows side.** meme in WSL keeps its memory in the
+  Windows user's folder (`C:\Users\<you>\.meme`), so the agents on both sides
+  share it; `~/.meme/store` in WSL is a link to that folder, and `meme status`
+  says where memory is. The mirror of the sessions stays on each side. With
+  `MEME_HOME` set, memory is kept in that folder instead.
 - In Windows PowerShell 5.1, output piped to another command (`meme ls | ...`)
   is decoded in the console's code page and Chinese text comes out garbled. Run
   `[Console]::OutputEncoding = [Text.Encoding]::UTF8` first. Output shown
@@ -259,10 +389,19 @@ deletion.
 
 ## Your data
 
-- Everything stays on your machine. meme makes no network requests.
+- Everything stays on your machine and meme makes no network requests, with two
+  exceptions that you start yourself. `meme memory update` sends the text of the
+  sessions it reads to the model you set up, and only there (see
+  [Memory](#memory)). And saying yes when `meme install` offers to install on the
+  other side of WSL and Windows runs that side's installer, which downloads meme.
 - The mirror is `~/.meme/raw/sessions.sqlite` (on Windows under
   `%USERPROFILE%\.meme`), with logs in `~/.meme/logs`; `MEME_HOME` moves the
   folder. Deleted records are overwritten (`secure_delete`).
+- Memory is in `~/.meme/memory` and `~/.meme/evidence`, and what meme needs to
+  keep it in `~/.meme/state`; in WSL these are in the Windows user's `.meme`
+  (above). The model's key in `~/.meme/config.json` is plain text, unless you
+  name a variable with `keyEnv`. `meme uninstall` leaves memory where it is;
+  delete those folders yourself to remove it.
 - meme only reads the agents' files (`~/.claude`, or `CLAUDE_CONFIG_DIR`;
   `~/.codex`, or `CODEX_HOME`; `~/.local/share/opencode/opencode.db`, or
   `OPENCODE_DB`; `~/.pi/agent/sessions`, or `PI_CODING_AGENT_DIR`). The one
@@ -297,8 +436,10 @@ Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_WSL_CONF` (another `/etc/wsl.conf`), `MEME_WSL_DIR`, `MEME_WSL_RUNNING` and
 `MEME_WSL_EXE` (WSL as seen from Windows), `MEME_TERMINAL` (act as in a terminal),
 `MEME_SLOW_MS` (log runs slower than this; 0 logs every run),
-`MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take) and
-`MEME_WSL_TIMEOUT_MS` (how long Windows waits for `wsl.exe`).
+`MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take),
+`MEME_WSL_TIMEOUT_MS` (how long Windows waits for `wsl.exe`), `MEME_STORE`
+(where memory is kept) and `MEME_MODEL_URL`, `MEME_MODEL_NAME` and
+`MEME_MODEL_KEY` (the model, instead of `config.json`).
 
 ## License
 
