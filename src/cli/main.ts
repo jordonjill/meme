@@ -14,6 +14,7 @@ import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
 import { mcp, mcpHelp } from "./commands/mcp";
 import { memory, memoryHelp } from "./commands/memory";
+import { plugin, pluginHelp } from "./commands/plugin";
 import { recall, recallHelp } from "./commands/recall";
 import { remember, rememberHelp } from "./commands/remember";
 import { report, reportHelp } from "./commands/report";
@@ -33,6 +34,7 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   context: { run: context, help: contextHelp },
   recall: { run: recall, help: recallHelp },
   mcp: { run: mcp, help: mcpHelp },
+  plugin: { run: plugin, help: pluginHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -54,6 +56,7 @@ Commands:
   context     what memory holds for here, for an agent to read before it starts
   recall      find what meme remembers about something
   mcp         serve memory to an agent (MCP); --help shows how to connect one
+  plugin      write meme's plugin for an agent and show how to install it
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data

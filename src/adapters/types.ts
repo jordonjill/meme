@@ -302,6 +302,13 @@ export interface Profile {
   howToContinue: string[];
   /** How the user connects `meme mcp` to it, once: its own command, which meme never runs. */
   mcpConnect?: string;
+  /**
+   * Its plugin for meme, when it takes one: the files of a folder the user installs with the agent's own
+   * commands. `meme` is the command that runs meme. The files hold wiring only, never memory.
+   */
+  plugin?(meme: string, version: string): { files: Record<string, string>; install(dir: string): string[]; remove: string[] };
+  /** Is this hook call from another agent that loads this one's hooks? Then meme stays silent. */
+  foreignHook?(input: Record<string, unknown>, vars: Record<string, string | undefined>): boolean;
   /** For `meme forget --help`: what deleting one of its sessions removes. */
   forgetHelp: string;
   /** It refuses to delete a session while forks still read their history from it. */
