@@ -7,11 +7,13 @@ import { currentPlatform } from "../platform/paths";
 import { LookupError } from "../store/queries";
 import { CommandError, UsageError } from "./args";
 import { timings } from "./context";
+import { context, contextHelp } from "./commands/context";
 import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
 import { memory, memoryHelp } from "./commands/memory";
+import { recall, recallHelp } from "./commands/recall";
 import { remember, rememberHelp } from "./commands/remember";
 import { report, reportHelp } from "./commands/report";
 import { search, searchHelp } from "./commands/search";
@@ -27,6 +29,8 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   forget: { run: forget, help: forgetHelp },
   remember: { run: remember, help: rememberHelp },
   memory: { run: memory, help: memoryHelp },
+  context: { run: context, help: contextHelp },
+  recall: { run: recall, help: recallHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -45,6 +49,8 @@ Commands:
   forget      permanently delete sessions, from the agent and from meme
   remember    keep a rule or a fact in memory, in your own words
   memory      what meme remembers: list it, trace an entry, forget one
+  context     what memory holds for here, for an agent to read before it starts
+  recall      find what meme remembers about something
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data

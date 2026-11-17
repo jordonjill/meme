@@ -1,7 +1,7 @@
 import { forget } from "../../memory/apply";
 import { readAll } from "../../memory/evidence";
 import { LockTimeout } from "../../memory/lock";
-import { entriesIn, memoryPaths, NewerFormat, shelvesIn, type OpenShelf, type Placed } from "../../memory/store";
+import { entriesIn, memoryPaths, NewerFormat, shelvesIn, type Placed } from "../../memory/store";
 import { currentPlatform, displayPath } from "../../platform/paths";
 import { plural } from "../../render/text";
 import { isReadOnlyError } from "../../store/db";
@@ -21,9 +21,9 @@ An id can be shortened to any unique prefix.
 `;
 
 /** The first heading of a conclusion file, and for a project's file what the project is. */
-function titleOf(s: OpenShelf): string {
-  const title = /^# (.+)$/m.exec(s.preamble)?.[1] ?? s.shelf.file;
-  const project = /^Project: (.+)$/m.exec(s.preamble)?.[1];
+export function titleOf(preamble: string, fallback: string): string {
+  const title = /^# (.+)$/m.exec(preamble)?.[1] ?? fallback;
+  const project = /^Project: (.+)$/m.exec(preamble)?.[1];
   return project ? `${title} (${project})` : title;
 }
 
@@ -60,7 +60,7 @@ export async function memory(argv: string[]): Promise<number> {
     const lines: string[] = [];
     for (const s of shelves) {
       if (lines.length) lines.push("");
-      lines.push(`${titleOf(s)}  ${displayPath(s.file, home)}`);
+      lines.push(`${titleOf(s.preamble, s.shelf.file)}  ${displayPath(s.file, home)}`);
       for (const e of s.entries) lines.push(`  ${e.id}  ${e.text}${e.status === "active" ? "" : `  [${e.status}]`}`);
     }
     write(lines.join("\n") + "\n");
