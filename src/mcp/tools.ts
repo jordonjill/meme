@@ -1,19 +1,18 @@
 import path from "node:path";
 import { agentOfClient, runningAgent } from "../adapters/profiles";
 import { createContext, projectOf } from "../cli/context";
-import { contextFor } from "../cli/commands/context";
-import { entryText, resolveEntry } from "../cli/commands/memory";
-import { CommandError } from "../cli/args";
+import { contextFor } from "../cli/context-for";
 import { recall, type Scope } from "../memory/context";
 import { parseShelf } from "../memory/entries";
 import { storeDir } from "../memory/place";
+import { entryText, resolveEntry } from "../memory/show";
 import { projectRef } from "../memory/projects";
 import { entriesIn, memoryPaths, readText } from "../memory/store";
 import { ABOUT, modelFor, rememberWords, type About } from "../memory/remember";
 import { shown, type Shown } from "../memory/transcript";
 import { normalize, oneLine } from "../memory/types";
 import { redactText } from "../redact/rules";
-import { resolveSession, sessionRecords, type SessionRow } from "../store/queries";
+import { LookupError, resolveSession, sessionRecords, type SessionRow } from "../store/queries";
 import type { Platform } from "../platform/paths";
 import { ToolError, type Tool } from "./server";
 
@@ -83,7 +82,7 @@ export function memoryTools(platform: Platform): Tool[] {
       try {
         return entryText(resolveEntry(entriesIn(paths().memory), id), paths().evidence, platform.home);
       } catch (err) {
-        if (err instanceof CommandError) throw new ToolError(err.message);
+        if (err instanceof LookupError) throw new ToolError(err.message);
         throw err;
       }
     },
