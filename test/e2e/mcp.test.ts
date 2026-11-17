@@ -72,7 +72,7 @@ describe("meme mcp", () => {
       ["recall", { words: "pnpm" }],
     ]);
     const id = /m-[0-9a-f]{8}/.exec(t.text(1))![0];
-    expect(t.text(1)).toBe(`Remembered: [${id}] 装依赖一律用 pnpm\nKept in the user's own words: no model is set up to word it.`);
+    expect(t.text(1)).toBe(`Remembered: [${id}] 装依赖一律用 pnpm`);
     expect(t.text(2)).toContain(`This project (tool)\n- [${id}] 装依赖一律用 pnpm\n`);
     expect(t.text(3)).toBe(`[${id}] 装依赖一律用 pnpm (github.com/me/tool)`);
     const [day] = readdirSync(path.join(w.home, ".meme", "evidence"));

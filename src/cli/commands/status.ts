@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import pkg from "../../../package.json";
 import { sourceTrouble } from "../../adapters";
 import { NOT_JSON } from "../../adapters/read";
+import { newSince } from "../../memory/digest";
 import { storeDir } from "../../memory/place";
 import { entriesIn, memoryPaths } from "../../memory/store";
 import { displayPath } from "../../platform/paths";
@@ -37,7 +38,8 @@ function memoryLine(ctx: Context): string {
   try {
     const store = storeDir(ctx.platform);
     const entries = entriesIn(memoryPaths(store).memory);
-    return `${displayPath(store, ctx.platform.home)}, ${entries.length ? plural(entries.length, "entry", "entries") : "nothing remembered yet"}`;
+    const fresh = newSince(memoryPaths(store));
+    return `${displayPath(store, ctx.platform.home)}, ${entries.length ? plural(entries.length, "entry", "entries") : "nothing remembered yet"}${fresh ? `; ${fresh} new since you last looked: meme memory digest` : ""}`;
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }

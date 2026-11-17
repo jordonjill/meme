@@ -36,7 +36,7 @@ describe("memory in WSL lives on the Windows side", () => {
     expect(run(w, ["recall", "push"], real).out).toContain(id);
     const call = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recall", arguments: { words: "push" } } });
     expect(run(w, ["mcp"], { ...real, input: call + "\n" }).out).toContain(id);
-    expect(run(w, ["status"], real).out).toContain("\nMemory:       ~/mnt-c-Users/me/.meme, 1 entry\n");
+    expect(run(w, ["status"], real).out).toContain("\nMemory:       ~/mnt-c-Users/me/.meme, 1 entry; 1 new since you last looked: meme memory digest\n");
     // The mirror of the sessions is WSL's own: SQLite stays on its own system.
     expect(existsSync(path.join(w.home, ".meme", "raw", "sessions.sqlite"))).toBe(true);
     expect(existsSync(windows(w, "raw"))).toBe(false);

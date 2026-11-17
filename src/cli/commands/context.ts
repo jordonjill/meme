@@ -3,6 +3,7 @@ import { PROFILES, runningAgent } from "../../adapters/profiles";
 import { currentPlatform } from "../../platform/paths";
 import { parse } from "../args";
 import { write } from "../context";
+import { maybeStartUpdate } from "../background";
 import { contextFor } from "../context-for";
 
 export const contextHelp = `Usage: meme context [<what you are about to work on>]
@@ -45,9 +46,12 @@ export async function context(argv: string[]): Promise<number> {
       if (PROFILES.some((p) => p.foreignHook?.(input, platform.vars))) return 0;
       const cwd = str(input.cwd);
       write(await contextFor(platform, { cwd: cwd && path.isAbsolute(cwd) ? cwd : process.cwd(), agent: runningAgent(platform.vars)?.agent ?? null, task: str(input.prompt), session: str(input.session_id) }));
+      // An agent is starting: a good moment to let memory catch up, in the background.
+      maybeStartUpdate(platform);
     } catch {}
     return 0;
   }
   write(await contextFor(platform, { cwd: process.cwd(), agent: runningAgent(platform.vars)?.agent ?? null, task: positionals.join(" ").trim() || undefined }));
+  maybeStartUpdate(platform);
   return 0;
 }

@@ -22,8 +22,10 @@ your words go in as they are, and nothing is sent anywhere.
   (no option)   a rule for every agent: how you want them to work with you
   --project     a fact about the project of the current directory
   --about-me    a fact about you or your machines
+  --as-is       keep the words as they are, without asking the model
 
-With a model the options are hints. \`meme memory\` lists what is remembered;
+With a model the options are hints, and what reads as meant for this time
+only is not kept. \`meme memory\` lists what is remembered;
 \`meme memory forget <id>\` removes it.
 `;
 
@@ -31,6 +33,7 @@ export async function remember(argv: string[]): Promise<number> {
   const { values, positionals } = parse(argv, {
     project: { type: "boolean" },
     "about-me": { type: "boolean" },
+    "as-is": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   });
   if (values.help) {
@@ -51,7 +54,7 @@ export async function remember(argv: string[]): Promise<number> {
   const flat = oneLine(text);
   const words = redactText(flat);
   const about: About | undefined = values.project ? "project" : values["about-me"] ? "user" : undefined;
-  const { model } = modelFor(store, platform.vars, root, ref);
+  const { model } = values["as-is"] ? { model: null } : modelFor(store, platform.vars, root, ref);
 
   let done;
   try {
@@ -74,6 +77,10 @@ export async function remember(argv: string[]): Promise<number> {
     if (err instanceof NewerFormat || err instanceof LockTimeout) throw new CommandError(`${err.message}; nothing was remembered`);
     if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(store, home)} cannot be written); nothing was remembered`);
     throw err;
+  }
+  if (done.by === "declined") {
+    write(`Not kept: it reads as meant for this time only. To keep it anyway: meme remember --as-is "${text}"\n`);
+    return 0;
   }
   if (!done.kept.length) throw new CommandError(`not remembered: ${done.dropped.at(-1) ?? "nothing was kept"}`);
   for (const k of done.kept) {

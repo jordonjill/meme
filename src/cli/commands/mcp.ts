@@ -1,6 +1,7 @@
 import pkg from "../../../package.json";
 import { PROFILES } from "../../adapters/profiles";
-import { INSTRUCTIONS, memoryTools } from "../../mcp/tools";
+import { INSTRUCTIONS, memoryTools, pending } from "../../mcp/tools";
+import { maybeStartUpdate } from "../background";
 import { serve } from "../../mcp/server";
 import { fileLogger } from "../../platform/log";
 import { currentPlatform } from "../../platform/paths";
@@ -36,6 +37,8 @@ export async function mcp(argv: string[]): Promise<number> {
   if (positionals.length) throw new UsageError(`mcp takes no arguments, got ${positionals[0]}`);
   const platform = currentPlatform();
   const log = fileLogger(platform.dataDir);
+  // An agent is starting: a good moment to let memory catch up, in the background.
+  maybeStartUpdate(platform);
   await serve(
     { name: "meme", version: pkg.version, instructions: INSTRUCTIONS, tools: memoryTools(platform) },
     Bun.stdin.stream(),
@@ -47,5 +50,11 @@ export async function mcp(argv: string[]): Promise<number> {
       } catch {}
     },
   );
+  // The agent has gone; what it asked to remember is finished first, for a minute at most. What is left, the pipeline takes up.
+  if (pending.size) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([Promise.allSettled([...pending]), new Promise((done) => (timer = setTimeout(done, 60_000)))]);
+    clearTimeout(timer);
+  }
   return 0;
 }

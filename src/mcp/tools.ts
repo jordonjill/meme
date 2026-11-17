@@ -8,6 +8,7 @@ import { storeDir } from "../memory/place";
 import { entryText, resolveEntry } from "../memory/show";
 import { projectRef } from "../memory/projects";
 import { entriesIn, memoryPaths, readText } from "../memory/store";
+import { putInbox, processItem } from "../memory/inbox";
 import { ABOUT, modelFor, rememberWords, type About } from "../memory/remember";
 import { shown, type Shown } from "../memory/transcript";
 import { normalize, oneLine } from "../memory/types";
@@ -33,6 +34,9 @@ export const INSTRUCTIONS = [
 const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
 const CWD = { type: "string", description: "The directory you work in, as an absolute path; needed only when it is not the one this server was started in." };
+
+/** What `remember` handed to the model and has not finished: `meme mcp` waits for it before it ends. */
+export const pending = new Set<Promise<unknown>>();
 
 export function memoryTools(platform: Platform): Tool[] {
   // Looked up at each call: the folder can be on a drive that is mounted later.
@@ -111,26 +115,34 @@ export function memoryTools(platform: Platform): Tool[] {
       const root = said.session.project ?? rootOf(args);
       const ref = projectRef(root);
       const st = store();
-      const { model, why } = modelFor(st, platform.vars, root, ref);
+      const { model } = modelFor(st, platform.vars, root, ref);
       const note = text(args.note);
+      const label = `${client || "an agent"} over MCP`;
+      const words = redactText(oneLine(quote));
+      if (model) {
+        // The agent does not wait for the model: the request is kept, answered, and worded in the background.
+        const file = putInbox(paths(), { words, ...(note ? { note: redactText(oneLine(note)) } : {}), ...(args.about ? { about: args.about as About } : {}), session: said.session.id, focus: said.focus, records: said.records, project: ref, label, at: (said.at ?? new Date()).toISOString() });
+        const work = processItem(st, file, model)
+          .catch(() => null)
+          .finally(() => pending.delete(work));
+        pending.add(work);
+        return "Noted. meme words it and keeps it if it holds beyond this task.";
+      }
       const done = await rememberWords({
         dataDir: st,
         origin: "agent",
         records: said.records,
         focus: said.focus,
-        words: redactText(oneLine(quote)),
+        words,
         about: args.about as About | undefined,
-        ...(note ? { note: redactText(oneLine(note)) } : {}),
         project: ref,
         source: (record) => `session:${said.session.id}#${record.seq}`,
-        label: `${client || "an agent"} over MCP`,
+        label,
         at: said.at ?? new Date(),
-        model,
+        model: null,
       });
       if (!done.kept.length) throw new ToolError(`not remembered: ${done.dropped.at(-1) ?? "nothing was kept"}`);
-      const lines = done.kept.map((k) => `${k.change === "more evidence" ? "Already in memory" : "Remembered"}: [${k.id}] ${k.text}${k.active ? "" : " (waiting as a candidate until the user confirms it)"}`);
-      if (done.by === "words") lines.push(`Kept in the user's own words: ${done.modelError ? `the model could not be asked (${done.modelError})` : why}.`);
-      return lines.join("\n");
+      return done.kept.map((k) => `${k.change === "more evidence" ? "Already in memory" : "Remembered"}: [${k.id}] ${k.text}`).join("\n");
     },
   };
 

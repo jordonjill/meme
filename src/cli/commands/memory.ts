@@ -8,10 +8,11 @@ import { plural } from "../../render/text";
 import { isReadOnlyError } from "../../store/db";
 import { CommandError, parse, UsageError } from "../args";
 import { agreed, write } from "../context";
+import { digestCommand } from "./memory-digest";
 import { exclude } from "./memory-exclude";
 import { update } from "./memory-update";
 
-export const memoryHelp = `Usage: meme memory [show <id> | forget <id> [--yes] | update [--dry-run] [--all] [--session <id>] | exclude [<project>] [--remove]]
+export const memoryHelp = `Usage: meme memory [show <id> | forget <id> [--yes] | update [--dry-run] [--all] [--session <id>] | digest [--all] | exclude [<project>] [--remove]]
 
 What meme remembers: what you gave it with \`meme remember\`, what an agent
 kept for you, and what was read out of your sessions.
@@ -28,6 +29,8 @@ kept for you, and what was read out of your sessions.
       --dry-run   list what would be read and sent, and send nothing
       --all       also sessions that ended over 14 days ago and were never read
       --session   read this session only, quiet or not
+  digest          what memory gained, replaced and left out since you last
+                  looked; --all also lists what was not kept
   exclude         list the projects whose sessions are never sent to the model;
                   with a folder (. for the current one) or a remote's address,
                   add it; with --remove, take it off the list
@@ -43,24 +46,29 @@ export function titleOf(preamble: string, fallback: string): string {
 }
 
 export async function memory(argv: string[]): Promise<number> {
-  const { values, positionals } = parse(argv, { yes: { type: "boolean" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, session: { type: "string" }, remove: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+  const { values, positionals } = parse(argv, { yes: { type: "boolean" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, session: { type: "string" }, remove: { type: "boolean" }, background: { type: "boolean" }, help: { type: "boolean", short: "h" } });
   if (values.help) {
     write(memoryHelp);
     return 0;
   }
   const [action, arg, ...more] = positionals;
-  if (action !== undefined && !["show", "forget", "update", "exclude"].includes(action)) throw new UsageError(`memory does not know ${action}; it takes show <id>, forget <id>, update or exclude`);
+  if (action !== undefined && !["show", "forget", "update", "digest", "exclude"].includes(action)) throw new UsageError(`memory does not know ${action}; it takes show <id>, forget <id>, update, digest or exclude`);
+  if (action === "digest") {
+    if (arg) throw new UsageError(`too many arguments: ${[arg, ...more].join(" ")}`);
+    return digestCommand({ all: Boolean(values.all) });
+  }
   if (values.remove && action !== "exclude") throw new UsageError("--remove goes with exclude");
   if (action === "exclude") {
     if (more.length) throw new UsageError(`too many arguments: ${more.join(" ")}`);
     if (values.remove && !arg) throw new UsageError("exclude --remove needs the project to take off the list");
     return exclude({ target: arg, remove: Boolean(values.remove) });
   }
-  if (action !== "update" && (values["dry-run"] || values.all || values.session !== undefined)) throw new UsageError("--dry-run, --all and --session go with update");
+  if (action !== "update" && (values["dry-run"] || values.session !== undefined)) throw new UsageError("--dry-run and --session go with update");
+  if (values.all && action !== "update" && action !== "digest") throw new UsageError("--all goes with update or digest");
   if (values.yes && action !== "forget") throw new UsageError("--yes goes with forget");
   if (action === "update") {
     if (arg) throw new UsageError(`too many arguments: ${[arg, ...more].join(" ")}`);
-    return update({ dryRun: Boolean(values["dry-run"]), all: Boolean(values.all), session: values.session });
+    return update({ dryRun: Boolean(values["dry-run"]), all: Boolean(values.all), session: values.session, background: Boolean(values.background) });
   }
   if (action && !arg) throw new UsageError(`memory ${action} needs an entry's id; \`meme memory\` lists them`);
   if (more.length) throw new UsageError(`too many arguments: ${more.join(" ")}`);

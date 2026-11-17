@@ -180,7 +180,10 @@ describe("remembering through meme's model", () => {
       .filter(Boolean)
       .map((l) => JSON.parse(l))
       .find((x) => x.id === 1);
-    expect(reply.result.content[0].text).toMatch(/^Remembered: \[m-[0-9a-f]{8}\] 装依赖用 pnpm，不要用 npm$/);
+    // The agent is answered at once; the model words it after, before `meme mcp` ends.
+    expect(reply.result.content[0].text).toBe("Noted. meme words it and keeps it if it holds beyond this task.");
+    expect(run(w, ["memory"]).out).toMatch(/\n {2}m-[0-9a-f]{8} {2}装依赖用 pnpm，不要用 npm\n/);
+    expect(readdirSync(path.join(w.home, ".meme", "state", "inbox"))).toEqual([]);
     const asked = m.asked[0]!.user;
     expect(asked).toMatch(/The user asked to remember what they said in record #\d+, in particular: 装依赖一律用 pnpm\.\n/);
     expect(asked).toContain("The agent that asked adds: a rule for this repository\n");
