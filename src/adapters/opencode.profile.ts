@@ -67,6 +67,7 @@ export const openCodeProfile: Profile = {
   firstMessage: (command) => `Continue an earlier session: run \`${command}\` exactly as written, with no pipe or other command around it, and follow the instructions at the top of its output.`,
   // `!` switches its input to shell mode; the rest of the line is the command.
   howToContinue: ["the same two commands as in Claude Code"],
+  mcpConnect: "opencode mcp add          (it asks; the command to give is: meme mcp)",
   forgetHelp:
     "OpenCode: meme runs `opencode session delete <id>` with the opencode of the side\nthe session is on, and deletes the full output of long commands OpenCode saved\nfor it. OpenCode keeps what you typed in its own prompt history.",
   keepsForkParents: false,

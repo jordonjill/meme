@@ -41,8 +41,9 @@ function worldEnv(w: World, extra?: Record<string, string>): Record<string, stri
   };
 }
 
-export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
-  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe" });
+/** `input` is what meme reads on standard input. */
+export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
+  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe", ...(o.input === undefined ? {} : { stdin: Buffer.from(o.input) }) });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 

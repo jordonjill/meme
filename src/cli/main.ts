@@ -12,6 +12,7 @@ import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
+import { mcp, mcpHelp } from "./commands/mcp";
 import { memory, memoryHelp } from "./commands/memory";
 import { recall, recallHelp } from "./commands/recall";
 import { remember, rememberHelp } from "./commands/remember";
@@ -31,6 +32,7 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   memory: { run: memory, help: memoryHelp },
   context: { run: context, help: contextHelp },
   recall: { run: recall, help: recallHelp },
+  mcp: { run: mcp, help: mcpHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -51,6 +53,7 @@ Commands:
   memory      what meme remembers: list it, trace an entry, forget one
   context     what memory holds for here, for an agent to read before it starts
   recall      find what meme remembers about something
+  mcp         serve memory to an agent (MCP); --help shows how to connect one
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data

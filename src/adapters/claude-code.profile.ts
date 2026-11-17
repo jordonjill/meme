@@ -88,6 +88,7 @@ export const claudeCodeProfile: Profile = {
     "                       a word from the title); it sums up where things",
     "                       stand and waits for your go-ahead",
   ],
+  mcpConnect: "claude mcp add -s user meme -- meme mcp",
   forgetHelp: "Claude Code: meme deletes the session file and its folders (subagents and large\ntool output, file-history backups, session-env).",
   keepsForkParents: false,
   compaction: {

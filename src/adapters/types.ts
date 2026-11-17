@@ -300,6 +300,8 @@ export interface Profile {
   firstMessage(command: string): string;
   /** Lines under "In <name>:" in the usage of `meme continue` and `meme install`. */
   howToContinue: string[];
+  /** How the user connects `meme mcp` to it, once: its own command, which meme never runs. */
+  mcpConnect?: string;
   /** For `meme forget --help`: what deleting one of its sessions removes. */
   forgetHelp: string;
   /** It refuses to delete a session while forks still read their history from it. */

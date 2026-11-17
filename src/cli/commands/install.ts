@@ -127,6 +127,7 @@ export async function install(argv: string[]): Promise<number> {
     lines.push("", `Note: \`meme\` is not on your PATH yet; add the folder that holds it, so \`! meme continue\` works inside ${inWords(PROFILES.map((p) => p.name))}.`);
   }
   lines.push("", HOW_TO_CONTINUE);
+  lines.push("", "To give your agents meme's memory, connect them once: `meme mcp --help` shows how.");
   write(lines.join("\n") + "\n");
   return 0;
 }

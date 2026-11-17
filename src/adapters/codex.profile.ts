@@ -109,6 +109,7 @@ export const codexProfile: Profile = {
     'the same two commands, then say "continue": Codex keeps the output',
     "of a ! command but does not pass it to the model by itself",
   ],
+  mcpConnect: "codex mcp add meme -- meme mcp",
   forgetHelp:
     "Codex: meme runs `codex delete --force <id>` with the codex of the side the\nsession is on: here, in WSL (from Windows), or on Windows (from WSL). Codex\nwill not delete a session while a fork of it exists: name the fork too, and meme\ndeletes it first. Codex keeps what you typed in its own input history.",
   keepsForkParents: true,
