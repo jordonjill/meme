@@ -203,8 +203,8 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 ## 你的数据
 
 - 一切都留在你自己的电脑上，meme 不发任何网络请求。
-- 镜像是 `~/.meme/meme.sqlite`（Windows 上在 `%USERPROFILE%\.meme`），日志在它旁边；
-  设置 `MEME_HOME` 可以换位置。删除的记录会被覆盖（`secure_delete`）。
+- 镜像是 `~/.meme/raw/sessions.sqlite`（Windows 上在 `%USERPROFILE%\.meme` 里），日志在 `~/.meme/logs`；
+  设置 `MEME_HOME` 可以换这个文件夹的位置。删除的记录会被覆盖（`secure_delete`）。
 - meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`；
   `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
   唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本，放在 `~/.meme/cache` 里，`meme uninstall` 会删掉它，`meme forget` 删了会话也会一并删掉它。

@@ -260,9 +260,9 @@ deletion.
 ## Your data
 
 - Everything stays on your machine. meme makes no network requests.
-- The mirror is `~/.meme/meme.sqlite` (on Windows `%USERPROFILE%\.meme`), with
-  logs next to it; `MEME_HOME` moves it. Deleted records are overwritten
-  (`secure_delete`).
+- The mirror is `~/.meme/raw/sessions.sqlite` (on Windows under
+  `%USERPROFILE%\.meme`), with logs in `~/.meme/logs`; `MEME_HOME` moves the
+  folder. Deleted records are overwritten (`secure_delete`).
 - meme only reads the agents' files (`~/.claude`, or `CLAUDE_CONFIG_DIR`;
   `~/.codex`, or `CODEX_HOME`; `~/.local/share/opencode/opencode.db`, or
   `OPENCODE_DB`; `~/.pi/agent/sessions`, or `PI_CODING_AGENT_DIR`). The one
