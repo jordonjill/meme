@@ -1,11 +1,11 @@
 import path from "node:path";
 import { agentOfClient, runningAgent } from "../adapters/profiles";
 import { createContext, projectOf } from "../cli/context";
-import { instructionsIn } from "../cli/commands/context";
+import { contextFor } from "../cli/commands/context";
 import { entryText, resolveEntry } from "../cli/commands/memory";
 import { CommandError } from "../cli/args";
 import { apply, type NewEvidence } from "../memory/apply";
-import { buildContext, contextText, recall, type Scope } from "../memory/context";
+import { recall, type Scope } from "../memory/context";
 import { parseShelf } from "../memory/entries";
 import { projectRef } from "../memory/projects";
 import { entriesIn, memoryPaths, readText } from "../memory/store";
@@ -47,8 +47,9 @@ export function memoryTools(platform: Platform): Tool[] {
     description: "What meme remembers that holds here: the user's rules, facts about the user and about this project, and entries that have to do with the task. Call it once before you start a task.",
     inputSchema: { type: "object", properties: { task: { type: "string", description: "What you are about to work on, in a few words." }, cwd: CWD } },
     async call(args, client) {
-      const scope = scopeOf(args, client);
-      return contextText(buildContext(scope, { task: text(args.task) || undefined, instructions: instructionsIn(scope.root) })) || "meme has nothing in memory for here yet.";
+      const cwd = text(args.cwd);
+      const given = await contextFor(platform, { cwd: cwd && path.isAbsolute(cwd) ? cwd : process.cwd(), agent: agentOfClient(client) ?? runningAgent(platform.vars)?.agent ?? null, task: text(args.task) || undefined });
+      return given || "meme has nothing in memory for here yet.";
     },
   };
 

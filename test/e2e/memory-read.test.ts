@@ -57,15 +57,16 @@ describe("meme context", () => {
     expect(out).toContain("回复用中文");
   });
 
-  test.skipIf(isRoot || process.platform === "win32")("it only reads: it works where nothing can be written, and writes nothing where it could", () => {
+  test.skipIf(isRoot || process.platform === "win32")("it changes nothing in memory, and works where nothing can be written", () => {
     const { w, tool } = remembered();
     const data = path.join(w.home, ".meme");
     const before = readdirSync(data).sort();
     const state = statSync(path.join(data, "state")).mtimeMs;
     expect(run(w, ["context", "加限流"], { cwd: tool }).code).toBe(0);
-    expect(readdirSync(data).sort()).toEqual(before);
+    // It looks at the sessions for unfinished work, so the mirror is brought up to date; memory is only read.
+    expect(readdirSync(data).sort()).toEqual([...before, "logs", "raw"].sort());
     expect(statSync(path.join(data, "state")).mtimeMs).toBe(state);
-    expect(existsSync(path.join(data, "raw"))).toBe(false);
+    expect(existsSync(path.join(data, "state", "lock"))).toBe(false);
     chmodSync(data, 0o555);
     try {
       const r = run(w, ["context"], { cwd: tool });
