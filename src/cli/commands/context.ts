@@ -19,7 +19,7 @@ It only reads. It prints nothing when memory has nothing for here.
 `;
 
 /** The project's own instruction files, as far as they are there: what they say is not said again. */
-function instructionsIn(root: string): string[] {
+export function instructionsIn(root: string): string[] {
   const texts: string[] = [];
   for (const name of new Set(PROFILES.map((p) => p.instructionFile))) {
     try {
