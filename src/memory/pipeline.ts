@@ -4,7 +4,7 @@ import path from "node:path";
 import { profileOf } from "../adapters/profiles";
 import { estimateTokens } from "../handoff/budget";
 import { allSessions, sessionRecords, type SessionRow } from "../store/queries";
-import { apply, type NewEvidence, type Op } from "./apply";
+import { apply, type Change, type NewEvidence, type Op, type Origin } from "./apply";
 import { ModelError, parseAnswer, type Ask, type Proposed } from "./model";
 import { projectRef, type ProjectRef } from "./projects";
 import { memoryPaths, readText, shelvesIn, type MemoryPaths } from "./store";
@@ -18,6 +18,18 @@ import { normalize, type Entry, type Shelf, type Tier } from "./types";
  * sees to it that every memory rests on words that were really said.
  */
 
+/** How a memory is written, whoever asks for it: the same rules for the pipeline and for `remember`. */
+const WRITING = `Every memory must rest on words that are in the records. Copy them exactly into "quote", and give the number of the record they are in as "at": the number after # in that record's heading. A memory whose quote is not found in that record is thrown away. Prefer the user's own words.
+
+Write each memory as one clear sentence that stands on its own, in the language the user writes in. One memory says one thing.
+
+If a memory makes an entry of the existing memory out of date, give that entry's id as "replaces". If an existing entry already says the same, do not repeat it; return it with that entry's id as "supports" when the records give new support for it.
+
+Answer with JSON only, in this form:
+{"memories": [{"text": "...", "kind": "fact", "about": "rule", "quote": "...", "at": 12}]}
+"kind" is "fact" or "experience". "about" is "rule" (how every agent should work with the user), "user" (the user and their machines) or "project" (this project). Optional: "when" (for experience, the situation it applies in), "why", "replaces", "supports".`;
+
+/** The pipeline: reading a session for what is worth keeping. */
 export const SYSTEM = `You keep the long-term memory that a person's coding agents share. You are given part of one session between that person (the user) and a coding agent, and what the memory already holds. Decide what in this session is worth keeping for later sessions, in this or any other agent.
 
 Keep only what will still matter once this task is done:
@@ -30,15 +42,14 @@ Do not keep: the progress or the details of the task itself; requests meant for 
 
 Most sessions hold little or nothing worth keeping. An empty list is a good answer.
 
-Every memory must rest on words that are in the session. Copy them exactly into "quote", and give the number of the record they are in as "at": the number after # in that record's heading. A memory whose quote is not found in that record is thrown away. Prefer the user's own words.
+${WRITING}`;
 
-Write each memory as one clear sentence, in the language the user writes in.
+/** `remember`: the user asked for something to be kept; the model words it. */
+export const KEEP_SYSTEM = `You keep the long-term memory that a person's coding agents share. The person (the user) asked for something to be remembered. You are given the user's words, the records around them when there are any, and what the memory already holds. Write what the user asked to keep, so that any agent reading it later understands it.
 
-If a memory makes an entry of the existing memory out of date, give that entry's id as "replaces". If an existing entry already says the same, do not repeat it; only when the session gives new support for it, return it with that entry's id as "supports".
+Keep what the user asked for, and nothing else from the records. Usually that is one memory; more only when the user said several separate things. Leave out what is meant for this once, like a request about the task at hand. If the memory already holds it, return it as "supports" instead of writing it again; if it changes what the memory holds, say which entry it "replaces".
 
-Answer with JSON only, in this form:
-{"memories": [{"text": "...", "kind": "fact", "about": "rule", "quote": "...", "at": 12}]}
-"kind" is "fact" or "experience". "about" is "rule" (how every agent should work with the user), "user" (the user and their machines) or "project" (this project). Optional: "when" (for experience, the situation it applies in), "why", "replaces", "supports".`;
+${WRITING}`;
 
 /** A session is read once nothing has been added to it for this long. */
 export const QUIET_MS = 2 * 60 * 60 * 1000;
@@ -88,6 +99,16 @@ export interface Due {
   project: ProjectRef | null;
 }
 
+/** Is a project on the list of those never sent to the model: by what it is known by, its path, or a folder above it? */
+export function isExcluded(project: string | null, ref: ProjectRef | null, list: string[]): boolean {
+  return list.some((x) => {
+    if (x === ref?.key || x === ref?.identity) return true;
+    if (project === null) return false;
+    const dir = x.replace(/[\\/]+$/, "");
+    return project === x || project.startsWith(dir + path.sep) || project.startsWith(dir + "/");
+  });
+}
+
 export interface PickOptions {
   now: number;
   /** Also sessions that were set aside for being old. */
@@ -111,10 +132,7 @@ export function pick(db: Database, p: MemoryPaths, opts: PickOptions): Picked {
     if (!refs.has(project)) refs.set(project, projectRef(project));
     return refs.get(project)!;
   };
-  const excluded = (s: SessionRow) => {
-    const ref = refOf(s.project);
-    return opts.exclude.some((x) => x === ref?.key || x === ref?.identity || (s.project !== null && (s.project === x || s.project.startsWith(x.replace(/[\\/]+$/, "") + path.sep) || s.project.startsWith(x.replace(/[\\/]+$/, "") + "/"))));
-  };
+  const excluded = (s: SessionRow) => isExcluded(s.project, refOf(s.project), opts.exclude);
   const out: Picked = { due: [], older: [] };
   for (const s of allSessions(db)) {
     if (opts.only && s.id !== opts.only) continue;
@@ -170,13 +188,107 @@ function held(p: MemoryPaths, project: ProjectRef | null): Entry[] {
 }
 
 /** Asks, and once more when the answer cannot be read. */
-async function memoriesIn(ask: Ask, user: string): Promise<Proposed[]> {
+async function memoriesIn(ask: Ask, system: string, user: string): Promise<Proposed[]> {
   try {
-    return parseAnswer(await ask(SYSTEM, user));
+    return parseAnswer(await ask(system, user));
   } catch (err) {
     if (!(err instanceof ModelError) || !/^the model('s answer| did not answer)/.test(err.message)) throw err;
-    return parseAnswer(await ask(SYSTEM, `${user}\n\nAnswer with JSON only, in the form described.`));
+    return parseAnswer(await ask(system, `${user}\n\nAnswer with JSON only, in the form described.`));
   }
+}
+
+/** One entry kept from what the model proposed. */
+export interface Kept {
+  id: string;
+  file: string;
+  change: Change;
+  /** In force now, or waiting as a candidate. */
+  active: boolean;
+}
+
+export interface Proposing {
+  dataDir: string;
+  /** Who is asking: the pipeline, the user, or an agent on the user's behalf. */
+  origin: Origin;
+  system: string;
+  /** What comes before the records in the question. */
+  intro: string[];
+  /** Says which records follow. */
+  heading: string;
+  project: ProjectRef | null;
+  /** Where each record is, for the evidence. */
+  source: (record: Shown) => string;
+  label: string;
+  /** When the words were said, when the record does not say. */
+  at: number;
+  /** A secret that must not be sent, like the model's own key. */
+  secret?: string;
+  /** Tells apart two sayings of the same words from the same source. */
+  salt?: string;
+}
+
+/**
+ * Asks the model what to keep from some records, and writes what rests on words
+ * that are really there (memory-v0.3-draft §6.1): the judging is the model's, the
+ * check and the writing are meme's.
+ */
+export async function proposeAndKeep(piece: Shown[], ask: Ask, o: Proposing): Promise<{ kept: Kept[]; dropped: string[]; proposed: number }> {
+  const p = memoryPaths(o.dataDir);
+  const holds = held(p, o.project);
+  const text = transcript(piece);
+  const question = [
+    ...o.intro,
+    "What the memory already holds for here:",
+    holds.length ? holds.map((e) => `[${e.id}] ${e.text}`).join("\n") : "(nothing yet)",
+    "",
+    o.heading,
+    o.secret && o.secret.length >= 8 ? text.split(o.secret).join("[REDACTED]") : text,
+  ].join("\n");
+  const proposed = await memoriesIn(ask, o.system, question);
+
+  const dropped: string[] = [];
+  const evidence: NewEvidence[] = [];
+  const ops: Op[] = [];
+  for (const item of proposed) {
+    const wanted = normalize(item.quote);
+    const has = (s: Shown) => normalize(s.text).includes(wanted);
+    // The one thing meme insists on: the words are in the records. A model may get the
+    // record's number wrong; then the record that has them is the one, and who said them goes by it.
+    const record = wanted.length < 4 ? undefined : (piece.find((s) => s.seq === item.at && has(s)) ?? piece.find(has));
+    if (!record) {
+      dropped.push("its quote is not in the session");
+      continue;
+    }
+    const shelf = shelfFor(item, o.project);
+    if (!shelf) {
+      dropped.push("it is about a project, and the session has none");
+      continue;
+    }
+    evidence.push({
+      kind: item.kind,
+      tier: TIER[record.speaker],
+      speaker: record.speaker,
+      scope: shelf.level === "project" ? `project:${shelf.project}` : "user",
+      source: o.source(record),
+      content: item.text,
+      quote: item.quote,
+      at: new Date(Date.parse(record.ts ?? "") || o.at),
+      label: o.label,
+      ...(o.salt ? { salt: o.salt } : {}),
+    });
+    const entry = { shelf, text: item.text, kind: item.kind, evidence: [evidence.length - 1], project: o.project?.identity, ...(item.when ? { when: item.when } : {}), ...(item.why ? { why: item.why } : {}) };
+    ops.push(item.supports ? { op: "update", id: item.supports, evidence: [evidence.length - 1] } : item.replaces ? { op: "replace", id: item.replaces, ...entry } : { op: "add", ...entry });
+  }
+  const kept: Kept[] = [];
+  if (ops.length) {
+    const done = await apply(o.dataDir, { origin: o.origin, evidence, ops }, { verify: () => true });
+    const now = new Map(held(p, o.project).map((e) => [e.id, e] as const));
+    for (const outcome of done.outcomes) {
+      if (!outcome.ok) dropped.push(outcome.reason);
+      else kept.push({ id: outcome.id, file: outcome.file, change: outcome.change, active: now.get(outcome.id)?.status === "active" });
+    }
+  }
+  return { kept, dropped, proposed: proposed.length };
 }
 
 /**
@@ -193,62 +305,21 @@ export async function run(due: Due[], older: Picked["older"], ask: Ask, opts: Ru
     const agent = profileOf(d.session.agent).name;
     const label = `${agent} · ${d.project ? d.project.identity.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "no project"}`;
     for (const piece of pieces(d.items, PIECE)) {
-      const holds = held(p, d.project);
-      const text = transcript(piece);
-      const question = [
-        `Project: ${d.project?.identity ?? "(none)"}`,
-        `Agent: ${agent}`,
-        "",
-        "What the memory already holds for here:",
-        holds.length ? holds.map((e) => `[${e.id}] ${e.text}`).join("\n") : "(nothing yet)",
-        "",
-        `The session, records #${piece[0]!.seq} to #${piece.at(-1)!.seq}:`,
-        opts.secret && opts.secret.length >= 8 ? text.split(opts.secret).join("[REDACTED]") : text,
-      ].join("\n");
-      const proposed = await memoriesIn(ask, question);
-
-      const evidence: NewEvidence[] = [];
-      const ops: Op[] = [];
-      for (const item of proposed) {
-        const wanted = normalize(item.quote);
-        const has = (s: Shown) => normalize(s.text).includes(wanted);
-        // The one thing meme insists on: the words are in the session. A model may get the
-        // record's number wrong; then the record that has them is the one, and who said them goes by it.
-        const record = wanted.length < 4 ? undefined : (piece.find((s) => s.seq === item.at && has(s)) ?? piece.find(has));
-        if (!record) {
-          result.dropped.push("its quote is not in the session");
-          continue;
-        }
-        const shelf = shelfFor(item, d.project);
-        if (!shelf) {
-          result.dropped.push("it is about a project, and the session has none");
-          continue;
-        }
-        evidence.push({
-          kind: item.kind,
-          tier: TIER[record.speaker],
-          speaker: record.speaker,
-          scope: shelf.level === "project" ? `project:${shelf.project}` : "user",
-          source: `session:${d.session.id}#${record.seq}`,
-          content: item.text,
-          quote: item.quote,
-          at: new Date(Date.parse(record.ts ?? d.session.ended_at ?? "") || opts.now),
-          label,
-        });
-        const entry = { shelf, text: item.text, kind: item.kind, evidence: [evidence.length - 1], project: d.project?.identity, ...(item.when ? { when: item.when } : {}), ...(item.why ? { why: item.why } : {}) };
-        ops.push(item.supports ? { op: "update", id: item.supports, evidence: [evidence.length - 1] } : item.replaces ? { op: "replace", id: item.replaces, ...entry } : { op: "add", ...entry });
-      }
-      if (!ops.length) continue;
-      const done = await apply(opts.dataDir, { origin: "pipeline", evidence, ops }, { verify: () => true });
-      const now = new Map(held(p, d.project).map((e) => [e.id, e] as const));
-      for (const outcome of done.outcomes) {
-        if (!outcome.ok) {
-          result.dropped.push(outcome.reason);
-          continue;
-        }
-        result.kept++;
-        if (now.get(outcome.id)?.status === "active") result.active++;
-      }
+      const got = await proposeAndKeep(piece, ask, {
+        dataDir: opts.dataDir,
+        origin: "pipeline",
+        system: SYSTEM,
+        intro: [`Project: ${d.project?.identity ?? "(none)"}`, `Agent: ${agent}`, ""],
+        heading: `The session, records #${piece[0]!.seq} to #${piece.at(-1)!.seq}:`,
+        project: d.project,
+        source: (record) => `session:${d.session.id}#${record.seq}`,
+        label,
+        at: Date.parse(d.session.ended_at ?? "") || opts.now,
+        secret: opts.secret,
+      });
+      result.kept += got.kept.length;
+      result.active += got.kept.filter((k) => k.active).length;
+      result.dropped.push(...got.dropped);
     }
     mark(p, { session: d.session.id, upto: d.upto, at, model: opts.model, kept: result.kept });
     results.push(result);

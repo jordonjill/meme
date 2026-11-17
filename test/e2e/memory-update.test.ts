@@ -71,7 +71,7 @@ describe("meme memory update", () => {
     const { w } = quiet();
     const r = await update(w, {});
     expect(r.code).toBe(1);
-    expect(r.err).toStartWith('meme: no model is set up. Reading sessions sends their text to a model you choose, so meme needs to know which:\n  put {"model": {"url": "https://…/v1", "key": "…", "name": "…"}} in ~/.meme/config.json\n');
+    expect(r.err).toStartWith("meme: no model is set up. Reading sessions sends their text to a model you choose, so meme needs to know which:\n  meme model set\n");
     // Still unread: with a model, the next run reads it.
     expect((await update(w, model([]).env)).out).toStartWith("dddddddd  Claude Code  ~/work/tool: kept 0\nRead 1 session:");
   });
