@@ -59,18 +59,40 @@ describe("a session as text for the model (plan-m2 F5)", () => {
     expect(text).not.toContain("the user wants tests run");
   });
 
-  test("only what was not read before is shown; a long output keeps its start and its end", () => {
+  test("only what was not read before is shown; a long failure keeps its start and its end", () => {
     const t = setup((s) => {
       s.user("run it");
-      s.tool("Bash", { command: "make" }, `first line\n${"x".repeat(5000)}\nlast line`);
+      s.tool("Bash", { command: "make" }, `first line\n${"x".repeat(5000)}\nlast line`, true);
     });
     const all = shown(sessionRecords(t.db, ID));
     expect(shown(sessionRecords(t.db, ID), all[1]!.seq).map((s) => s.seq)).toEqual(all.slice(1).map((s) => s.seq));
     const result = all.at(-1)!.text;
-    expect(result.length).toBeLessThan(1000);
-    expect(result).toStartWith("ok\nfirst line\n");
+    expect(result.length).toBeLessThan(400);
+    expect(result).toStartWith("failed\nfirst line\n");
     expect(result).toEndWith("\nlast line");
     expect(result).toMatch(/\[… [\d,]+ characters left out …\]/);
+  });
+
+  test("of the work, a short line per call and the output of what failed; the agent's bookkeeping is not shown", () => {
+    const t = setup((s) => {
+      s.user("build it");
+      s.tool("TodoWrite", { todos: [{ content: "build", status: "in_progress" }] }, "Todos updated");
+      s.tool("mcp__ccd_turn__update_plan", { items: [{ content: "build", status: "in_progress" }] }, "Plan shown");
+      s.tool("Bash", { command: `cat > build.sh <<'EOF'\n${"echo step\n".repeat(100)}EOF` }, "done, 3 files written");
+      s.tool("Bash", { command: "./build.sh" }, "Error: missing step", true);
+      s.assistant("构建脚本缺一步，我补上了。");
+    });
+    const items = shown(sessionRecords(t.db, ID));
+    expect(items.map((s) => s.speaker)).toEqual(["user", "agent", "agent", "tool", "agent"]);
+    const [, script, run, failure] = items;
+    expect(script!.text).toStartWith("Bash: cat > build.sh <<'EOF' echo step");
+    expect(script!.text.length).toBe(200);
+    expect(script!.text).toEndWith("…");
+    expect(run!.text).toBe("Bash: ./build.sh");
+    expect(failure!.text).toBe("failed\nError: missing step");
+    const text = transcript(items);
+    expect(text).not.toContain("done, 3 files written");
+    expect(text).not.toMatch(/TodoWrite|update_plan|Todos updated|Plan shown/);
   });
 
   test("a long session is cut between records, never inside one", () => {
