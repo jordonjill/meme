@@ -47,6 +47,13 @@ export function run(w: World, args: string[], o: { cwd?: string; env?: Record<st
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 
+/** Like `run`, without stopping this process meanwhile: for when meme talks to a server the test itself runs. */
+export async function runAsync(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
+  const p = Bun.spawn([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  return { code, out, err };
+}
+
 /** util-linux `script`, to run meme in a pseudo-terminal; null where there is none (macOS's takes other options). */
 export const SCRIPT = process.platform === "linux" ? Bun.which("script") : null;
 

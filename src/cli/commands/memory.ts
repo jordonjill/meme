@@ -7,15 +7,25 @@ import { plural } from "../../render/text";
 import { isReadOnlyError } from "../../store/db";
 import { CommandError, parse, UsageError } from "../args";
 import { agreed, write } from "../context";
+import { update } from "./memory-update";
 
-export const memoryHelp = `Usage: meme memory [show <id> | forget <id> [--yes]]
+export const memoryHelp = `Usage: meme memory [show <id> | forget <id> [--yes] | update [--dry-run] [--all] [--session <id>]]
 
-What meme remembers: the rules and facts you gave it with \`meme remember\`.
+What meme remembers: what you gave it with \`meme remember\`, what an agent
+kept for you, and what was read out of your sessions.
 
   (no argument)   every entry, file by file
   show <id>       one entry with the evidence it rests on
   forget <id>     remove an entry for good, with the evidence only it rests
                   on; asks first ([y/N]), --yes skips the question
+  update          read the sessions that have been quiet for 2 hours and are
+                  not read yet: a model says what is worth keeping, and meme
+                  keeps what rests on words that are really in the session.
+                  This sends the text of those sessions to the model set up
+                  in ~/.meme/config.json; without one nothing is sent.
+      --dry-run   list what would be read and sent, and send nothing
+      --all       also sessions that ended over 14 days ago and were never read
+      --session   read this session only, quiet or not
 
 An id can be shortened to any unique prefix.
 `;
@@ -60,16 +70,21 @@ export function entryText(at: Placed, evidenceDir: string, home: string): string
 }
 
 export async function memory(argv: string[]): Promise<number> {
-  const { values, positionals } = parse(argv, { yes: { type: "boolean" }, help: { type: "boolean", short: "h" } });
+  const { values, positionals } = parse(argv, { yes: { type: "boolean" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, session: { type: "string" }, help: { type: "boolean", short: "h" } });
   if (values.help) {
     write(memoryHelp);
     return 0;
   }
   const [action, arg, ...more] = positionals;
-  if (action !== undefined && action !== "show" && action !== "forget") throw new UsageError(`memory does not know ${action}; it takes show <id> or forget <id>`);
+  if (action !== undefined && action !== "show" && action !== "forget" && action !== "update") throw new UsageError(`memory does not know ${action}; it takes show <id>, forget <id> or update`);
+  if (action !== "update" && (values["dry-run"] || values.all || values.session !== undefined)) throw new UsageError("--dry-run, --all and --session go with update");
+  if (values.yes && action !== "forget") throw new UsageError("--yes goes with forget");
+  if (action === "update") {
+    if (arg) throw new UsageError(`too many arguments: ${[arg, ...more].join(" ")}`);
+    return update({ dryRun: Boolean(values["dry-run"]), all: Boolean(values.all), session: values.session });
+  }
   if (action && !arg) throw new UsageError(`memory ${action} needs an entry's id; \`meme memory\` lists them`);
   if (more.length) throw new UsageError(`too many arguments: ${more.join(" ")}`);
-  if (values.yes && action !== "forget") throw new UsageError("--yes goes with forget");
 
   const platform = currentPlatform();
   const home = platform.home;
