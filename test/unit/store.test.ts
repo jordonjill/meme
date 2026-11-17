@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { layout } from "../../src/platform/layout";
 import { openStore, SCHEMA_VERSION } from "../../src/store/db";
 import { allSessions, counts, sessionRecords } from "../../src/store/queries";
 import { ClaudeSession, resetIds, sampleSession } from "../fixtures/gen-claude";
@@ -178,7 +179,7 @@ describe("store files and modes", () => {
     const { p, projects } = setup();
     sampleSession().write(projects);
     importInto(p).store.db.close();
-    writeFileSync(path.join(p.dataDir, "meme.sqlite"), "this is not a database, just text that is long enough to have a header");
+    writeFileSync(layout(p.dataDir).mirror, "this is not a database, just text that is long enough to have a header");
     const again = importInto(p);
     expect(counts(again.store.db).sessions).toBe(1);
   });
@@ -188,10 +189,11 @@ describe("store files and modes", () => {
     sampleSession().write(projects);
     importInto(p).store.db.close();
     sampleSession({ id: "99999999-0000-4000-8000-000000000001" }).write(projects);
-    chmodSync(path.join(p.dataDir, "meme.sqlite"), 0o444);
-    chmodSync(p.dataDir, 0o555);
+    chmodSync(layout(p.dataDir).mirror, 0o444);
+    // The mirror's own folder and the data folder: neither can be written.
+    for (const d of [path.dirname(layout(p.dataDir).mirror), p.dataDir]) chmodSync(d, 0o555);
     try {
-      const file = path.join(p.dataDir, "meme.sqlite");
+      const file = layout(p.dataDir).mirror;
       const before = statSync(file);
       const store = openStore(p.dataDir);
       expect([store.readonly, store.memory]).toEqual([true, true]);
@@ -202,7 +204,7 @@ describe("store files and modes", () => {
       const after = statSync(file);
       expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
     } finally {
-      chmodSync(p.dataDir, 0o755);
+      for (const d of [p.dataDir, path.dirname(layout(p.dataDir).mirror)]) chmodSync(d, 0o755);
     }
   });
 
@@ -231,10 +233,10 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
     sampleSession().write(projects);
     importInto(p).store.db.close();
     sampleSession({ id: "99999999-0000-4000-8000-000000000001" }).write(projects);
-    const file = path.join(p.dataDir, "meme.sqlite");
+    const file = layout(p.dataDir).mirror;
     const store = openStore(p.dataDir);
     // The open went through; only now does writing fail (no journal can be made).
-    chmodSync(p.dataDir, 0o555);
+    chmodSync(path.dirname(file), 0o555);
     try {
       const before = statSync(file);
       const { result } = importInto(p, store);
@@ -244,7 +246,7 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
       const after = statSync(file);
       expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
     } finally {
-      chmodSync(p.dataDir, 0o700);
+      chmodSync(path.dirname(file), 0o700);
     }
   });
 
@@ -252,7 +254,7 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
     const { p, projects } = setup();
     for (let i = 0; i < 40; i++) sampleSession({ id: `${String(i).padStart(8, "0")}-0000-4000-8000-000000000001` }).write(projects);
     importInto(p).store.db.close();
-    const file = path.join(p.dataDir, "meme.sqlite");
+    const file = layout(p.dataDir).mirror;
     const script = path.join(tempDir(), "writer.ts");
     writeFileSync(
       script,
@@ -306,7 +308,7 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
     const { p, projects } = setup();
     sampleSession().write(projects);
     importInto(p).store.db.close();
-    const file = path.join(p.dataDir, "meme.sqlite");
+    const file = layout(p.dataDir).mirror;
     const { Database } = require("bun:sqlite") as typeof import("bun:sqlite");
     const raw = new Database(file);
     raw.run("UPDATE meta SET value = ? WHERE key = 'schema_version'", [String(SCHEMA_VERSION + 1)]);
@@ -336,7 +338,7 @@ describe("store fixes of step 9 (plan §6 ⑨)", () => {
     const { p, projects } = setup();
     sampleSession().write(projects);
     importInto(p).store.db.close();
-    const file = path.join(p.dataDir, "meme.sqlite");
+    const file = layout(p.dataDir).mirror;
     utimesSync(file, new Date(0), new Date(0));
     const { store } = importInto(p);
     store.db.close();
@@ -396,5 +398,56 @@ describe("F10 (plan §6 ⑪): one session in two sources", () => {
     importInto(p, store);
     expect([row(store).env, row(store).turns]).toEqual(["win", 2]);
     expect(sources(store)).toEqual(["win"]);
+  });
+});
+
+describe("where the mirror is (plan-m2 F1)", () => {
+  /** A data folder as 0.1.0 left it: the mirror in the folder itself, nothing in raw/. */
+  function asLeftBy010(p: ReturnType<typeof setup>["p"]): string {
+    const { mirror, oldMirror } = layout(p.dataDir);
+    renameSync(mirror, oldMirror);
+    rmSync(path.dirname(mirror), { recursive: true });
+    return oldMirror;
+  }
+
+  test("the mirror is in raw/, in a folder only the user can open", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    const { store } = importInto(p);
+    expect(store.file).toBe(path.join(p.dataDir, "raw", "sessions.sqlite"));
+    if (process.platform !== "win32") expect(statSync(path.dirname(store.file)).mode & 0o777).toBe(0o700);
+  });
+
+  test("coming from 0.1.0: the sessions are there after one run and the old mirror is gone", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    importInto(p).store.db.close();
+    const old = asLeftBy010(p);
+    writeFileSync(old + "-journal", "left over");
+    const { store, result } = importInto(p);
+    expect(result.changed).toBe(1);
+    expect(counts(store.db).sessions).toBe(1);
+    expect([old, old + "-journal"].map((f) => existsSync(f))).toEqual([false, false]);
+    expect(existsSync(layout(p.dataDir).mirror)).toBe(true);
+  });
+
+  test.skipIf(isRoot || process.platform === "win32")("coming from 0.1.0 where nothing can be written: the old mirror is read, and stays", () => {
+    const { p, projects } = setup();
+    sampleSession().write(projects);
+    importInto(p).store.db.close();
+    const old = asLeftBy010(p);
+    chmodSync(p.dataDir, 0o555);
+    try {
+      const before = statSync(old);
+      const store = openStore(p.dataDir);
+      expect([store.readonly, store.memory]).toEqual([true, true]);
+      // What 0.1.0 had mirrored is there without importing again.
+      expect(counts(store.db).sessions).toBe(1);
+      expect(importInto(p, store).result.changed).toBe(0);
+      expect([statSync(old).size, statSync(old).mtimeMs]).toEqual([before.size, before.mtimeMs]);
+      expect(existsSync(path.dirname(layout(p.dataDir).mirror))).toBe(false);
+    } finally {
+      chmodSync(p.dataDir, 0o755);
+    }
   });
 });

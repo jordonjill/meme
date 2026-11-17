@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { errorCode, removeFile } from "../platform/fs";
+import { layout, SQLITE_SIDE_FILES } from "../platform/layout";
 
 /**
  * Bump whenever the tables, the outer fields, the redaction rules or what a
@@ -114,19 +115,37 @@ function isCorruptError(err: unknown): boolean {
 }
 
 export function openStore(dataDir: string): Store {
-  const file = path.join(dataDir, "meme.sqlite");
+  const { mirror: file, oldMirror } = layout(dataDir);
   try {
-    mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    const dir = path.dirname(file);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     // SQLite would quietly open a write-protected file read-only; check first.
     // The journal is created next to the file, so the directory must be writable too.
-    accessSync(dataDir, constants.W_OK);
+    accessSync(dir, constants.W_OK);
     if (existsSync(file)) accessSync(file, constants.W_OK);
     const db = openReadWrite(file);
-    if (db) return { db, file, readonly: false, memory: false };
+    if (db) {
+      dropOldMirror(oldMirror);
+      return { db, file, readonly: false, memory: false };
+    }
   } catch (err) {
     if (!isReadOnlyError(err)) throw err;
   }
-  return inMemory(file);
+  // Nothing can be written here, so a mirror 0.1.0 left is still the one to start from.
+  return inMemory(file, existsSync(file) ? file : oldMirror);
+}
+
+/**
+ * Up to 0.1.0 the mirror was in the data folder itself. It is a cache, so it is not
+ * moved: the new one is filled from the original sessions and the old one goes. One
+ * try each time meme starts; an older meme may still have it open.
+ */
+function dropOldMirror(file: string): void {
+  for (const f of [file, ...SQLITE_SIDE_FILES.map((s) => file + s)]) {
+    try {
+      unlinkSync(f);
+    } catch {}
+  }
 }
 
 /**
@@ -136,10 +155,10 @@ export function openStore(dataDir: string): Store {
  * from the file's bytes: another meme may be in the middle of writing (plan §6 ⑨,
  * R8). A copy that cannot be had (a crash's journal it may not undo): a fresh one.
  */
-function inMemory(file: string): Store {
-  if (existsSync(file)) {
+function inMemory(file: string, from = file): Store {
+  if (existsSync(from)) {
     try {
-      const ro = new Database(file, { readonly: true });
+      const ro = new Database(from, { readonly: true });
       try {
         ro.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
         if (schemaVersion(ro) === SCHEMA_VERSION) {
