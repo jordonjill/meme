@@ -202,8 +202,11 @@ meme remember --about-me "I work in WSL and on Windows"
 ```
 
 Without an option it is a rule for every agent; `--project` makes it a fact about
-the project of the current directory, `--about-me` a fact about you. No model is
-asked. Saying the same thing again adds no second entry.
+the project of the current directory, `--about-me` a fact about you. Saying the
+same thing again adds no second entry. With a model set up (below), the model
+words it, decides where it belongs (the options are then hints) and whether it
+repeats or replaces something remembered; your words stay as the evidence.
+Without one, your words go in as they are and nothing is sent.
 
 - `meme memory` lists what is remembered, file by file.
 - `meme memory show <id>` shows the words an entry rests on and when they were
@@ -244,36 +247,39 @@ have to do with it. It says it is reference, not instructions. Inside an agent,
 
 meme itself changes none of the agents' files: you run those commands.
 
-When an agent keeps something for you with `remember`, it passes on your own
-words. meme looks for them in your sessions. Found, the entry is in force at once
-and points at the message you said it in. Not found, it waits as a candidate: it
-is given to no agent, and takes effect when you confirm it with `meme remember`.
-An agent cannot change what you said yourself, or bring back what you forgot.
+When an agent keeps something for you with `remember`, it only passes on your
+own words; it is not the one who writes the memory. meme looks for the words in
+your sessions, and refuses when they are not there. Found, meme writes the entry
+itself: with its model, from your message and the ones around it, by the same
+rules as below; without a model, in your words as they are. The entry points at
+the message you said it in. An agent cannot change what you said yourself, or
+bring back what you forgot.
 
 ### Let a model read your sessions
 
-With a model set up, meme reads the sessions that have gone quiet and keeps what
-is worth keeping:
+Set up a model once. It can be any service that speaks the OpenAI chat format;
+one on your own machine keeps everything there:
+
+```sh
+meme model set          # asks for the address, the model's name and the key, tries it, saves it
+meme model              # which model is set up (of the key, only its last 4 characters)
+meme memory exclude .   # never send the sessions of this project
+```
+
+The key is typed at a prompt that does not show it, never on the command line;
+`meme model set --key-env <VAR>` takes it from an environment variable instead.
+Then meme reads the sessions that have gone quiet and keeps what is worth keeping:
 
 ```sh
 meme memory update --dry-run    # what would be read and sent; sends nothing
 meme memory update
 ```
 
-The model is any service that speaks the OpenAI chat format, set in
-`~/.meme/config.json`:
-
-```json
-{
-  "model": { "url": "https://…/v1", "key": "…", "name": "…" },
-  "exclude": ["github.com/me/private", "/home/me/work/secret"]
-}
-```
-
 - **This sends the text of those sessions to that model**, shortened and with
   secrets masked, and to nowhere else. With no model set up nothing is sent; a
-  model on your own machine keeps everything there. The sessions of a project
-  under `exclude` (a path, or the address of its remote) are never sent.
+  model on your own machine keeps everything there. The sessions of an excluded
+  project are never sent, and what you ask to remember there is kept in your own
+  words.
 - The model decides what to keep and how to word it. meme keeps an entry only
   when the words the model quotes for it are really in the session. What you
   said, or a tool printed, is in force at once; what only the AI said waits as a
@@ -281,9 +287,9 @@ The model is any service that speaks the OpenAI chat format, set in
 - A session is read once it has been quiet for 2 hours, and only its new part
   when it goes on later. A session that ended over 14 days ago and was never read
   is left alone unless you add `--all`; `--session <id>` reads one session.
-- `MEME_MODEL_URL`, `MEME_MODEL_NAME` and `MEME_MODEL_KEY` set the model from the
-  environment; `"keyEnv": "NAME"` in the file takes the key from a variable
-  instead of keeping it in the file.
+- The model and the exclusions are kept in `~/.meme/config.json`.
+  `MEME_MODEL_URL`, `MEME_MODEL_NAME` and `MEME_MODEL_KEY` set the model from the
+  environment instead, and win over the file.
 
 ## Commands
 
@@ -295,11 +301,12 @@ The model is any service that speaks the OpenAI chat format, set in
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
 | `meme remember "<words>"` | Keep a rule or a fact in memory, in your own words (`--project`, `--about-me`). |
-| `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing). |
+| `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing), `exclude` lists or changes the projects never sent to it. |
 | `meme context [<task>]` | What memory holds for the current directory, for an agent to read before it starts. |
 | `meme recall <words>` | Find what meme remembers about something (`--all`: in other projects too). |
 | `meme mcp` | Serve memory to an agent over MCP; `--help` shows how to connect each agent. |
 | `meme plugin [<agent>]` | Write meme's plugin for an agent (Claude Code) and show how to install it. |
+| `meme model` | The model meme asks: show it, `set` it up (the key is not shown as you type it), `test` it, `remove` it. |
 | `meme status` | Version, data location, where memory is, session sources, and what meme can't read after an agent update (sessions, and record types it doesn't know, with the agent's version). |
 | `meme install` / `uninstall` | Mirror everything once / remove meme's data. |
 | `meme report` | A report to paste into an issue when something goes wrong: versions, `status`, recent errors; no conversation content, and your home folder, user names and project paths masked. `--session <id>` adds that session's structure. Read it before you paste it. |
@@ -399,8 +406,8 @@ deletion.
   folder. Deleted records are overwritten (`secure_delete`).
 - Memory is in `~/.meme/memory` and `~/.meme/evidence`, and what meme needs to
   keep it in `~/.meme/state`; in WSL these are in the Windows user's `.meme`
-  (above). The model's key in `~/.meme/config.json` is plain text, unless you
-  name a variable with `keyEnv`. `meme uninstall` leaves memory where it is;
+  (above). The model's key in `~/.meme/config.json` is plain text, readable by
+  you only, unless you set it up with `meme model set --key-env <VAR>`. `meme uninstall` leaves memory where it is;
   delete those folders yourself to remove it.
 - meme only reads the agents' files (`~/.claude`, or `CLAUDE_CONFIG_DIR`;
   `~/.codex`, or `CODEX_HOME`; `~/.local/share/opencode/opencode.db`, or

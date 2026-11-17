@@ -162,7 +162,8 @@ meme remember --about-me "我在 WSL 和 Windows 上开发"
 ```
 
 不加选项，记成你对所有 Agent 的约定；`--project` 记成当前目录所在项目的事实；`--about-me` 记成关于你的事实。
-这一步不调用模型。同一句话再说一遍，不会多出一条。
+同一句话再说一遍，不会多出一条。配了模型（见下文）时，由模型来措辞、决定放在哪里（选项只算提示）、
+判断是不是和已有的重复或取代了哪一条；你的原话留作证据。没配模型时，原话原样存下，什么都不发出去。
 
 - `meme memory` 按文件列出记住的内容。
 - `meme memory show <id>` 显示一条记忆依据的原话，以及是什么时候说的。
@@ -194,37 +195,38 @@ meme remember --about-me "我在 WSL 和 Windows 上开发"
 
 meme 自己不改任何 Agent 的文件，这些命令都由你来运行。
 
-Agent 用 `remember` 替你记东西时，会把你的原话一起交上来。meme 到你的会话里去找这句话：
-找到了，这一条立即生效，并指向你说这句话的那条消息；找不到，它只是候选，不会交给任何 Agent，
-要你用 `meme remember` 确认以后才生效。Agent 改不了你亲口说过的内容，也带不回你已经忘掉的内容。
+Agent 用 `remember` 替你记东西时，只把你的原话交上来，记忆不由它来写。meme 到你的会话里找这句话，
+找不到就拒绝。找到了，由 meme 自己来写：配了模型，就把你那条消息和前后几条交给模型，
+按和下面同一套规则写出来；没配模型，就用你的原话。这一条指向你说这句话的那条消息。
+Agent 改不了你亲口说过的内容，也带不回你已经忘掉的内容。
 
 ### 让模型读你的会话
 
-配好一个模型以后，meme 会去读已经静下来的会话，把值得留下的记下来：
+先配一次模型。任何支持 OpenAI 对话格式的服务都可以；模型在你自己的电脑上，内容就不出本机：
+
+```sh
+meme model set          # 一步步问地址、模型名和 key，先试一次，通了才保存
+meme model              # 现在用的是哪个模型（key 只显示后 4 位）
+meme memory exclude .   # 这个项目的会话永远不发出去
+```
+
+key 在提示时输入，屏幕上不显示，也从不写在命令行上；也可以用 `meme model set --key-env <变量名>`，
+让 meme 从环境变量里取。配好以后，meme 会去读已经静下来的会话，把值得留下的记下来：
 
 ```sh
 meme memory update --dry-run    # 会读哪些、会发出去什么；什么都不发
 meme memory update
 ```
 
-模型可以是任何支持 OpenAI 对话格式的服务，写在 `~/.meme/config.json` 里：
-
-```json
-{
-  "model": { "url": "https://…/v1", "key": "…", "name": "…" },
-  "exclude": ["github.com/me/private", "/home/me/work/secret"]
-}
-```
-
 - **这会把那些会话的文本发给这个模型**，发之前缩短过、遮掉了密钥，除此之外不发到任何地方。
   没配模型就什么都不发；模型在你自己的电脑上，内容就不出本机。
-  `exclude` 里的项目（写路径，或者写它的远程地址）的会话从不发送。
+  被排除的项目，会话从不发送，在那里让 meme 记住的东西也只存你的原话。
 - 记什么、怎么措辞，由模型判断。meme 只在一种情况下才留下一条：模型引的原话确实在这段会话里。
   你说的话、工具输出的内容，立即生效；只有 AI 自己说过的，先当候选。
 - 会话静下来 2 小时以后才读；后来又接着聊的，只读新的部分。
   结束超过 14 天、又从没读过的会话不会去读，除非加 `--all`；`--session <id>` 只读指定的一个。
-- 也可以用环境变量 `MEME_MODEL_URL`、`MEME_MODEL_NAME`、`MEME_MODEL_KEY` 来设置模型；
-  在文件里写 `"keyEnv": "变量名"`，key 就从那个环境变量里取，不用写在文件里。
+- 模型和排除的项目都存在 `~/.meme/config.json` 里。也可以用环境变量 `MEME_MODEL_URL`、
+  `MEME_MODEL_NAME`、`MEME_MODEL_KEY` 来设置模型，环境变量优先。
 
 ## 命令
 
@@ -236,11 +238,12 @@ meme memory update
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
 | `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话（`-a`：从全部项目里选）。 |
 | `meme remember "<话>"` | 用你自己的话记下一条约定或事实（`--project`、`--about-me`）。 |
-| `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发）。 |
+| `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发），`exclude` 列出或修改永远不发给模型的项目。 |
 | `meme context [<要做的事>]` | 记忆里对当前目录成立的内容，给 Agent 在开始之前读。 |
 | `meme recall <词>` | 在记忆里找一件事（`--all`：别的项目也找）。 |
 | `meme mcp` | 通过 MCP 把记忆交给 Agent；`--help` 列出各家 Agent 怎么接。 |
 | `meme plugin [<agent>]` | 生成 meme 给某家 Agent 的插件（现在有 Claude Code 的），并显示怎么安装。 |
+| `meme model` | meme 用的模型：查看，`set` 设置（输入 key 时不显示），`test` 试一次，`remove` 删掉。 |
 | `meme status` | 版本、数据位置、记忆在哪、会话来源，以及 Agent 升级后 meme 读不了的东西（读不了的会话、不认识的记录类型和 Agent 的版本）。 |
 | `meme install` / `uninstall` | 把会话全部镜像一遍 / 删除 meme 的数据。 |
 | `meme report` | 出了问题时贴进 issue 的报告：版本、`status`、最近的错误；不含对话内容，家目录、用户名、项目路径都遮掉了。`--session <id>` 再加上那个会话的结构。贴之前请看一遍。 |
@@ -307,7 +310,7 @@ meme memory update
 - 镜像是 `~/.meme/raw/sessions.sqlite`（Windows 上在 `%USERPROFILE%\.meme` 里），日志在 `~/.meme/logs`；
   设置 `MEME_HOME` 可以换这个文件夹的位置。删除的记录会被覆盖（`secure_delete`）。
 - 记忆在 `~/.meme/memory` 和 `~/.meme/evidence`，维护它要用的东西在 `~/.meme/state`；在 WSL 里，这些都在 Windows 用户目录的 `.meme` 里（见上）。
-  `~/.meme/config.json` 里模型的 key 是明文，除非用 `keyEnv` 指向一个环境变量。
+  `~/.meme/config.json` 里模型的 key 是明文，只有你自己能读；用 `meme model set --key-env <变量名>` 设置的话，key 不写进文件。
   `meme uninstall` 不删记忆；要删的话，自己删掉这几个文件夹。
 - meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`；
   `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
