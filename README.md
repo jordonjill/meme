@@ -193,6 +193,21 @@ in the others. It has three kinds of things:
 
 Memory is new, and has been tried little with real agents and models so far.
 
+### It forms by itself
+
+With a model set up (below), you do not have to do anything: when an agent
+starts, meme reads in the background the sessions that have gone quiet since,
+at most every 6 hours, and keeps what will matter later. Now and then, read what
+changed:
+
+```sh
+meme memory digest      # what came in, what replaced what, what waits to be seen again
+```
+
+`meme status` says when there is something new. Something wrong in it?
+`meme memory forget <id>`. To stop the background runs, put `"auto": false` in
+`~/.meme/config.json`.
+
 ### Tell it something
 
 ```sh
@@ -205,8 +220,10 @@ Without an option it is a rule for every agent; `--project` makes it a fact abou
 the project of the current directory, `--about-me` a fact about you. Saying the
 same thing again adds no second entry. With a model set up (below), the model
 words it, decides where it belongs (the options are then hints) and whether it
-repeats or replaces something remembered; your words stay as the evidence.
-Without one, your words go in as they are and nothing is sent.
+repeats or replaces something remembered; your words stay as the evidence. What
+it judges meant for this time only ("skip the tests this time") is not kept;
+`--as-is` keeps the words anyway. Without a model, your words go in as they are
+and nothing is sent.
 
 - `meme memory` lists what is remembered, file by file.
 - `meme memory show <id>` shows the words an entry rests on and when they were
@@ -249,9 +266,10 @@ meme itself changes none of the agents' files: you run those commands.
 
 When an agent keeps something for you with `remember`, it only passes on your
 own words; it is not the one who writes the memory. meme looks for the words in
-your sessions, and refuses when they are not there. Found, meme writes the entry
-itself: with its model, from your message and the ones around it, by the same
-rules as below; without a model, in your words as they are. The entry points at
+your sessions, and refuses when they are not there. Found, the agent is answered
+at once, and meme writes the entry itself in the background: with its model,
+from your message and the ones around it, by the same rules as below; without a
+model, in your words as they are. The entry points at
 the message you said it in. An agent cannot change what you said yourself, or
 bring back what you forgot.
 
@@ -268,7 +286,8 @@ meme memory exclude .   # never send the sessions of this project
 
 The key is typed at a prompt that does not show it, never on the command line;
 `meme model set --key-env <VAR>` takes it from an environment variable instead.
-Then meme reads the sessions that have gone quiet and keeps what is worth keeping:
+From then on meme reads the sessions that have gone quiet by itself (above). To
+see what it would send, or to run it now:
 
 ```sh
 meme memory update --dry-run    # what would be read and sent; sends nothing
@@ -282,11 +301,12 @@ meme memory update
   words.
 - The model decides what to keep and how to word it. meme keeps an entry only
   when the words the model quotes for it are really in the session. What you
-  said, or a tool printed, is in force at once; what only the AI said waits as a
-  candidate.
+  said, or a tool printed, is in force at once; what only the AI said, or what
+  was read out of what happened, waits until it is seen in a second session.
 - A session is read once it has been quiet for 2 hours, and only its new part
   when it goes on later. A session that ended over 14 days ago and was never read
-  is left alone unless you add `--all`; `--session <id>` reads one session.
+  is left alone unless you add `--all`; `--session <id>` reads one session. A
+  run that starts by itself reads at most 20 sessions; the rest wait for the next.
 - The model and the exclusions are kept in `~/.meme/config.json`.
   `MEME_MODEL_URL`, `MEME_MODEL_NAME` and `MEME_MODEL_KEY` set the model from the
   environment instead, and win over the file.
@@ -301,7 +321,7 @@ meme memory update
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
 | `meme remember "<words>"` | Keep a rule or a fact in memory, in your own words (`--project`, `--about-me`). |
-| `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing), `exclude` lists or changes the projects never sent to it. |
+| `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing), `exclude` lists or changes the projects never sent to it, `digest` tells what changed since you last looked. |
 | `meme context [<task>]` | What memory holds for the current directory, for an agent to read before it starts. |
 | `meme recall <words>` | Find what meme remembers about something (`--all`: in other projects too). |
 | `meme mcp` | Serve memory to an agent over MCP; `--help` shows how to connect each agent. |
@@ -445,8 +465,9 @@ Test fixtures are synthetic; no real session is ever committed. Test hooks:
 `MEME_SLOW_MS` (log runs slower than this; 0 logs every run),
 `MEME_DELETE_TIMEOUT_MS` (how long an agent's own delete command may take),
 `MEME_WSL_TIMEOUT_MS` (how long Windows waits for `wsl.exe`), `MEME_STORE`
-(where memory is kept) and `MEME_MODEL_URL`, `MEME_MODEL_NAME` and
-`MEME_MODEL_KEY` (the model, instead of `config.json`).
+(where memory is kept), `MEME_MODEL_URL`, `MEME_MODEL_NAME` and
+`MEME_MODEL_KEY` (the model, instead of `config.json`) and `MEME_NO_AUTO_UPDATE`
+(1: the pipeline never starts by itself).
 
 ## License
 

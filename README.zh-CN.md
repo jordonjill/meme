@@ -153,6 +153,18 @@ meme 有一份各家 Agent 共用的记忆：你对其中一个说过的话，�
 
 记忆是新功能，还没怎么在真的 Agent 和模型上用过。
 
+### 它自己形成
+
+配了模型（见下文）以后，你什么都不用做：每次有 Agent 启动时，meme 会在后台去读这段时间里已经静下来的会话，
+最多每 6 小时一次，把以后用得上的留下来。隔一段时间看一眼有什么变化：
+
+```sh
+meme memory digest      # 新记了什么、取代了什么、哪些还在等第二次出现
+```
+
+有新内容时 `meme status` 会提醒你。看到记错的，用 `meme memory forget <id>` 删掉。
+不想让它在后台跑，在 `~/.meme/config.json` 里写 `"auto": false`。
+
 ### 告诉它
 
 ```sh
@@ -163,7 +175,8 @@ meme remember --about-me "我在 WSL 和 Windows 上开发"
 
 不加选项，记成你对所有 Agent 的约定；`--project` 记成当前目录所在项目的事实；`--about-me` 记成关于你的事实。
 同一句话再说一遍，不会多出一条。配了模型（见下文）时，由模型来措辞、决定放在哪里（选项只算提示）、
-判断是不是和已有的重复或取代了哪一条；你的原话留作证据。没配模型时，原话原样存下，什么都不发出去。
+判断是不是和已有的重复或取代了哪一条；你的原话留作证据。模型判断只针对这一次的话（比如"这次先别跑测试"）不记；
+想原样存下，加 `--as-is`。没配模型时，原话原样存下，什么都不发出去。
 
 - `meme memory` 按文件列出记住的内容。
 - `meme memory show <id>` 显示一条记忆依据的原话，以及是什么时候说的。
@@ -196,7 +209,7 @@ meme remember --about-me "我在 WSL 和 Windows 上开发"
 meme 自己不改任何 Agent 的文件，这些命令都由你来运行。
 
 Agent 用 `remember` 替你记东西时，只把你的原话交上来，记忆不由它来写。meme 到你的会话里找这句话，
-找不到就拒绝。找到了，由 meme 自己来写：配了模型，就把你那条消息和前后几条交给模型，
+找不到就拒绝。找到了，当场回答 Agent，由 meme 在后台自己来写：配了模型，就把你那条消息和前后几条交给模型，
 按和下面同一套规则写出来；没配模型，就用你的原话。这一条指向你说这句话的那条消息。
 Agent 改不了你亲口说过的内容，也带不回你已经忘掉的内容。
 
@@ -211,7 +224,7 @@ meme memory exclude .   # 这个项目的会话永远不发出去
 ```
 
 key 在提示时输入，屏幕上不显示，也从不写在命令行上；也可以用 `meme model set --key-env <变量名>`，
-让 meme 从环境变量里取。配好以后，meme 会去读已经静下来的会话，把值得留下的记下来：
+让 meme 从环境变量里取。配好以后，meme 会自己去读已经静下来的会话（见上）。想看它会发出去什么，或者现在就跑一次：
 
 ```sh
 meme memory update --dry-run    # 会读哪些、会发出去什么；什么都不发
@@ -222,9 +235,10 @@ meme memory update
   没配模型就什么都不发；模型在你自己的电脑上，内容就不出本机。
   被排除的项目，会话从不发送，在那里让 meme 记住的东西也只存你的原话。
 - 记什么、怎么措辞，由模型判断。meme 只在一种情况下才留下一条：模型引的原话确实在这段会话里。
-  你说的话、工具输出的内容，立即生效；只有 AI 自己说过的，先当候选。
+  你说的话、工具输出的内容，立即生效；只有 AI 自己说过的、或者从事情经过里推断出来的，要在第二个会话里再出现才生效。
 - 会话静下来 2 小时以后才读；后来又接着聊的，只读新的部分。
   结束超过 14 天、又从没读过的会话不会去读，除非加 `--all`；`--session <id>` 只读指定的一个。
+  后台自己启动的那一次最多读 20 个会话，其余的留到下一次。
 - 模型和排除的项目都存在 `~/.meme/config.json` 里。也可以用环境变量 `MEME_MODEL_URL`、
   `MEME_MODEL_NAME`、`MEME_MODEL_KEY` 来设置模型，环境变量优先。
 
@@ -238,7 +252,7 @@ meme memory update
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
 | `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话（`-a`：从全部项目里选）。 |
 | `meme remember "<话>"` | 用你自己的话记下一条约定或事实（`--project`、`--about-me`）。 |
-| `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发），`exclude` 列出或修改永远不发给模型的项目。 |
+| `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发），`exclude` 列出或修改永远不发给模型的项目，`digest` 看自上次以来的变化。 |
 | `meme context [<要做的事>]` | 记忆里对当前目录成立的内容，给 Agent 在开始之前读。 |
 | `meme recall <词>` | 在记忆里找一件事（`--all`：别的项目也找）。 |
 | `meme mcp` | 通过 MCP 把记忆交给 Agent；`--help` 列出各家 Agent 怎么接。 |
@@ -339,7 +353,8 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 `MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）、
 `MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）、
 `MEME_WSL_TIMEOUT_MS`（Windows 上等 `wsl.exe` 最多等多久）、`MEME_STORE`（记忆放在哪）、
-`MEME_MODEL_URL`、`MEME_MODEL_NAME` 和 `MEME_MODEL_KEY`（模型，代替 `config.json`）。
+`MEME_MODEL_URL`、`MEME_MODEL_NAME` 和 `MEME_MODEL_KEY`（模型，代替 `config.json`）、
+`MEME_NO_AUTO_UPDATE`（设为 1 时流水线不会自己启动）。
 
 ## 许可证
 
