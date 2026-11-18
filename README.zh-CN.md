@@ -161,7 +161,7 @@ meme 有一份各家 Agent 共用的记忆：你对其中一个说过的话，�
 最多每 6 小时一次，把以后用得上的留下来。隔一段时间看一眼有什么变化：
 
 ```sh
-meme memory digest      # 新记了什么、取代了什么、哪些还在等第二次出现
+meme memory digest      # 自上次看过以来的统计，以及 Agent 现在会读到的新变化
 ```
 
 有新内容时 `meme status` 会提醒你。看到记错的，用 `meme memory forget <id>` 删掉。

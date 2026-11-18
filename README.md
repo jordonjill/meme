@@ -205,7 +205,7 @@ at most every 6 hours, and keeps what will matter later. Now and then, read what
 changed:
 
 ```sh
-meme memory digest      # what came in, what replaced what, what waits to be seen again
+meme memory digest      # what changed since you last looked, in numbers, and what agents now read
 ```
 
 `meme status` says when there is something new. Something wrong in it?
