@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { profileOf } from "../adapters/profiles";
 import { estimateTokens } from "../handoff/budget";
+import { ANSWER_AGAIN, PROMPTS_VERSION, READ_SESSION } from "../prompts";
 import { allSessions, sessionRecords, type SessionRow } from "../store/queries";
 import { apply, type Change, type NewEvidence, type Op, type Origin } from "./apply";
 import { ModelError, parseAnswer, type Ask, type Proposed } from "./model";
@@ -19,38 +20,6 @@ import { normalize, type Entry, type Shelf, type Tier } from "./types";
  */
 
 /** How a memory is written, whoever asks for it: the same rules for the pipeline and for `remember`. */
-const WRITING = `Every memory must rest on words that are in the records. Copy them exactly into "quote", and give the number of the record they are in as "at": the number after # in that record's heading. A memory whose quote is not found in that record is thrown away. Prefer the user's own words.
-
-Write each memory as one clear sentence that stands on its own, in the language the user writes in. One memory says one thing. A memory about the project is kept with that project: do not name the project in it.
-
-If a memory makes an entry of the existing memory out of date, give that entry's id as "replaces". If an existing entry already says the same, do not repeat it; return it with that entry's id as "supports" when the records give new support for it.
-
-Answer with JSON only, in this form:
-{"memories": [{"text": "...", "kind": "fact", "about": "rule", "quote": "...", "at": 12}]}
-"kind" is "fact" or "experience". "about" is "rule" (how every agent should work with the user), "user" (the user and their machines) or "project" (this project). Optional: "when" (for experience, the situation it applies in), "why", "replaces", "supports".`;
-
-/** The pipeline: reading a session for what is worth keeping. */
-export const SYSTEM = `You keep the long-term memory that a person's coding agents share. You are given part of one session between that person (the user) and a coding agent, and what the memory already holds. Decide what in this session is worth keeping for later sessions, in this or any other agent.
-
-Keep only what will still matter once this task is done:
-- rules the user states for how agents should work ("always", "never", "from now on");
-- facts about the user or their machines that an agent would otherwise have to ask again;
-- facts about the project that its files do not plainly say: decisions and their reasons, how it is built, run and tested, what depends on what;
-- experience: what was learned from how something turned out, such as a failure and what fixed it, or the user correcting the agent. Say what to do, and when it applies.
-
-Do not keep: the progress or the details of the task itself; requests meant for this once; what the memory already holds; secrets; personal matters that have nothing to do with the work.
-
-Most sessions hold little or nothing worth keeping. An empty list is a good answer.
-
-${WRITING}`;
-
-/** `remember`: the user asked for something to be kept; the model words it. */
-export const KEEP_SYSTEM = `You keep the long-term memory that a person's coding agents share. The person (the user) asked for something to be remembered. You are given the user's words, the records around them when there are any, and what the memory already holds. Write what the user asked to keep, so that any agent reading it later understands it.
-
-Keep what the user asked for, and nothing else from the records. Usually that is one memory; more only when the user said several separate things. Leave out what is meant for this once, like a request about the task at hand. If the memory already holds it, return it as "supports" instead of writing it again; if it changes what the memory holds, say which entry it "replaces".
-
-${WRITING}`;
-
 /** A session is read once nothing has been added to it for this long. */
 export const QUIET_MS = 2 * 60 * 60 * 1000;
 /** A session never read that ended longer ago than this many days is set aside; `--all` reads those too. */
@@ -64,6 +33,8 @@ interface Mark {
   upto: number;
   at: string;
   model?: string;
+  /** The version of the prompts it was read with. */
+  prompts?: string;
   kept?: number;
   /** Not read, and why: `older` than what is read unasked. */
   skipped?: string;
@@ -205,7 +176,7 @@ async function memoriesIn(ask: Ask, system: string, user: string): Promise<Propo
     return parseAnswer(await ask(system, user));
   } catch (err) {
     if (!(err instanceof ModelError) || !/^the model('s answer| did not answer)/.test(err.message)) throw err;
-    return parseAnswer(await ask(system, `${user}\n\nAnswer with JSON only, in the form described.`));
+    return parseAnswer(await ask(system, `${user}\n\n${ANSWER_AGAIN}`));
   }
 }
 
@@ -293,7 +264,7 @@ export async function proposeAndKeep(piece: Shown[], ask: Ask, o: Proposing): Pr
   }
   const kept: Kept[] = [];
   if (ops.length) {
-    const done = await apply(o.dataDir, { origin: o.origin, evidence, ops }, { verify: () => true });
+    const done = await apply(o.dataDir, { origin: o.origin, evidence, ops, prompts: PROMPTS_VERSION }, { verify: () => true });
     const now = new Map(held(p, o.project).map((e) => [e.id, e] as const));
     for (const outcome of done.outcomes) {
       if (!outcome.ok) dropped.push(outcome.reason);
@@ -320,7 +291,7 @@ export async function run(due: Due[], older: Picked["older"], ask: Ask, opts: Ru
       const got = await proposeAndKeep(piece, ask, {
         dataDir: opts.dataDir,
         origin: "pipeline",
-        system: SYSTEM,
+        system: READ_SESSION,
         intro: [`Project: ${d.project?.identity ?? "(none)"}`, `Agent: ${agent}`, ""],
         heading: `The session, records #${piece[0]!.seq} to #${piece.at(-1)!.seq}:`,
         project: d.project,
@@ -333,7 +304,7 @@ export async function run(due: Due[], older: Picked["older"], ask: Ask, opts: Ru
       result.active += got.kept.filter((k) => k.active).length;
       result.dropped.push(...got.dropped);
     }
-    mark(p, { session: d.session.id, upto: d.upto, at, model: opts.model, kept: result.kept });
+    mark(p, { session: d.session.id, upto: d.upto, at, model: opts.model, prompts: PROMPTS_VERSION, kept: result.kept });
     results.push(result);
     opts.onSession?.(result);
   }

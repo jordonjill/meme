@@ -1,6 +1,7 @@
 import pkg from "../../../package.json";
 import { PROFILES } from "../../adapters/profiles";
-import { INSTRUCTIONS, memoryTools, pending } from "../../mcp/tools";
+import { memoryTools, pending } from "../../mcp/tools";
+import { MCP_INSTRUCTIONS } from "../../prompts";
 import { maybeStartUpdate } from "../background";
 import { serve } from "../../mcp/server";
 import { fileLogger } from "../../platform/log";
@@ -40,7 +41,7 @@ export async function mcp(argv: string[]): Promise<number> {
   // An agent is starting: a good moment to let memory catch up, in the background.
   maybeStartUpdate(platform);
   await serve(
-    { name: "meme", version: pkg.version, instructions: INSTRUCTIONS, tools: memoryTools(platform) },
+    { name: "meme", version: pkg.version, instructions: MCP_INSTRUCTIONS, tools: memoryTools(platform) },
     Bun.stdin.stream(),
     (line) => process.stdout.write(line),
     (err) => {

@@ -14,16 +14,18 @@ const SRC = path.resolve(import.meta.dir, "../../src");
 const LAYERS: Record<string, string[]> = {
   platform: [],
   redact: [],
+  // What meme says to a model: text, and the words it is made of.
+  prompts: [],
   model: ["platform", "redact"],
   adapters: ["model", "platform", "redact"],
   store: ["adapters", "model", "platform", "redact"],
   render: ["store", "adapters", "model", "platform", "redact"],
   handoff: ["render", "store", "adapters", "model", "platform", "redact"],
-  memory: ["handoff", "store", "adapters", "model", "platform", "redact"],
+  memory: ["prompts", "handoff", "store", "adapters", "model", "platform", "redact"],
   // The three ways in. tui and mcp may use what cli shares (its context, its errors), never a command.
   tui: ["cli", "render", "store", "adapters", "model", "platform", "redact"],
-  mcp: ["cli", "memory", "handoff", "render", "store", "adapters", "model", "platform", "redact"],
-  cli: ["tui", "mcp", "memory", "handoff", "render", "store", "adapters", "model", "platform", "redact"],
+  mcp: ["cli", "prompts", "memory", "handoff", "render", "store", "adapters", "model", "platform", "redact"],
+  cli: ["tui", "mcp", "prompts", "memory", "handoff", "render", "store", "adapters", "model", "platform", "redact"],
 };
 
 /** The agents' profiles and the adapters' types are data every layer may read (adapters/profiles.ts says so). */

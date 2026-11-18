@@ -68,6 +68,8 @@ export interface Proposal {
   origin: Origin;
   evidence: NewEvidence[];
   ops: Op[];
+  /** Worded by a model: the version of the prompts it was asked with (src/prompts). */
+  prompts?: string;
 }
 
 export type Change = "added" | "more evidence" | "updated" | "replaced";
@@ -134,6 +136,8 @@ export interface ChangeRecord {
   replaces?: string;
   /** Where it was learned: the label of its evidence. */
   from?: string;
+  /** Worded by a model: the version of the prompts it was asked with. */
+  prompts?: string;
 }
 
 export function changesFile(p: MemoryPaths): string {
@@ -209,7 +213,7 @@ function applyLocked(p: MemoryPaths, proposal: Proposal, opts: ApplyOptions): Ap
   const at = new Date().toISOString();
   const log: ChangeRecord[] = [];
   const note = (e: Entry, s: OpenShelf, change: ChangeRecord["change"], proof: Evidence[]) =>
-    log.push({ at, id: e.id, change, text: e.text, shelf: shelfKey(s.shelf), status: e.status, ...(e.replaces ? { replaces: e.replaces } : {}), ...(proof[0] ? { from: proof[0].label } : {}) });
+    log.push({ at, id: e.id, change, text: e.text, shelf: shelfKey(s.shelf), status: e.status, ...(e.replaces ? { replaces: e.replaces } : {}), ...(proof[0] ? { from: proof[0].label } : {}), ...(proposal.prompts ? { prompts: proposal.prompts } : {}) });
 
   // Where each piece of evidence was seen, to tell one place from two: what is on file, and what comes now.
   let sources: Map<string, string> | null = null;

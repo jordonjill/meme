@@ -1,4 +1,5 @@
 import path from "node:path";
+import { SHELF_WORDS } from "../prompts";
 import { ENTRY_KINDS, STATUSES, TIERS, type Entry, type Shelf } from "./types";
 
 /**
@@ -15,14 +16,6 @@ import { ENTRY_KINDS, STATUSES, TIERS, type Entry, type Shelf } from "./types";
 const SEP = " · ";
 const HEAD = /^## (m-[0-9a-f]{8}) (.+)$/;
 
-/** What each file is for, as its first lines say to whoever opens it. */
-const TITLES: Record<string, [title: string, about: string]> = {
-  USER: ["About you", "Facts about you and your machines."],
-  RULES: ["Rules", "How you want every agent to work with you."],
-  EXPERIENCE: ["Experience", "What was learned from how things turned out."],
-  MEMORY: ["Project memory", "Facts about this project."],
-};
-
 export function shelfFile(memoryDir: string, shelf: Shelf): string {
   return shelf.level === "user" ? path.join(memoryDir, `${shelf.file}.md`) : path.join(memoryDir, "projects", shelf.project, `${shelf.file}.md`);
 }
@@ -33,7 +26,8 @@ export function shelfKey(shelf: Shelf): string {
 
 /** The first lines of a new file. `project` is what the folder stands for: a remote address or a path. */
 export function preambleFor(shelf: Shelf, project?: string): string {
-  const [title, about] = TITLES[shelf.file]!;
+  // What each file is for, as its first lines say to whoever opens it.
+  const { title, forYou: about } = SHELF_WORDS[shelf.file];
   const lines = [`# ${title}`, ""];
   if (shelf.level === "project" && project) lines.push(`Project: ${project}`, "");
   lines.push(`${about} Kept by meme: \`meme memory show <id>\` tells where an entry comes from.`);

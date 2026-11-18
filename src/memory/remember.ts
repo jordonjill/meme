@@ -2,7 +2,8 @@ import { apply, type Change, type Origin } from "./apply";
 import { ConfigError, loadConfig } from "./config";
 import { asker, ModelError, type Ask } from "./model";
 import { noteDeclined } from "./digest";
-import { isExcluded, KEEP_SYSTEM, proposeAndKeep, type Kept } from "./pipeline";
+import { ABOUT_WORDS, REMEMBER, type About } from "../prompts";
+import { isExcluded, proposeAndKeep, type Kept } from "./pipeline";
 import type { ProjectRef } from "./projects";
 import { entriesIn, memoryPaths } from "./store";
 import type { Shown } from "./transcript";
@@ -16,8 +17,7 @@ import type { Shelf } from "./types";
  * agent's own wording never does: it has not been told how memory is written.
  */
 
-export type About = "rule" | "user" | "project";
-export const ABOUT: readonly About[] = ["rule", "user", "project"];
+export { ABOUT, type About } from "../prompts";
 
 /** Someone is waiting for the answer: a shorter wait than the pipeline's. */
 const WAIT_MS = 60_000;
@@ -87,11 +87,11 @@ export async function rememberWords(r: RememberRequest): Promise<Remembered> {
       const got = await proposeAndKeep(r.records, r.model.ask, {
         dataDir: r.dataDir,
         origin: r.origin,
-        system: KEEP_SYSTEM,
+        system: REMEMBER,
         intro: [
           `Project: ${r.project?.identity ?? "(none)"}`,
           `The user asked to remember what they said in record #${r.focus}${focus && focus.text.trim() !== r.words.trim() ? `, in particular: ${r.words}` : ""}.`,
-          ...(r.about ? [`It is said to be about: ${r.about === "rule" ? "how every agent should work with the user" : r.about === "user" ? "the user and their machines" : "this project"}.`] : []),
+          ...(r.about ? [`It is said to be about: ${ABOUT_WORDS[r.about]}.`] : []),
           ...(r.note ? [`The agent that asked adds: ${r.note}`] : []),
           "",
         ],
