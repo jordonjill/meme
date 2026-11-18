@@ -103,7 +103,7 @@ describe("remember and the digest", () => {
     const d = run(w, ["memory", "digest"]).out;
     expect(d).toStartWith("What meme did with your memory so far:\n\nRemembered (1)\n");
     expect(d).toMatch(/\n {2}m-[0-9a-f]{8} {2}Reply in Chinese\. {2}\(rules · meme remember\)\n/);
-    expect(d).toContain("\nNot kept, as meant for that time only: 1 (--all lists them)\n");
+    expect(d).toContain("\nNot kept: 1, as meant for that time only or not found in what you said (--all lists them)\n");
     expect(run(w, ["memory", "digest"]).out).toMatch(/^Nothing new since you last looked \(.+\)\. `meme memory` lists everything remembered\.\n$/);
     expect(run(w, ["status"]).out).not.toContain("new since you last looked");
   });

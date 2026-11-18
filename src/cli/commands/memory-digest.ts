@@ -32,8 +32,8 @@ export function digestCommand(o: { all: boolean }): number {
   section("Reworded", d.updated.map(row));
   section("Waiting to be seen once more before it takes effect", d.waiting.map((e) => `  ${e.id}  ${e.text}`));
   if (d.declined.length) {
-    if (o.all) section("Not kept: meant for that time only", d.declined.map((x) => `  ${x.words}  (${x.from}, ${when(x.at, now)})`));
-    else lines.push("", `Not kept, as meant for that time only: ${d.declined.length} (--all lists them)`);
+    if (o.all) section("Not kept", d.declined.map((x) => `  ${x.words}  (${x.why ?? "meant for that time only"}; ${x.from}, ${when(x.at, now)})`));
+    else lines.push("", `Not kept: ${d.declined.length}, as meant for that time only or not found in what you said (--all lists them)`);
   }
   if (d.forgotten) lines.push("", `Forgotten at your request: ${d.forgotten}`);
   const since = d.since ? `since you last looked (${when(d.since, now)})` : "so far";

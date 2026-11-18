@@ -25,9 +25,28 @@ export function maybeStartUpdate(platform: Platform, now = Date.now()): boolean 
     if (now - lastUpdate(p) < UPDATE_EVERY_MS) return false;
     // Noted before it starts, so that agents starting together do not each start one.
     markUpdate(p, now);
+    return startSelf(["memory", "update", "--background"]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Words what was passed on to be remembered, in the background (plan-m2 F10): `meme
+ * remember` inside an agent answers at once, like MCP's `remember`. Not in tests,
+ * where MEME_NO_AUTO_UPDATE starts nothing by itself.
+ */
+export function startInbox(platform: Platform): boolean {
+  if (platform.vars.MEME_NO_AUTO_UPDATE === "1") return false;
+  return startSelf(["memory", "update", "--inbox", "--background"]);
+}
+
+/** meme itself, detached: it outlives the command that starts it, and nothing waits for it. */
+function startSelf(args: string[]): boolean {
+  try {
     // Run from its sources, the program is bun and the script comes first.
     const self = /^bun(\.exe)?$/i.test(path.basename(process.execPath)) && process.argv[1] ? [process.argv[1]] : [];
-    const child = spawn(process.execPath, [...self, "memory", "update", "--background"], { detached: true, stdio: "ignore", windowsHide: true, env: process.env });
+    const child = spawn(process.execPath, [...self, ...args], { detached: true, stdio: "ignore", windowsHide: true, env: process.env });
     child.on("error", () => {});
     child.unref();
     return true;

@@ -3,7 +3,8 @@ import { ConfigError, configFile, loadConfig } from "../../memory/config";
 import { LockTimeout, withLock } from "../../memory/lock";
 import { asker, ModelError } from "../../memory/model";
 import { storeDir } from "../../memory/place";
-import { processItem, waiting } from "../../memory/inbox";
+import { processItem, waiting, FIND_MS } from "../../memory/inbox";
+import { finding } from "../agent-remember";
 import { FIRST_RUN_DAYS, markUpdate, pick, run, type SessionResult } from "../../memory/pipeline";
 import { memoryPaths, NewerFormat } from "../../memory/store";
 import { displayPath } from "../../platform/paths";
@@ -20,13 +21,13 @@ const RUNNING = { waitMs: 0, staleMs: 30 * 60 * 1000 };
 /** The most sessions a run started by itself reads; the rest wait for the next. */
 const BACKGROUND_LIMIT = 20;
 
-export async function update(o: { dryRun: boolean; all: boolean; session?: string; background?: boolean }): Promise<number> {
+export async function update(o: { dryRun: boolean; all: boolean; session?: string; background?: boolean; inbox?: boolean }): Promise<number> {
   const ctx = await createContext();
-  const { platform } = ctx;
-  if (!o.background) return run1(ctx, o, write);
+  const go = (say: (text: string) => void) => (o.inbox ? inboxOnly(ctx, say) : run1(ctx, o, say));
+  if (!o.background) return go(write);
   // Started by itself, nobody reads its output: what goes wrong goes to the log.
   try {
-    return await run1(ctx, o, () => {});
+    return await go(() => {});
   } catch (err) {
     ctx.log.error("meme memory update --background", err);
     return 1;
@@ -90,7 +91,8 @@ async function run1(ctx: Awaited<ReturnType<typeof createContext>>, o: { dryRun:
         markUpdate(p, ctx.now);
         // First what agents passed on and nobody finished wording.
         const ask = { ask: asker(model), secret: model.key };
-        for (const file of left) if ((await processItem(store, file, ask))?.kept.length) worded++;
+        const find = finding(platform);
+        for (const file of left) if ((await processItem(store, file, ask, find))?.kept.length) worded++;
         return run(due, older, ask.ask, { dataDir: store, model: model.name, now: ctx.now, secret: model.key, onSession: say });
       },
       RUNNING,
@@ -107,5 +109,44 @@ async function run1(ctx: Awaited<ReturnType<typeof createContext>>, o: { dryRun:
   const dropped = results.reduce((n, r) => n + r.dropped.length, 0);
   if (worded) write(`Worded ${plural(worded, "thing")} an agent passed on to remember.\n`);
   write(`Read ${plural(results.length, "session")}: kept ${plural(kept, "entry", "entries")} (${active} in force, ${kept - active} waiting as candidates), left out ${dropped}. \`meme memory\` lists them.\n${olderNote}`);
+  return 0;
+}
+
+/** How often `--inbox` looks again for words that wait to be found. */
+const LOOK_EVERY_MS = 3000;
+
+/**
+ * `--inbox`: words what agents passed on to remember, and nothing else (plan-m2 F10).
+ * Started by `meme remember` inside an agent, it also waits for words that are to
+ * show in a session, a `!` command being written there once it has run. Without a
+ * model, what is found is kept as said.
+ */
+async function inboxOnly(ctx: Awaited<ReturnType<typeof createContext>>, write: (text: string) => void): Promise<number> {
+  const { platform } = ctx;
+  const store = storeDir(platform);
+  const p = memoryPaths(store);
+  let model = null;
+  try {
+    const config = loadConfig(store, platform.vars);
+    if (config.model) model = { ask: asker(config.model), secret: config.model.key };
+  } catch (err) {
+    if (!(err instanceof ConfigError)) throw err;
+  }
+  const find = finding(platform);
+  const until = Date.now() + FIND_MS + 2 * LOOK_EVERY_MS;
+  let worded = 0;
+  let notFound = 0;
+  for (;;) {
+    let later = 0;
+    for (const file of waiting(p)) {
+      const done = await processItem(store, file, model, find);
+      if (!done) later++;
+      else if (done.by === "not found") notFound++;
+      else if (done.kept.length) worded++;
+    }
+    if (!later || Date.now() > until) break;
+    await Bun.sleep(LOOK_EVERY_MS);
+  }
+  write(`Worded ${plural(worded, "thing")} passed on to remember${notFound ? `; ${notFound} not kept, not found in what you said` : ""}.\n`);
   return 0;
 }

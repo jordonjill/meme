@@ -1,3 +1,4 @@
+import { runningAgent } from "../../adapters/profiles";
 import { LockTimeout } from "../../memory/lock";
 import { storeDir } from "../../memory/place";
 import { projectRef } from "../../memory/projects";
@@ -8,6 +9,8 @@ import { currentPlatform, displayPath } from "../../platform/paths";
 import { redactText } from "../../redact/rules";
 import { isReadOnlyError } from "../../store/db";
 import { CommandError, parse, UsageError } from "../args";
+import { NOTED, rememberFromAgent } from "../agent-remember";
+import { startInbox } from "../background";
 import { projectOf, write } from "../context";
 
 export const rememberHelp = `Usage: meme remember "<what to remember>" [--project | --about-me]
@@ -27,6 +30,10 @@ your words go in as they are, and nothing is sent anywhere.
 With a model the options are hints, and what reads as meant for this time
 only is not kept. \`meme memory\` lists what is remembered;
 \`meme memory forget <id>\` removes it.
+
+Run inside an agent (also as \`! meme remember\`), the words are kept only when
+they are found among what you said in a session, as when an agent calls the
+\`remember\` tool: an agent cannot remember its own words for you.
 `;
 
 export async function remember(argv: string[]): Promise<number> {
@@ -54,6 +61,37 @@ export async function remember(argv: string[]): Promise<number> {
   const flat = oneLine(text);
   const words = redactText(flat);
   const about: About | undefined = values.project ? "project" : values["about-me"] ? "user" : undefined;
+
+  // Inside an agent, the agent may be the one running this: the words must be the user's (plan-m2 F10).
+  const agent = runningAgent(platform.vars);
+  if (agent) {
+    let got;
+    try {
+      got = await rememberFromAgent(platform, { quote: text, about, asIs: Boolean(values["as-is"]), label: `meme remember in ${agent.name}`, root, mayWait: true });
+    } catch (err) {
+      if (err instanceof NewerFormat || err instanceof LockTimeout) throw new CommandError(`${err.message}; nothing was remembered`);
+      if (isReadOnlyError(err)) throw new CommandError(`meme cannot write its memory here (${displayPath(store, home)} cannot be written); nothing was remembered`);
+      throw err;
+    }
+    switch (got.done) {
+      case "noted":
+        startInbox(platform);
+        write(`${NOTED}\n`);
+        return 0;
+      case "kept":
+        write(`${got.lines.join("\n")}\n`);
+        return 0;
+      case "waiting":
+        startInbox(platform);
+        write("Not among what the user said yet. If the user typed this, it is kept once it shows in the session; an agent passes the user's own words, exactly as they wrote them.\n");
+        return 0;
+      case "refused":
+        throw new CommandError(`not remembered: ${got.why}`);
+      default:
+        throw new CommandError("not remembered: these words are not among what the user said");
+    }
+  }
+
   const { model } = values["as-is"] ? { model: null } : modelFor(store, platform.vars, root, ref);
 
   let done;
