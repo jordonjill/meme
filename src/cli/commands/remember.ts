@@ -1,7 +1,7 @@
 import { runningAgent } from "../../adapters/profiles";
 import { LockTimeout } from "../../memory/lock";
 import { storeDir } from "../../memory/place";
-import { projectRef } from "../../memory/projects";
+import { memoryProject } from "../../memory/projects";
 import { modelFor, rememberWords, type About } from "../../memory/remember";
 import { NewerFormat } from "../../memory/store";
 import { oneLine } from "../../memory/types";
@@ -13,18 +13,20 @@ import { NOTED, rememberFromAgent } from "../agent-remember";
 import { startInbox } from "../background";
 import { projectOf, write } from "../context";
 
-export const rememberHelp = `Usage: meme remember "<what to remember>" [--project | --about-me]
+export const rememberHelp = `Usage: meme remember "<what to remember>" [--project | --about-me | --general]
 
 Keep something in meme's memory, for every agent that reads it.
 
 With a model set up (\`meme model\`), the model words it, decides whether it is a
-rule, a fact about you or about this project, and whether it repeats or replaces
-something already remembered; your words are kept as the evidence. Without one,
-your words go in as they are, and nothing is sent anywhere.
+rule, a fact about you, about this project or beyond it, and whether it repeats
+or replaces something already remembered; your words are kept as the evidence.
+Without one, your words go in as they are, and nothing is sent anywhere.
 
   (no option)   a rule for every agent: how you want them to work with you
-  --project     a fact about the project of the current directory
-  --about-me    a fact about you or your machines
+  --project     a fact about the project of the current directory (a git repository)
+  --about-me    a fact about you: your work, what you know, your machines
+  --general     a fact to remember beyond one project: a service several use,
+                how your team works, work that goes on across sessions
   --as-is       keep the words as they are, without asking the model
 
 With a model the options are hints, and what reads as meant for this time
@@ -40,6 +42,7 @@ export async function remember(argv: string[]): Promise<number> {
   const { values, positionals } = parse(argv, {
     project: { type: "boolean" },
     "about-me": { type: "boolean" },
+    general: { type: "boolean" },
     "as-is": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   });
@@ -47,7 +50,7 @@ export async function remember(argv: string[]): Promise<number> {
     write(rememberHelp);
     return 0;
   }
-  if (values.project && values["about-me"]) throw new UsageError("--project and --about-me do not go together");
+  if ([values.project, values["about-me"], values.general].filter(Boolean).length > 1) throw new UsageError("--project, --about-me and --general do not go together");
   const text = positionals.join(" ").trim();
   if (!text) throw new UsageError('remember needs the words to remember, e.g. meme remember "reply in Chinese"');
 
@@ -56,11 +59,12 @@ export async function remember(argv: string[]): Promise<number> {
   const store = storeDir(platform);
   const now = new Date();
   const root = projectOf(platform, process.cwd());
-  const ref = projectRef(root);
+  const ref = memoryProject(root);
   // Secrets are masked before the words go anywhere, the model included.
   const flat = oneLine(text);
   const words = redactText(flat);
-  const about: About | undefined = values.project ? "project" : values["about-me"] ? "user" : undefined;
+  const about: About | undefined = values.project ? "project" : values["about-me"] ? "user" : values.general ? "general" : undefined;
+  if (values.project && !ref) throw new UsageError(`--project: ${displayPath(root, home)} is not in a git repository, so there is no project to keep it with; --general keeps it beyond one project`);
 
   // Inside an agent, the agent may be the one running this: the words must be the user's (plan-m2 F10).
   const agent = runningAgent(platform.vars);

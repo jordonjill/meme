@@ -75,12 +75,26 @@ describe("meme remember", () => {
     expect(everything(w)).toContain("the deploy token is [REDACTED:");
   });
 
+  test("--general keeps a fact beyond one project; --project outside a git repository says there is none (plan-m2 F12)", () => {
+    const w = world();
+    const notes = path.join(w.home, "notes");
+    mkdirSync(notes);
+    const no = run(w, ["remember", "--project", "x"], { cwd: notes });
+    expect([no.code, no.err.split("\n")[0]]).toEqual([2, "meme remember: --project: ~/notes is not in a git repository, so there is no project to keep it with; --general keeps it beyond one project"]);
+    expect(existsSync(data(w, "memory"))).toBe(false);
+    const r = run(w, ["remember", "--general", "The team's model gateway is at https://llm.example.com/v1."], { cwd: notes });
+    expect(r.out).toMatch(/^Remembered m-[0-9a-f]{8} in ~\/\.meme\/memory\/MEMORY\.md\.\n$/);
+    expect(readFileSync(data(w, "memory", "MEMORY.md"), "utf8")).toStartWith("# Memory\n\nWhat to remember beyond one project: across your projects, or from sessions in none.");
+    expect(existsSync(data(w, "memory", "projects"))).toBe(false);
+    expect(run(w, ["memory"]).out).toBe(`Memory  ~/.meme/memory/MEMORY.md\n  ${idIn(r.out)}  The team's model gateway is at https://llm.example.com/v1.\n`);
+  });
+
   test("what cannot be remembered says why, and writes nothing", () => {
     const w = world();
     const none = run(w, ["remember"]);
     expect([none.code, none.err]).toEqual([2, 'meme remember: remember needs the words to remember, e.g. meme remember "reply in Chinese"\nRun `meme remember --help` for usage.\n']);
     const both = run(w, ["remember", "--project", "--about-me", "x"]);
-    expect([both.code, both.err.split("\n")[0]]).toEqual([2, "meme remember: --project and --about-me do not go together"]);
+    expect([both.code, both.err.split("\n")[0]]).toEqual([2, "meme remember: --project, --about-me and --general do not go together"]);
     const long = run(w, ["remember", "x".repeat(301)]);
     expect([long.code, long.err]).toEqual([1, "meme: not remembered: the entry is 301 characters long; the most is 300\n"]);
     expect(existsSync(data(w, "memory"))).toBe(false);

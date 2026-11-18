@@ -9,9 +9,10 @@ import { contextFor } from "../context-for";
 export const contextHelp = `Usage: meme context [<what you are about to work on>]
 
 What meme remembers that holds here, for an agent to read before it starts:
-your rules, facts about you, facts about the project of the current directory,
-and the work left unfinished in it. Given the task in a few words, also the
-few other entries that have to do with it.
+your rules, facts about you, facts about the project of the current directory
+and facts that hold beyond one project, and the work left unfinished in it.
+Given the task in a few words, also the few other entries that have to do
+with it.
 
 It prints nothing when there is nothing for here.
 
