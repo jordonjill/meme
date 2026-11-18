@@ -30,8 +30,9 @@ kept for you, and what was read out of your sessions.
       --all       also sessions that ended over 14 days ago and were never read
       --session   read this session only, quiet or not
       --inbox     only word what agents passed on to remember; reads no session
-  digest          what memory gained, replaced and left out since you last
-                  looked; --all also lists what was not kept
+  digest          what changed since you last looked, in numbers, and the
+                  entries agents now read that changed; --all lists every one,
+                  what was not kept and what still waits to be seen again
   exclude         list the projects whose sessions are never sent to the model;
                   with a folder (. for the current one) or a remote's address,
                   add it; with --remove, take it off the list

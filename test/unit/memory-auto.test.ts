@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, utimesSync } from "node:fs";
 import path from "node:path";
 import { apply, changesFile, forget, type NewEvidence, type Proposal } from "../../src/memory/apply";
-import { digest, markSeen } from "../../src/memory/digest";
+import { digest, forAgents, markSeen } from "../../src/memory/digest";
 import { FIND_MS, processItem, putInbox, waiting, type Finding } from "../../src/memory/inbox";
 import { readAll } from "../../src/memory/evidence";
 import type { Ask } from "../../src/memory/model";
@@ -31,7 +31,8 @@ describe("what is only inferred takes effect once seen in two places (plan-m2 F9
     expect(entriesIn(p.memory)[0]!.entry.status).toBe("candidate");
     await apply(dataDir, inferred("start the database before the tests", "session:bbbb#2"), { verify: () => true });
     expect(entriesIn(p.memory)[0]!.entry).toMatchObject({ status: "active", evidence: [expect.any(String), expect.any(String), expect.any(String)] });
-    expect(digest(p).inForce).toMatchObject([{ change: "in force", text: "Start the database before the tests." }]);
+    // Added and taken into force since the user last looked, it counts once, as added and in force (plan-m2 F13).
+    expect(digest(p)).toMatchObject({ added: [{ text: "Start the database before the tests.", status: "active" }], inForce: [] });
   });
 
   test("an entry that waits to replace another takes its place once in force", async () => {
@@ -55,10 +56,46 @@ describe("the digest (plan-m2 F9)", () => {
     await apply(dataDir, inferred("Run the linter before committing.", "session:aaaa#2"), { verify: () => true });
     const d = digest(p);
     expect(d.since).toBeNull();
-    expect(d.added.map((r) => [r.text, r.shelf, r.from])).toEqual([["Reply in Chinese.", "RULES", "meme remember"]]);
-    expect(d.waiting.map((e) => e.text)).toEqual(["Run the linter before committing."]);
+    expect(d.added.map((r) => [r.text, r.shelf, r.from, r.status])).toEqual([
+      ["Reply in Chinese.", "RULES", "meme remember", "active"],
+      ["Run the linter before committing.", "RULES", "Claude Code · tool", "candidate"],
+    ]);
+    // What agents read is only what is in force.
+    expect(forAgents(d).map((r) => r.text)).toEqual(["Reply in Chinese."]);
+    expect(d.held.map((h) => [h.shelf, h.entry.status])).toEqual([["RULES", "active"], ["RULES", "candidate"]]);
     markSeen(p, new Date(Date.now() + 1000));
     expect(digest(p).added).toEqual([]);
+    expect(digest(p).held.length).toBe(2);
+  });
+
+  test("each entry once, by what happened to it first, as it is now (plan-m2 F13)", async () => {
+    const { dataDir, p } = setup();
+    const said = (text: string): Proposal => ({ origin: "user", evidence: [{ kind: "fact", tier: "stated", speaker: "user", scope: "user", source: "cli", content: text, at: AT, label: "meme remember" }], ops: [{ op: "add", shelf: RULES, text, kind: "fact", evidence: [0] }] });
+    const idOf = async (x: Proposal) => ((await apply(dataDir, x, { verify: () => true })).outcomes[0] as { id: string }).id;
+    const old = await idOf(said("Install with npm."));
+    await idOf(inferred("Start the database before the tests.", "session:aaaa#4"));
+    const reworded = await idOf(inferred("Lint before committing.", "session:aaaa#5"));
+    await apply(dataDir, inferred("Lint before committing.", "session:bbbb#1"), { verify: () => true });
+    markSeen(p, new Date(Date.now() + 1000));
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Since then: one taken into force, one in place of an older entry, one reworded, one added and taken into force, one forgotten.
+    await apply(dataDir, inferred("start the database before the tests", "session:cccc#2"), { verify: () => true });
+    await apply(dataDir, { origin: "user", evidence: [{ kind: "fact", tier: "stated", speaker: "user", scope: "user", source: "cli", content: "Install with pnpm.", at: AT, label: "meme remember" }], ops: [{ op: "replace", id: old, shelf: RULES, text: "Install with pnpm.", kind: "fact", evidence: [0] }] }, { verify: () => true });
+    await apply(dataDir, { origin: "user", evidence: [], ops: [{ op: "update", id: reworded, text: "Run the linter before committing.", evidence: [] }] }, { verify: () => true });
+    await apply(dataDir, inferred("Keep commits small.", "session:dddd#1"), { verify: () => true });
+    await apply(dataDir, inferred("Keep commits small.", "session:eeee#1"), { verify: () => true });
+    const gone = await idOf(said("Never force-push."));
+    await forget(dataDir, gone);
+
+    const d = digest(p);
+    expect(d.added.map((r) => [r.text, r.status])).toEqual([["Keep commits small.", "active"]]);
+    expect(d.replaced.map((r) => [r.text, r.replaces])).toEqual([["Install with pnpm.", old]]);
+    expect(d.inForce.map((r) => r.text)).toEqual(["Start the database before the tests."]);
+    expect(d.updated.map((r) => r.text)).toEqual(["Run the linter before committing."]);
+    expect(d.forgotten).toBe(1);
+    expect(forAgents(d).length).toBe(4);
+    expect(d.held.filter((h) => h.entry.status === "active").map((h) => h.entry.text).sort()).toEqual(["Install with pnpm.", "Keep commits small.", "Run the linter before committing.", "Start the database before the tests."]);
   });
 
   test("forgetting takes the words out of the log of changes as well", async () => {

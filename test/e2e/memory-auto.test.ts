@@ -100,11 +100,28 @@ describe("remember and the digest", () => {
     run(w, ["remember", "Reply in Chinese."]);
     await runAsync(w, ["remember", "这次先别跑测试"], { env: m.env });
     expect(run(w, ["status"]).out).toContain("; 1 new since you last looked: meme memory digest\n");
-    const d = run(w, ["memory", "digest"]).out;
-    expect(d).toStartWith("What meme did with your memory so far:\n\nRemembered (1)\n");
-    expect(d).toMatch(/\n {2}m-[0-9a-f]{8} {2}Reply in Chinese\. {2}\(rules · meme remember\)\n/);
-    expect(d).toContain("\nNot kept: 1, as meant for that time only or not found in what you said (--all lists them)\n");
-    expect(run(w, ["memory", "digest"]).out).toMatch(/^Nothing new since you last looked \(.+\)\. `meme memory` lists everything remembered\.\n$/);
+    const d = run(w, ["memory", "digest"]).out.replace(/m-[0-9a-f]{8}/g, "ID");
+    expect(d).toBe(
+      [
+        "What changed in your memory so far:",
+        "  Remembered 1, in force",
+        "  Not kept 1",
+        "",
+        "Memory now: 1 entry, 1 in force, 0 waiting",
+        "  rules 1",
+        "",
+        "Agents now read these; check them:",
+        "  ID  Reply in Chinese.  (rules)",
+        "",
+        "`meme memory digest --all` lists every one of them, with where each was learned.",
+        "`meme memory show <id>` tells where an entry comes from; `meme memory forget <id>` removes it.",
+        "",
+      ].join("\n"),
+    );
+    expect(run(w, ["memory", "digest"]).out).toMatch(/^Nothing new since you last looked \(.+\)\.\n\nMemory now: 1 entry, 1 in force, 0 waiting\n {2}rules 1\n\n`meme memory show <id>`.+\n$/);
+    const all = run(w, ["memory", "digest", "--all"]).out;
+    expect(all).toStartWith("Nothing new since you last looked");
+    expect(all).not.toContain("--all` lists");
     expect(run(w, ["status"]).out).not.toContain("new since you last looked");
   });
 });
