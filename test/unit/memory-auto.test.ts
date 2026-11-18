@@ -3,7 +3,8 @@ import { readFileSync, utimesSync } from "node:fs";
 import path from "node:path";
 import { apply, changesFile, forget, type NewEvidence, type Proposal } from "../../src/memory/apply";
 import { digest, markSeen } from "../../src/memory/digest";
-import { processItem, putInbox, waiting } from "../../src/memory/inbox";
+import { FIND_MS, processItem, putInbox, waiting, type Finding } from "../../src/memory/inbox";
+import { readAll } from "../../src/memory/evidence";
 import type { Ask } from "../../src/memory/model";
 import { entriesIn, memoryPaths } from "../../src/memory/store";
 import type { Shelf } from "../../src/memory/types";
@@ -101,5 +102,33 @@ describe("what an agent passed on, waiting to be worded (plan-m2 F9)", () => {
     expect(waiting(p)).toEqual([taken]);
     expect(await processItem(dataDir, taken, { ask })).toMatchObject({ by: "model" });
     expect(waiting(p)).toEqual([]);
+  });
+});
+
+describe("what waits to be found among what the user said (plan-m2 F10)", () => {
+  const typed = { words: "测试前先启动数据库", about: "project" as const, project: null, label: "meme remember in an agent", at: AT.toISOString() };
+  const nowhere: Finding = { find: async () => null, modelFor: () => null, project: () => null };
+
+  test("left for later while it may still show; not kept once it has not shown for a while", async () => {
+    const { dataDir, p } = setup();
+    const file = putInbox(p, typed);
+    expect(await processItem(dataDir, file, null, nowhere, AT.getTime() + 60_000)).toBeNull();
+    expect(waiting(p)).toEqual([file]);
+    expect(await processItem(dataDir, file, null, nowhere, AT.getTime() + FIND_MS + 1)).toEqual({ kept: [], dropped: [], by: "not found" });
+    expect(waiting(p)).toEqual([]);
+    expect(entriesIn(p.memory)).toEqual([]);
+    expect(digest(p).declined).toMatchObject([{ words: "测试前先启动数据库", why: "not found in what you said" }]);
+  });
+
+  test("once found, kept as the user's words, with the message it was found in as the evidence", async () => {
+    const { dataDir, p } = setup();
+    const file = putInbox(p, typed);
+    const found: Finding = {
+      find: async (words) => (words === typed.words ? { session: "s-9", root: null, focus: 3, records: [{ seq: 3, speaker: "user", text: '! meme remember --project "测试前先启动数据库"', ts: null }], at: AT } : null),
+      modelFor: () => null,
+      project: () => null,
+    };
+    expect(await processItem(dataDir, file, null, found)).toMatchObject({ by: "words", kept: [{ text: "测试前先启动数据库" }] });
+    expect(readAll(p.evidence)).toMatchObject([{ source: "session:s-9#3", tier: "stated", speaker: "user" }]);
   });
 });

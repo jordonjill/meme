@@ -62,8 +62,8 @@ export interface Remembered {
   kept: (Kept & { text: string })[];
   /** Why something proposed was not kept. */
   dropped: string[];
-  /** Worded by the model; the user's words as they are; or not kept, the model judging it meant for that time only. */
-  by: "model" | "words" | "declined";
+  /** Worded by the model; the user's words as they are; not kept, the model judging it meant for that time only; or not kept, the words not found among the user's. */
+  by: "model" | "words" | "declined" | "not found";
   /** The model was asked and failed; the words were kept as they are. */
   modelError?: string;
 }

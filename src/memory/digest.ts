@@ -9,11 +9,13 @@ import type { Entry } from "./types";
  * what changed since they last looked. Nothing here changes memory.
  */
 
-/** Something the user asked to remember that the model judged to be for that time only. */
+/** Something said to be remembered and not kept: the model judged it for that time only, or it was not the user's words. */
 export interface Declined {
   at: string;
   words: string;
   from: string;
+  /** Why, when it is not that it was meant for that time only. */
+  why?: string;
 }
 
 const seenFile = (p: MemoryPaths) => path.join(p.state, "digest-seen");
