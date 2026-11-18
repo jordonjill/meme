@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import readSession from "./read-session.md" with { type: "text" };
 import remember from "./remember.md" with { type: "text" };
+import experience from "./shelves/experience.md" with { type: "text" };
+import project from "./shelves/project.md" with { type: "text" };
+import rules from "./shelves/rules.md" with { type: "text" };
+import aboutUser from "./shelves/user.md" with { type: "text" };
 import writing from "./writing.md" with { type: "text" };
 import { aboutChoices } from "./shelves";
 
@@ -30,8 +34,20 @@ export function fill(template: string, values: Record<string, string>): string {
 /** A Markdown file's text without the line end editors put at its end. */
 const text = (md: string) => md.replace(/\n$/, "");
 
+/**
+ * The kinds of memory as the model is told them (plan-m2 F11): each with the "kind"
+ * and "about" that put a memory of that kind in its file, as shelfFor() in
+ * src/memory/pipeline.ts does, and the rules of its own file under shelves/.
+ */
+const KINDS: [heading: string, rules: string][] = [
+  ['Rules for every agent ("kind": "fact", "about": "rule")', rules],
+  ['About the user and their machines ("kind": "fact", "about": "user")', aboutUser],
+  ['Experience ("kind": "experience"; "about": "project" when it holds in this project only, "rule" when it holds everywhere)', experience],
+  ['Facts about this project ("kind": "fact", "about": "project")', project],
+];
+
 /** How a memory is written: shared by reading sessions and by `remember`. */
-export const WRITING = fill(text(writing), { about: aboutChoices() });
+export const WRITING = fill(text(writing), { about: aboutChoices(), kinds: KINDS.map(([heading, body]) => `### ${heading}\n${text(body)}`).join("\n\n") });
 
 /** The pipeline: reading part of a session for what is worth keeping. */
 export const READ_SESSION = fill(text(readSession), { writing: WRITING });

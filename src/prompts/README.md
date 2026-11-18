@@ -8,6 +8,7 @@ one place (plan-m2 F10). This folder imports nothing else of meme's.
 | `read-session.md` | meme's model (`meme model`) | the pipeline reads part of a session: `meme memory update`, also in the background | `src/memory/pipeline.ts`, `proposeAndKeep()` |
 | `remember.md` | meme's model | `meme remember`, and an agent's `remember`, with a model set up | `src/memory/remember.ts`, `rememberWords()` |
 | `writing.md` | meme's model | the end of both of the above: how a memory is written, and the JSON to answer with | filled into both by `index.ts`; when an answer cannot be read, `ANSWER_AGAIN` there asks once more |
+| `shelves/rules.md`, `shelves/user.md`, `shelves/experience.md`, `shelves/project.md` | meme's model | in `writing.md`, so with both prompts: what each kind of memory holds, what it leaves out, how it is written, a good and a bad example | `index.ts` (`KINDS`), which says which "kind" and "about" each one is, as `shelfFor()` in `src/memory/pipeline.ts` places it |
 | `shelves.ts` | the person opening a memory file; meme's model; agents | the first lines of each memory file; `{{about}}` in `writing.md`; the `about` of the `remember` tool | `src/memory/entries.ts`, `index.ts`, `agents.ts` |
 | `agents.ts` | the agent connected to `meme mcp` | when it connects (`MCP_INSTRUCTIONS`), and all along (each tool's description); the first line of what `meme context` gives (`CONTEXT_NOTICE`) | `src/cli/commands/mcp.ts`, `src/mcp/tools.ts`, `src/memory/context.ts` |
 

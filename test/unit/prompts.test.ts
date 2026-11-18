@@ -27,6 +27,20 @@ describe("the prompts", () => {
     expect(prompts.PROMPTS_VERSION).toMatch(/^[0-9a-f]{8}$/);
   });
 
+  test("each kind of memory brings its own rules, in both prompts (plan-m2 F11)", () => {
+    const kinds = prompts.WRITING.match(/^### .+$/gm) ?? [];
+    expect(kinds).toEqual([
+      '### Rules for every agent ("kind": "fact", "about": "rule")',
+      '### About the user and their machines ("kind": "fact", "about": "user")',
+      '### Experience ("kind": "experience"; "about": "project" when it holds in this project only, "rule" when it holds everywhere)',
+      '### Facts about this project ("kind": "fact", "about": "project")',
+    ]);
+    // Each says what it keeps, what it leaves out, how it is written, and shows it.
+    for (const part of prompts.WRITING.split(/^### .+$/m).slice(1)) for (const word of ["Keep:", "Leave out:", "Write ", "Good:", "Not this:"]) expect(part).toContain(word);
+    // What the user asks for is kept even where a kind would leave it out.
+    expect(prompts.REMEMBER).toContain("What the user asks to keep is kept even where the kinds of memory below would leave it out");
+  });
+
   test("a name without a value, or a value without its name, is an error", () => {
     expect(fill("a {{b}} c", { b: "x" })).toBe("a x c");
     expect(() => fill("a {{b}}", {})).toThrow("{{b}}");
@@ -45,7 +59,9 @@ describe("the prompts", () => {
   test("every file of the folder is in its README, and every Markdown file is filled by index.ts", () => {
     const readme = readFileSync(path.join(DIR, "README.md"), "utf8");
     const index = readFileSync(path.join(DIR, "index.ts"), "utf8");
-    const files = readdirSync(DIR).filter((n) => !["README.md", "index.ts", "text.d.ts"].includes(n));
+    const all = (dir: string): string[] => readdirSync(dir).flatMap((n) => (statSync(path.join(dir, n)).isDirectory() ? all(path.join(dir, n)) : [path.relative(DIR, path.join(dir, n)).split(path.sep).join("/")]));
+    const files = all(DIR).filter((n) => !["README.md", "index.ts", "text.d.ts"].includes(n));
+    expect(files.length).toBeGreaterThan(8);
     expect(files.filter((n) => !readme.includes(`\`${n}\``))).toEqual([]);
     expect(files.filter((n) => n.endsWith(".md") && !index.includes(`"./${n}"`))).toEqual([]);
   });

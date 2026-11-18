@@ -157,6 +157,7 @@ export interface RunOptions {
 
 const TIER: Record<Shown["speaker"], Tier> = { user: "stated", tool: "observed", agent: "inferred" };
 
+/** Where a proposed memory goes, by its "kind" and "about"; src/prompts/index.ts (KINDS) tells the model the same. */
 function shelfFor(item: Proposed, project: ProjectRef | null): Shelf | null {
   if (item.about === "project") return project ? { level: "project", project: project.key, file: item.kind === "experience" ? "EXPERIENCE" : "MEMORY" } : null;
   if (item.kind === "experience") return { level: "user", file: "EXPERIENCE" };
