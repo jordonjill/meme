@@ -183,8 +183,12 @@ cut at a line and says so. The handoff says what it left out, and `meme show` or
 meme keeps a memory that all your agents share: what you told one of them holds
 in the others. It has three kinds of things:
 
-- **Facts**: your rules for how agents should work with you, facts about you and
-  your machines, and facts about a project.
+- **Facts**: your rules for how agents should work with you, facts about you
+  (your work, what you know, your machines), facts about a project, and facts
+  that hold beyond one project: a service several projects use, how your team
+  works, work that goes on across sessions. A session outside any git
+  repository, in your home folder say, is in no project: what it says goes with
+  the facts beyond one.
 - **Experience**: what was learned from how something turned out, and when it
   applies.
 - **Unfinished work**: the sessions of a project that you stopped, or that ended
@@ -214,10 +218,12 @@ meme memory digest      # what came in, what replaced what, what waits to be see
 meme remember "Reply in Chinese; keep everything in the repository in English"
 meme remember --project "Tests need the database running"
 meme remember --about-me "I work in WSL and on Windows"
+meme remember --general "The team's model gateway is at https://llm.example.com/v1"
 ```
 
 Without an option it is a rule for every agent; `--project` makes it a fact about
-the project of the current directory, `--about-me` a fact about you. Saying the
+the project of the current directory (a git repository), `--about-me` a fact
+about you, `--general` a fact that holds beyond one project. Saying the
 same thing again adds no second entry. With a model set up (below), the model
 words it, decides where it belongs (the options are then hints) and whether it
 repeats or replaces something remembered; your words stay as the evidence. What
@@ -234,17 +240,17 @@ and nothing is sent.
   saying them again yourself brings the entry back.
 
 Memory is plain Markdown you can read: the entries in `~/.meme/memory`
-(`RULES.md`, `USER.md` and `EXPERIENCE.md`, and a `MEMORY.md` and an
-`EXPERIENCE.md` for each project), and the evidence, one file per day, in
+(`RULES.md`, `USER.md`, `MEMORY.md` and `EXPERIENCE.md`, and a `MEMORY.md` and
+an `EXPERIENCE.md` for each project), and the evidence, one file per day, in
 `~/.meme/evidence`. Secrets are masked before anything is written, as in the
 mirror.
 
 ### Give it to your agents
 
 `meme context` prints what memory holds for the current directory: your rules,
-facts about you and about the project, the work left unfinished there and, given
-the task in a few words (`meme context "add rate limiting"`), the entries that
-have to do with it. It says it is reference, not instructions. Inside an agent,
+facts about you, about the project and beyond it, the work left unfinished
+there and, given the task in a few words (`meme context "add rate limiting"`),
+the entries that have to do with it. It says it is reference, not instructions. Inside an agent,
 `! meme context` puts it into the conversation. For an agent to get it by itself:
 
 - **MCP.** `meme mcp` serves memory over the Model Context Protocol. Connect it
@@ -330,7 +336,7 @@ meme memory update
 | `meme search <pattern>` | Search what was said, like `rg` (`-F`, `-i`, `-C`; `-a` all projects). `--tools` also lists matches in tool calls and output. |
 | `meme continue [<target>]` | Hand a session over to a new agent session. |
 | `meme forget [<id>...]` | Delete sessions for good, from the agent and from meme (`-a`: pick from all projects). |
-| `meme remember "<words>"` | Keep a rule or a fact in memory, in your own words (`--project`, `--about-me`). |
+| `meme remember "<words>"` | Keep a rule or a fact in memory, in your own words (`--project`, `--about-me`, `--general`). |
 | `meme memory` | List what is remembered. `show <id>` traces an entry to the words it rests on, `forget <id>` removes it for good, `update` reads quiet sessions with a model (`--dry-run` sends nothing), `exclude` lists or changes the projects never sent to it, `digest` tells what changed since you last looked. |
 | `meme context [<task>]` | What memory holds for the current directory, for an agent to read before it starts. |
 | `meme recall <words>` | Find what meme remembers about something (`--all`: in other projects too). |

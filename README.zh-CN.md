@@ -147,7 +147,9 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 
 meme 有一份各家 Agent 共用的记忆：你对其中一个说过的话，在别的 Agent 里同样算数。里面有三种东西：
 
-- **事实**：你对 Agent 的约定，关于你和你的电脑的事实，关于某个项目的事实。
+- **事实**：你对 Agent 的约定；关于你的事实（做什么、熟悉什么、用的电脑）；关于某个项目的事实；
+  跨项目的事实：几个项目共用的服务、团队的做法、跨很多会话在做的事。不在任何 git 仓库里的会话
+  （比如在家目录里开的）不属于哪个项目，里面说的事记成跨项目的事实。
 - **经验**：从事情的结果里学到的做法，以及它什么时候适用。
 - **没做完的任务**：一个项目里被你打断、或者停在一步中间的会话。这一种不存任何东西，每次从会话里现算。
 
@@ -171,9 +173,11 @@ meme memory digest      # 新记了什么、取代了什么、哪些还在等第
 meme remember "回复用中文；仓库里的东西全部用英文"
 meme remember --project "跑测试前要先启动数据库"
 meme remember --about-me "我在 WSL 和 Windows 上开发"
+meme remember --general "团队的模型网关在 https://llm.example.com/v1"
 ```
 
-不加选项，记成你对所有 Agent 的约定；`--project` 记成当前目录所在项目的事实；`--about-me` 记成关于你的事实。
+不加选项，记成你对所有 Agent 的约定；`--project` 记成当前目录所在项目（一个 git 仓库）的事实；`--about-me` 记成关于你的事实；
+`--general` 记成跨项目的事实。
 同一句话再说一遍，不会多出一条。配了模型（见下文）时，由模型来措辞、决定放在哪里（选项只算提示）、
 判断是不是和已有的重复或取代了哪一条；你的原话留作证据。模型判断只针对这一次的话（比如"这次先别跑测试"）不记；
 想原样存下，加 `--as-is`。没配模型时，原话原样存下，什么都不发出去。
@@ -183,13 +187,13 @@ meme remember --about-me "我在 WSL 和 Windows 上开发"
 - `meme memory forget <id>` 确认后彻底删除一条：这一条本身、只属于它的证据、meme 自己备份里的文字，都删掉。
   留下的只有一个哈希值，这样同一句话不会从会话里被重新学回来；你自己再说一遍，它就回来了。
 
-记忆是你能直接读的 Markdown 文件：条目在 `~/.meme/memory`（`RULES.md`、`USER.md`、`EXPERIENCE.md`，
+记忆是你能直接读的 Markdown 文件：条目在 `~/.meme/memory`（`RULES.md`、`USER.md`、`MEMORY.md`、`EXPERIENCE.md`，
 每个项目各有一份 `MEMORY.md` 和 `EXPERIENCE.md`），证据在 `~/.meme/evidence`，每天一个文件。
 和镜像一样，密钥在写进去之前就被遮掉了。
 
 ### 交给你的 Agent
 
-`meme context` 输出记忆里对当前目录成立的内容：你的约定、关于你和这个项目的事实、这里没做完的任务；
+`meme context` 输出记忆里对当前目录成立的内容：你的约定、关于你的、这个项目的和跨项目的事实、这里没做完的任务；
 用几个词说出这次要做的事（`meme context "给登录接口加限流"`），还会带上相关的条目。
 输出的开头写明它是参考资料，不是指令。在 Agent 里输入 `! meme context`，就把它放进对话。
 想让 Agent 自己拿到它，有两种办法：
@@ -256,7 +260,7 @@ meme memory update
 | `meme search <模式>` | 像 `rg` 一样搜说过的话（`-F`、`-i`、`-C`；`-a` 搜全部项目）；`--tools` 连工具调用和输出里的匹配也列出。 |
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
 | `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话（`-a`：从全部项目里选）。 |
-| `meme remember "<话>"` | 用你自己的话记下一条约定或事实（`--project`、`--about-me`）。 |
+| `meme remember "<话>"` | 用你自己的话记下一条约定或事实（`--project`、`--about-me`、`--general`）。 |
 | `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发），`exclude` 列出或修改永远不发给模型的项目，`digest` 看自上次以来的变化。 |
 | `meme context [<要做的事>]` | 记忆里对当前目录成立的内容，给 Agent 在开始之前读。 |
 | `meme recall <词>` | 在记忆里找一件事（`--all`：别的项目也找）。 |
