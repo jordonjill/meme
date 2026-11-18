@@ -273,6 +273,13 @@ model, in your words as they are. The entry points at
 the message you said it in. An agent cannot change what you said yourself, or
 bring back what you forgot.
 
+The same holds for `meme remember` run inside an agent, since meme cannot tell
+the agent running it from you typing `! meme remember`: the words are kept once
+they are found among what you said. Your own `!` command shows in the session
+only after it has run, so it is kept a moment later, in the background; words
+that do not show within two minutes are not kept, and `meme memory digest --all`
+says so.
+
 ### Let a model read your sessions
 
 Set up a model once. It can be any service that speaks the OpenAI chat format;
@@ -309,7 +316,8 @@ meme memory update
   when it goes on later. A session that ended over 14 days ago and was never read
   is left alone unless you add `--all`; `--session <id>` reads one session. A
   run that starts by itself reads at most 20 sessions; the rest wait for the next.
-- The model and the exclusions are kept in `~/.meme/config.json`.
+- The model and the exclusions are kept in `~/.meme/config.json`. What meme asks
+  the model is in [`src/prompts`](src/prompts/README.md).
   `MEME_MODEL_URL`, `MEME_MODEL_NAME` and `MEME_MODEL_KEY` set the model from the
   environment instead, and win over the file.
 

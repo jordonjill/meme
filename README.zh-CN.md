@@ -213,6 +213,10 @@ Agent 用 `remember` 替你记东西时，只把你的原话交上来，记忆�
 按和下面同一套规则写出来；没配模型，就用你的原话。这一条指向你说这句话的那条消息。
 Agent 改不了你亲口说过的内容，也带不回你已经忘掉的内容。
 
+在 Agent 里运行 `meme remember` 也是一样：meme 分不出是 Agent 在运行，还是你自己输入了 `! meme remember`，
+所以只有在你说过的话里找到这句话，才记下来。你自己的 `!` 命令要等跑完才写进会话，所以会晚一点、在后台记下；
+两分钟内都没出现在会话里的话不会记，`meme memory digest --all` 里能看到。
+
 ### 让模型读你的会话
 
 先配一次模型。任何支持 OpenAI 对话格式的服务都可以；模型在你自己的电脑上，内容就不出本机：
@@ -240,7 +244,7 @@ meme memory update
 - 会话静下来 2 小时以后才读；后来又接着聊的，只读新的部分。
   结束超过 14 天、又从没读过的会话不会去读，除非加 `--all`；`--session <id>` 只读指定的一个。
   后台自己启动的那一次最多读 20 个会话，其余的留到下一次。
-- 模型和排除的项目都存在 `~/.meme/config.json` 里。也可以用环境变量 `MEME_MODEL_URL`、
+- 模型和排除的项目都存在 `~/.meme/config.json` 里。meme 问模型的提示词都在 [`src/prompts`](src/prompts/README.md)。也可以用环境变量 `MEME_MODEL_URL`、
   `MEME_MODEL_NAME`、`MEME_MODEL_KEY` 来设置模型，环境变量优先。
 
 ## 命令
