@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { formatShelf, parseShelf, preambleFor, shelfFile } from "../../src/memory/entries";
 import { appended, dayAndTime, parseDay, without } from "../../src/memory/evidence";
-import { normalizeRemote, projectRef } from "../../src/memory/projects";
+import { memoryProject, normalizeRemote, projectRef } from "../../src/memory/projects";
 import { normalize, type Entry, type Evidence } from "../../src/memory/types";
 import { tempDir } from "../helpers";
 
@@ -132,5 +132,19 @@ describe("a project as memory knows it (plan-m2 F2)", () => {
     expect(ref.key).toMatch(/^[a-z0-9._-]+-[0-9a-f]{8}$/);
     expect(projectRef("C:\\Users\\me\\work\\CON").key).toMatch(/^con-[0-9a-f]{8}$/);
     expect(projectRef("/").key).toMatch(/^project-[0-9a-f]{8}$/);
+  });
+
+  test("for memory a project is a git repository: a home folder, or a folder with no .git, is in no project (plan-m2 F12)", () => {
+    const repo = tempDir();
+    mkdirSync(path.join(repo, ".git"));
+    expect(memoryProject(repo)).toEqual(projectRef(repo));
+    const worktree = tempDir();
+    writeFileSync(path.join(worktree, ".git"), "gitdir: /elsewhere/.git/worktrees/x\n");
+    expect(memoryProject(worktree)).not.toBeNull();
+    expect(memoryProject(tempDir())).toBeNull();
+    for (const home of ["/home/me", "/home/me/", "/root", "/Users/me", "C:\\Users\\me", "/mnt/c/Users/me"]) expect(memoryProject(home)).toBeNull();
+    expect(memoryProject(null)).toBeNull();
+    // A folder that cannot be looked into from here, a WSL path read on Windows, is taken to be a project.
+    expect(memoryProject("/nowhere/here/work/tool")).not.toBeNull();
   });
 });

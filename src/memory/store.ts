@@ -91,7 +91,7 @@ export interface OpenShelf extends ShelfText {
   file: string;
 }
 
-const USER_FILES = ["RULES", "USER", "EXPERIENCE"] as const;
+const USER_FILES = ["RULES", "USER", "MEMORY", "EXPERIENCE"] as const;
 const PROJECT_FILES = ["MEMORY", "EXPERIENCE"] as const;
 
 /** Every conclusion file there is under a memory folder, the user's first. */

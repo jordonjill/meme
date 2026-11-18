@@ -81,6 +81,18 @@ describe("what an agent is given (plan-m2 F3)", () => {
     expect(contextText(buildContext({ ...scope, project: { key: "x-00000000", identity: "/somewhere/x" } }))).not.toContain("This project");
   });
 
+  test("what holds beyond one project is given in every project, and in none (plan-m2 F12)", async () => {
+    const GENERAL: Shelf = { level: "user", file: "MEMORY" };
+    const { scope } = await memory([
+      [USER, "Works in WSL and on Windows."],
+      [mine, "Tests need the database running."],
+      [GENERAL, "The team's model gateway is at https://llm.example.com/v1."],
+    ]);
+    const lines = (s: Scope) => contextText(buildContext(s)).split("\n").map((l) => l.replace(/m-[0-9a-f]{8}/, "ID"));
+    expect(lines(scope)).toEqual([NOTICE, "", "About you", "- [ID] Works in WSL and on Windows.", "", "This project (tool)", "- [ID] Tests need the database running.", "", "Memory", "- [ID] The team's model gateway is at https://llm.example.com/v1.", ""]);
+    expect(lines({ ...scope, project: null })).toEqual([NOTICE, "", "About you", "- [ID] Works in WSL and on Windows.", "", "Memory", "- [ID] The team's model gateway is at https://llm.example.com/v1.", ""]);
+  });
+
   test("nothing in memory for here is no text at all", async () => {
     const { scope } = await memory([[theirs, "Uses yarn."]]);
     expect(contextText(buildContext(scope))).toBe("");

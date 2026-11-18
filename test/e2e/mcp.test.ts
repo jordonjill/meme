@@ -116,7 +116,7 @@ describe("meme mcp", () => {
     ]);
     expect(t.replies.slice(1).map((m) => [m.result!.isError, m.result!.content![0]!.text])).toEqual([
       [true, "remember needs `quote`: the user's own words, copied exactly from their message"],
-      [true, "`about` is one of rule, user, project"],
+      [true, "`about` is one of rule, user, general, project"],
       [true, "recall needs `words`: what to look for"],
       [true, "no entry m-ffffffff in memory; `meme memory` lists them"],
     ]);

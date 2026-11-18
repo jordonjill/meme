@@ -23,7 +23,7 @@ describe("the prompts", () => {
     for (const text of [prompts.WRITING, prompts.READ_SESSION, prompts.REMEMBER]) expect(text).not.toContain("{{");
     expect(prompts.READ_SESSION.endsWith(prompts.WRITING)).toBe(true);
     expect(prompts.REMEMBER.endsWith(prompts.WRITING)).toBe(true);
-    expect(prompts.WRITING).toContain(`"about" is "rule" (how every agent should work with the user), "user" (the user and their machines) or "project" (this project).`);
+    expect(prompts.WRITING).toContain(`"about" is "rule" (how every agent should work with the user), "user" (who the user is: their work, what they know, their machines), "general" (what to remember beyond one project) or "project" (this project).`);
     expect(prompts.PROMPTS_VERSION).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -31,8 +31,9 @@ describe("the prompts", () => {
     const kinds = prompts.WRITING.match(/^### .+$/gm) ?? [];
     expect(kinds).toEqual([
       '### Rules for every agent ("kind": "fact", "about": "rule")',
-      '### About the user and their machines ("kind": "fact", "about": "user")',
-      '### Experience ("kind": "experience"; "about": "project" when it holds in this project only, "rule" when it holds everywhere)',
+      '### About the user ("kind": "fact", "about": "user")',
+      '### Memory beyond one project ("kind": "fact", "about": "general")',
+      '### Experience ("kind": "experience"; "about": "project" when it holds in this project only, "general" when it holds everywhere)',
       '### Facts about this project ("kind": "fact", "about": "project")',
     ]);
     // Each says what it keeps, what it leaves out, how it is written, and shows it.
@@ -52,7 +53,7 @@ describe("the prompts", () => {
       .filter((f) => !f.startsWith(DIR + path.sep))
       .map((f) => readFileSync(f, "utf8"))
       .join("\n");
-    const unused = ["READ_SESSION", "REMEMBER", "ANSWER_AGAIN", "PROMPTS_VERSION", "MCP_INSTRUCTIONS", "CONTEXT_NOTICE", "TOOL_WORDS", "SHELF_WORDS", "ABOUT_WORDS", "ABOUT"].filter((name) => !new RegExp(`\\b${name}\\b`).test(outside));
+    const unused = ["READ_SESSION", "REMEMBER", "ANSWER_AGAIN", "NO_PROJECT", "PROMPTS_VERSION", "MCP_INSTRUCTIONS", "CONTEXT_NOTICE", "TOOL_WORDS", "SHELF_WORDS", "ABOUT_WORDS", "ABOUT"].filter((name) => !new RegExp(`\\b${name}\\b`).test(outside));
     expect(unused).toEqual([]);
   });
 

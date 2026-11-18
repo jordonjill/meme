@@ -1,3 +1,4 @@
+import { ABOUT, type About } from "../prompts";
 import type { ModelConfig } from "./config";
 
 /** The model did not answer, or not in a way that can be used; the run stops and nothing is marked as read. */
@@ -35,7 +36,7 @@ export function asker(model: ModelConfig, fetcher: typeof fetch = fetch, timeout
 export interface Proposed {
   text: string;
   kind: "fact" | "experience";
-  about: "rule" | "user" | "project";
+  about: About;
   /** Words copied from the session, and the number of the record they are in. */
   quote: string;
   at: number;
@@ -75,7 +76,7 @@ export function parseAnswer(answer: string): Proposed[] {
     out.push({
       text,
       kind: raw.kind === "experience" ? "experience" : "fact",
-      about: raw.about === "user" || raw.about === "project" ? raw.about : "rule",
+      about: ABOUT.includes(raw.about as About) ? (raw.about as About) : "rule",
       quote,
       at,
       ...(str(raw.when) ? { when: str(raw.when) } : {}),

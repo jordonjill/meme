@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import readSession from "./read-session.md" with { type: "text" };
 import remember from "./remember.md" with { type: "text" };
 import experience from "./shelves/experience.md" with { type: "text" };
+import general from "./shelves/general.md" with { type: "text" };
 import project from "./shelves/project.md" with { type: "text" };
 import rules from "./shelves/rules.md" with { type: "text" };
 import aboutUser from "./shelves/user.md" with { type: "text" };
@@ -41,8 +42,9 @@ const text = (md: string) => md.replace(/\n$/, "");
  */
 const KINDS: [heading: string, rules: string][] = [
   ['Rules for every agent ("kind": "fact", "about": "rule")', rules],
-  ['About the user and their machines ("kind": "fact", "about": "user")', aboutUser],
-  ['Experience ("kind": "experience"; "about": "project" when it holds in this project only, "rule" when it holds everywhere)', experience],
+  ['About the user ("kind": "fact", "about": "user")', aboutUser],
+  ['Memory beyond one project ("kind": "fact", "about": "general")', general],
+  ['Experience ("kind": "experience"; "about": "project" when it holds in this project only, "general" when it holds everywhere)', experience],
   ['Facts about this project ("kind": "fact", "about": "project")', project],
 ];
 
@@ -54,6 +56,9 @@ export const READ_SESSION = fill(text(readSession), { writing: WRITING });
 
 /** `remember`: the user asked for something to be kept; the model words it. */
 export const REMEMBER = fill(text(remember), { writing: WRITING });
+
+/** Said with the question when the session, or the words to remember, are in no project (plan-m2 F12). */
+export const NO_PROJECT = 'This is in no project: nothing here is "about": "project"; what holds beyond it is "general".';
 
 /** Said once more when the model's answer could not be read. */
 export const ANSWER_AGAIN = "Answer with JSON only, in the form described.";

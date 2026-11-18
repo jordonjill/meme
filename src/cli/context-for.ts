@@ -3,7 +3,7 @@ import path from "node:path";
 import { PROFILES } from "../adapters/profiles";
 import { buildContext, contextText } from "../memory/context";
 import { storeDir } from "../memory/place";
-import { projectRef } from "../memory/projects";
+import { memoryProject } from "../memory/projects";
 import { memoryPaths } from "../memory/store";
 import { branchOf, taskLines, unfinished } from "../memory/tasks";
 import type { Platform } from "../platform/paths";
@@ -41,7 +41,7 @@ export interface ContextRequest {
  */
 export async function contextFor(platform: Platform, req: ContextRequest): Promise<string> {
   const root = projectOf(platform, req.cwd);
-  const ctx = buildContext({ memoryDir: memoryPaths(storeDir(platform)).memory, project: projectRef(root), agent: req.agent }, { task: req.task, instructions: instructionsIn(root) });
+  const ctx = buildContext({ memoryDir: memoryPaths(storeDir(platform)).memory, project: memoryProject(root), agent: req.agent }, { task: req.task, instructions: instructionsIn(root) });
   let tasks: string[] = [];
   try {
     const sessions = await createContext();

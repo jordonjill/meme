@@ -1,6 +1,6 @@
 import { putInbox, type Finding, type Found } from "../memory/inbox";
 import { storeDir } from "../memory/place";
-import { projectRef } from "../memory/projects";
+import { memoryProject } from "../memory/projects";
 import { modelFor, rememberWords, type About, type RememberRequest } from "../memory/remember";
 import { memoryPaths } from "../memory/store";
 import { shown, type Shown } from "../memory/transcript";
@@ -68,8 +68,8 @@ export function finding(platform: Platform): Finding {
       const said = await whereSaid(words);
       return said ? { session: said.session.id, root: said.session.project, focus: said.focus, records: said.records, at: said.at } : null;
     },
-    modelFor: (root) => modelFor(store, platform.vars, root, root ? projectRef(root) : null).model,
-    project: (root) => (root ? projectRef(root) : null),
+    modelFor: (root) => modelFor(store, platform.vars, root, memoryProject(root)).model,
+    project: memoryProject,
   };
 }
 
@@ -112,10 +112,10 @@ export async function rememberFromAgent(platform: Platform, r: FromAgent): Promi
   const said = await whereSaid(r.quote);
   if (!said) {
     if (!r.mayWait) return { done: "not found" };
-    return { done: "waiting", file: putInbox(p, { words, ...extra, project: projectRef(r.root), label: r.label, at: new Date().toISOString() }) };
+    return { done: "waiting", file: putInbox(p, { words, ...extra, project: memoryProject(r.root), label: r.label, at: new Date().toISOString() }) };
   }
   const root = said.session.project ?? r.root;
-  const ref = projectRef(root);
+  const ref = memoryProject(root);
   const { model } = r.asIs ? { model: null } : modelFor(store, platform.vars, root, ref);
   const at = said.at ?? new Date();
   if (model) {

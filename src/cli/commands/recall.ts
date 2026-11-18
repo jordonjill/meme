@@ -2,7 +2,7 @@ import { runningAgent } from "../../adapters/profiles";
 import { recall as recallEntries } from "../../memory/context";
 import { parseShelf } from "../../memory/entries";
 import { storeDir } from "../../memory/place";
-import { projectRef } from "../../memory/projects";
+import { memoryProject } from "../../memory/projects";
 import { memoryPaths, readText } from "../../memory/store";
 import { currentPlatform } from "../../platform/paths";
 import { parse, UsageError } from "../args";
@@ -32,7 +32,7 @@ export async function recall(argv: string[]): Promise<number> {
   const words = positionals.join(" ").trim();
   if (!words) throw new UsageError("recall needs the words to look for, e.g. meme recall pnpm");
   const platform = currentPlatform();
-  const scope = { memoryDir: memoryPaths(storeDir(platform)).memory, project: projectRef(projectOf(platform, process.cwd())), agent: runningAgent(platform.vars)?.agent ?? null };
+  const scope = { memoryDir: memoryPaths(storeDir(platform)).memory, project: memoryProject(projectOf(platform, process.cwd())), agent: runningAgent(platform.vars)?.agent ?? null };
   const found = recallEntries(scope, words, Boolean(values.all)).slice(0, MOST);
   if (!found.length) {
     write(`Nothing in memory has to do with: ${words}\n`);

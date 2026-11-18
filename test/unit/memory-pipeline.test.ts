@@ -5,7 +5,7 @@ import { apply } from "../../src/memory/apply";
 import { ConfigError, configFile, loadConfig } from "../../src/memory/config";
 import { asker, ModelError, parseAnswer, type Ask, type Proposed } from "../../src/memory/model";
 import { pick, run } from "../../src/memory/pipeline";
-import { READ_SESSION as SYSTEM } from "../../src/prompts";
+import { NO_PROJECT, READ_SESSION as SYSTEM } from "../../src/prompts";
 import { entriesIn, memoryPaths } from "../../src/memory/store";
 import { pieces, shown, transcript } from "../../src/memory/transcript";
 import { sessionRecords } from "../../src/store/queries";
@@ -191,6 +191,41 @@ describe("the pipeline (plan-m2 F5)", () => {
     // The model was given the project, the agent, what memory holds, and the session with record numbers.
     expect(seen[0]).toStartWith("Project: github.com/me/tool\nAgent: Claude Code\n\nWhat the memory already holds for here:\n(nothing yet)\n\nThe session, records #");
     expect(SYSTEM).toContain("An empty list is a good answer.");
+  });
+
+  test("a session in no git repository is in no project: what it says about a project, or beyond one, is kept with the user's files (plan-m2 F12)", async () => {
+    resetIds();
+    const home = tempDir();
+    const p = testPlatform(home);
+    const notes = path.join(home, "notes");
+    mkdirSync(notes, { recursive: true });
+    const session = new ClaudeSession({ id: ID, cwd: notes, start: ago(3 * HOUR) });
+    session.user("公司的模型网关在 https://llm.example.com/v1，用 OpenAI 那种 key。网关超时就换 qwen-plus 重试");
+    session.assistant("好的。");
+    session.write(projectsDir(home));
+    const { store } = importInto(p);
+    const t = { p, db: store.db, paths: memoryPaths(p.dataDir) } as ReturnType<typeof setup>;
+    const [user] = shown(sessionRecords(t.db, ID));
+    const seen: string[] = [];
+    const { results } = await runAll(
+      t,
+      answering(
+        [
+          { text: "公司的模型网关在 https://llm.example.com/v1，用 OpenAI 那种 key", kind: "fact", about: "general", quote: "公司的模型网关在 https://llm.example.com/v1", at: user!.seq },
+          { text: "网关超时就换 qwen-plus 重试", kind: "fact", about: "project", quote: "网关超时就换 qwen-plus 重试", at: user!.seq },
+          { text: "网关超时时换 qwen-plus", kind: "experience", about: "project", quote: "网关超时就换 qwen-plus 重试", at: user!.seq },
+        ],
+        seen,
+      ),
+    );
+    expect(results).toMatchObject([{ kept: 3, dropped: [] }]);
+    expect(entriesIn(t.paths.memory).map((e) => [e.shelf, e.entry.text])).toEqual([
+      [{ level: "user", file: "MEMORY" }, "公司的模型网关在 https://llm.example.com/v1，用 OpenAI 那种 key"],
+      [{ level: "user", file: "MEMORY" }, "网关超时就换 qwen-plus 重试"],
+      [{ level: "user", file: "EXPERIENCE" }, "网关超时时换 qwen-plus"],
+    ]);
+    // The model is told there is no project here.
+    expect(seen[0]).toStartWith(`Project: (none)\nAgent: Claude Code\n\n${NO_PROJECT}\n\nWhat the memory already holds for here:`);
   });
 
   test("a wrong record number does not lose a memory whose words are in the session; who said them goes by where they are", async () => {

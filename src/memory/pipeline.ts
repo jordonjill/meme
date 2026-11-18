@@ -3,11 +3,11 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { profileOf } from "../adapters/profiles";
 import { estimateTokens } from "../handoff/budget";
-import { ANSWER_AGAIN, PROMPTS_VERSION, READ_SESSION } from "../prompts";
+import { ANSWER_AGAIN, NO_PROJECT, PROMPTS_VERSION, READ_SESSION } from "../prompts";
 import { allSessions, sessionRecords, type SessionRow } from "../store/queries";
 import { apply, type Change, type NewEvidence, type Op, type Origin } from "./apply";
 import { ModelError, parseAnswer, type Ask, type Proposed } from "./model";
-import { projectRef, type ProjectRef } from "./projects";
+import { memoryProject, type ProjectRef } from "./projects";
 import { memoryPaths, readText, shelvesIn, writeFileAtomic, type MemoryPaths } from "./store";
 import { pieces, shown, transcript, type Shown } from "./transcript";
 import { normalize, type Entry, type Shelf, type Tier } from "./types";
@@ -99,10 +99,10 @@ export interface Picked {
 
 export function pick(db: Database, p: MemoryPaths, opts: PickOptions): Picked {
   const marks = readMarks(p);
-  const refs = new Map<string, ProjectRef>();
+  const refs = new Map<string, ProjectRef | null>();
   const refOf = (project: string | null) => {
     if (!project) return null;
-    if (!refs.has(project)) refs.set(project, projectRef(project));
+    if (!refs.has(project)) refs.set(project, memoryProject(project));
     return refs.get(project)!;
   };
   const excluded = (s: SessionRow) => isExcluded(s.project, refOf(s.project), opts.exclude);
@@ -157,11 +157,14 @@ export interface RunOptions {
 
 const TIER: Record<Shown["speaker"], Tier> = { user: "stated", tool: "observed", agent: "inferred" };
 
-/** Where a proposed memory goes, by its "kind" and "about"; src/prompts/index.ts (KINDS) tells the model the same. */
-function shelfFor(item: Proposed, project: ProjectRef | null): Shelf | null {
-  if (item.about === "project") return project ? { level: "project", project: project.key, file: item.kind === "experience" ? "EXPERIENCE" : "MEMORY" } : null;
+/**
+ * Where a proposed memory goes, by its "kind" and "about"; src/prompts/index.ts (KINDS)
+ * tells the model the same. Said about a project in no project, it holds beyond one (plan-m2 F12).
+ */
+function shelfFor(item: Proposed, project: ProjectRef | null): Shelf {
+  if (item.about === "project" && project) return { level: "project", project: project.key, file: item.kind === "experience" ? "EXPERIENCE" : "MEMORY" };
   if (item.kind === "experience") return { level: "user", file: "EXPERIENCE" };
-  return { level: "user", file: item.about === "user" ? "USER" : "RULES" };
+  return { level: "user", file: item.about === "user" ? "USER" : item.about === "rule" ? "RULES" : "MEMORY" };
 }
 
 /** What memory holds for a project and for the user, in force or waiting: what the model is shown, so that it does not repeat it. */
@@ -222,6 +225,7 @@ export async function proposeAndKeep(piece: Shown[], ask: Ask, o: Proposing): Pr
   const text = transcript(piece);
   const question = [
     ...o.intro,
+    ...(o.project ? [] : [NO_PROJECT, ""]),
     "What the memory already holds for here:",
     holds.length ? holds.map((e) => `[${e.id}] ${e.text}`).join("\n") : "(nothing yet)",
     "",
@@ -244,10 +248,6 @@ export async function proposeAndKeep(piece: Shown[], ask: Ask, o: Proposing): Pr
       continue;
     }
     const shelf = shelfFor(item, o.project);
-    if (!shelf) {
-      dropped.push("it is about a project, and the session has none");
-      continue;
-    }
     evidence.push({
       kind: item.kind,
       tier: TIER[record.speaker],

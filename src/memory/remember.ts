@@ -68,9 +68,10 @@ export interface Remembered {
   modelError?: string;
 }
 
+/** Where words kept as they are go; said about a project in no project, they hold beyond one. */
 function shelfOf(about: About | undefined, project: ProjectRef | null): Shelf {
   if (about === "project" && project) return { level: "project", project: project.key, file: "MEMORY" };
-  return { level: "user", file: about === "user" ? "USER" : "RULES" };
+  return { level: "user", file: about === "user" ? "USER" : about === "general" || about === "project" ? "MEMORY" : "RULES" };
 }
 
 const textOf = (dataDir: string, id: string) => entriesIn(memoryPaths(dataDir).memory).find((e) => e.entry.id === id)?.entry.text ?? "";

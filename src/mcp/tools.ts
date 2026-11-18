@@ -7,7 +7,7 @@ import { recall, type Scope } from "../memory/context";
 import { parseShelf } from "../memory/entries";
 import { storeDir } from "../memory/place";
 import { entryText, resolveEntry } from "../memory/show";
-import { projectRef } from "../memory/projects";
+import { memoryProject } from "../memory/projects";
 import { entriesIn, memoryPaths, readText } from "../memory/store";
 import { processItem } from "../memory/inbox";
 import { ABOUT, TOOL_WORDS, type About } from "../prompts";
@@ -37,7 +37,7 @@ export function memoryTools(platform: Platform): Tool[] {
   };
   const scopeOf = (args: Record<string, unknown>, client: string): Scope & { root: string } => {
     const root = rootOf(args);
-    return { root, memoryDir: paths().memory, project: projectRef(root), agent: agentOfClient(client) ?? runningAgent(platform.vars)?.agent ?? null };
+    return { root, memoryDir: paths().memory, project: memoryProject(root), agent: agentOfClient(client) ?? runningAgent(platform.vars)?.agent ?? null };
   };
 
   const context: Tool = {
@@ -97,7 +97,7 @@ export function memoryTools(platform: Platform): Tool[] {
     async call(args, client) {
       const quote = text(args.quote);
       if (!quote) throw new ToolError("remember needs `quote`: the user's own words, copied exactly from their message");
-      if (args.about !== undefined && !ABOUT.includes(args.about as About)) throw new ToolError("`about` is one of rule, user, project");
+      if (args.about !== undefined && !ABOUT.includes(args.about as About)) throw new ToolError(`\`about\` is one of ${ABOUT.join(", ")}`);
       const done = await rememberFromAgent(platform, { quote, about: args.about as About | undefined, note: text(args.note) || undefined, label: `${client || "an agent"} over MCP`, root: rootOf(args), mayWait: false });
       switch (done.done) {
         case "noted": {

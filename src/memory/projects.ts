@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 /** A project as memory knows it: the same wherever its files are on this machine. */
@@ -26,6 +26,22 @@ export function projectRef(root: string): ProjectRef {
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 40);
   return { key: `${slug || "project"}-${createHash("sha256").update(identity).digest("hex").slice(0, 8)}`, identity };
+}
+
+/** A home folder, on this system or another: `/home/me`, `/Users/me`, `C:\\Users\\me`, `/mnt/c/Users/me`. */
+const HOME = /^(?:\/home\/[^/]+|\/root|\/Users\/[^/]+|\/mnt\/[a-z]\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)[\\/]?$/;
+
+/**
+ * The project memory keeps what a session says about its project with (plan-m2 F12):
+ * a git repository. A session started anywhere else, a home folder or an app's own
+ * working folder, is in no project, though session lists still group it by its folder
+ * (D12); what is said there is kept with the user's own files. A folder that cannot
+ * be looked into from here, a WSL path read on Windows, is taken to be a project.
+ */
+export function memoryProject(root: string | null | undefined): ProjectRef | null {
+  if (!root || HOME.test(root)) return null;
+  if (existsSync(root) && !existsSync(path.join(root, ".git"))) return null;
+  return projectRef(root);
 }
 
 /** The address of `origin`, else of the first remote, in the repository's own config. */

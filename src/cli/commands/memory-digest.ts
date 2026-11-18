@@ -11,7 +11,7 @@ function where(shelf: string | undefined): string {
   if (!shelf) return "";
   const m = /^projects\/(.+?)-[0-9a-f]{8}\/(MEMORY|EXPERIENCE)$/.exec(shelf);
   if (m) return `${m[1]}${m[2] === "EXPERIENCE" ? ", experience" : ""}`;
-  return { RULES: "rules", USER: "about you", EXPERIENCE: "experience" }[shelf] ?? shelf;
+  return { RULES: "rules", USER: "about you", MEMORY: "memory", EXPERIENCE: "experience" }[shelf] ?? shelf;
 }
 
 const row = (r: ChangeRecord) => `  ${r.id}  ${r.text}  (${[where(r.shelf), r.from].filter(Boolean).join(" · ")})`;

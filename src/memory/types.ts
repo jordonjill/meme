@@ -70,7 +70,7 @@ export interface Entry {
 
 /** The file an entry is in; it says whom the entry is about. */
 export type Shelf =
-  | { level: "user"; file: "USER" | "RULES" | "EXPERIENCE" }
+  | { level: "user"; file: "USER" | "RULES" | "MEMORY" | "EXPERIENCE" }
   | { level: "project"; project: string; file: "MEMORY" | "EXPERIENCE" };
 
 /** The longest an entry's text, its why and when, a piece of evidence or a quote may be. */

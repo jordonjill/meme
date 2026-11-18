@@ -12,7 +12,7 @@ import { normalize, type Entry } from "./types";
  */
 
 /** The most of each kind, and of everything together; first values, to be tuned (draft §7.3). */
-const MOST = { rules: 30, about: 10, project: 15, recalled: 5, tokens: 2000 };
+const MOST = { rules: 30, about: 10, project: 15, memory: 10, recalled: 5, tokens: 2000 };
 
 import { CONTEXT_NOTICE as NOTICE } from "../prompts";
 
@@ -67,6 +67,8 @@ export function buildContext(scope: Scope, opts: ContextOptions = {}): AgentCont
     ["Rules", of("user", "RULES"), MOST.rules],
     ["About you", of("user", "USER"), MOST.about],
     [scope.project ? `This project (${projectName(scope.project)})` : "This project", of("project", "MEMORY"), MOST.project],
+    // What holds beyond one project (plan-m2 F12): in every project, and in none.
+    ["Memory", of("user", "MEMORY"), MOST.memory],
   ];
   const sections: ContextSection[] = [];
   const shown = new Set<Entry>();

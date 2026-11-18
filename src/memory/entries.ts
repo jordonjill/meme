@@ -27,7 +27,7 @@ export function shelfKey(shelf: Shelf): string {
 /** The first lines of a new file. `project` is what the folder stands for: a remote address or a path. */
 export function preambleFor(shelf: Shelf, project?: string): string {
   // What each file is for, as its first lines say to whoever opens it.
-  const { title, forYou: about } = SHELF_WORDS[shelf.file];
+  const { title, forYou: about } = SHELF_WORDS[shelf.level === "project" && shelf.file === "MEMORY" ? "PROJECT" : shelf.file];
   const lines = [`# ${title}`, ""];
   if (shelf.level === "project" && project) lines.push(`Project: ${project}`, "");
   lines.push(`${about} Kept by meme: \`meme memory show <id>\` tells where an entry comes from.`);
