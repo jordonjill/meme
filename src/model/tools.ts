@@ -1,5 +1,5 @@
 /** Tool calls as shown to people: one short line per call. */
-import { EXIT_CODES, FAILED, firstMatch, RESULT_HEADERS, toolCommand, toolDescription, toolEdits } from "./formats";
+import { EXIT_CODES, FAILED, firstMatch, RESULT_HEADERS, toolBookkeeping, toolCommand, toolDescription, toolEdits } from "./formats";
 
 export interface ParsedCall {
   id: string;
@@ -24,6 +24,11 @@ export function commandOf(call: ParsedCall): string | null {
 /** Files changed through an editing tool or a patch (plan §4.5). */
 export function editedFiles(call: ParsedCall): string[] {
   return toolEdits(call.name, call.args);
+}
+
+/** A call that keeps the agent's own lists or screens (its task list, its app's recap), not the work. */
+export function isBookkeeping(call: ParsedCall): boolean {
+  return toolBookkeeping(call.name);
 }
 
 /** How a step reads in a list: a tool name and its one important argument. */

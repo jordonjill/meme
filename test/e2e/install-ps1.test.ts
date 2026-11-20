@@ -46,7 +46,9 @@ function runScript(tmp: string, from: string) {
     MEME_NO_WSL: "1",
     WSLENV: "MEME_FROM/p:MEME_INSTALL_DIR/p:MEME_HOME/p:USERPROFILE/p:MEME_NO_MODIFY_PATH:MEME_NO_WSL",
   };
-  const p = Bun.spawnSync([POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wslpath("-w", path.join(ROOT, "install.ps1"))], { env, stdout: "pipe", stderr: "pipe" });
+  // Started in the temporary folder: with USERPROFILE elsewhere, PowerShell finds no AppData and writes its
+  // module cache under the current folder, which would otherwise be this repository.
+  const p = Bun.spawnSync([POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wslpath("-w", path.join(ROOT, "install.ps1"))], { cwd: tmp, env, stdout: "pipe", stderr: "pipe" });
   return { code: p.exitCode, out: p.stdout.toString().replace(/\r\n/g, "\n"), err: p.stderr.toString().replace(/\r\n/g, "\n") };
 }
 

@@ -32,3 +32,9 @@ export function agentWords(sep?: string): string {
 export function runningAgent(vars: Record<string, string | undefined>): Profile | null {
   return [...PROFILES].filter((p) => p.inside(vars)).sort((a, b) => b.nesting - a.nesting)[0] ?? null;
 }
+
+/** The agent an MCP client is, from the name it gives itself (`claude-code`, `codex-mcp-client`); undefined when it is none meme knows. */
+export function agentOfClient(name: string): Agent | undefined {
+  const words = name.toLowerCase().split(/[^a-z0-9]+/);
+  return PROFILES.find((p) => words.some((w) => p.aliases.includes(w)))?.agent;
+}

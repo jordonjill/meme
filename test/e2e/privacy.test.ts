@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { ClaudeSession } from "../fixtures/gen-claude";
+import { layout } from "../../src/platform/layout";
 import { run, world, type World } from "./world";
 
 // Assembled at runtime so no secret-shaped literal sits in the repo.
@@ -45,7 +46,7 @@ describe("privacy (PRD §5.1)", () => {
     ];
     for (const out of outputs) expect(leaks(out)).toEqual([]);
     expect(outputs[1]).toContain("[REDACTED:");
-    const db = readFileSync(path.join(w.home, ".meme", "meme.sqlite")).toString("latin1");
+    const db = readFileSync(layout(path.join(w.home, ".meme")).mirror).toString("latin1");
     expect(leaks(db)).toEqual([]);
   });
 
@@ -62,7 +63,7 @@ describe("privacy (PRD §5.1)", () => {
     s.write(path.join(w.home, ".claude", "projects"));
     expect(run(w, ["ls", "-a", "--plain"]).out).toContain("7e7e7e7e");
     // Stored as JSON: each text, escaped the way JSON escapes it, is in the file as it was written.
-    const db = readFileSync(path.join(w.home, ".meme", "meme.sqlite"), "utf8");
+    const db = readFileSync(layout(path.join(w.home, ".meme")).mirror, "utf8");
     for (const t of texts) expect(db).toContain(JSON.stringify(t).slice(1, -1));
     expect(db).toContain(JSON.stringify(texts[1]! + "\n" + texts[0]!).slice(1, -1));
   });

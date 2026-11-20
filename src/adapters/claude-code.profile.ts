@@ -61,6 +61,32 @@ function expectedDrop(line: Record<string, unknown>): string | null {
   return null;
 }
 
+/**
+ * meme's plugin for Claude Code: a folder that is a marketplace with one plugin in
+ * it, which the user adds and installs with Claude Code's own commands. The plugin
+ * runs `meme context` when a session starts and connects `meme mcp`. Its files are
+ * wiring; what memory holds is read from meme each time.
+ */
+function claudeCodePlugin(meme: string, version: string): ReturnType<NonNullable<Profile["plugin"]>> {
+  const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
+  const description = "meme's memory: your rules, facts about you and your projects, and unfinished work, shared by all your coding agents";
+  // Quoted for the shell the hook runs in; a path with spaces stays one word.
+  const quoted = /^[\w./-]+$/.test(meme) ? meme : `"${meme.replace(/(["\\$`])/g, "\\$1")}"`;
+  return {
+    files: {
+      ".claude-plugin/marketplace.json": json({ name: "meme", description: "The plugin of meme on this machine, written by `meme plugin`", owner: { name: "meme" }, plugins: [{ name: "meme", description, source: "./meme" }] }),
+      "meme/.claude-plugin/plugin.json": json({ name: "meme", version, description, author: { name: "meme" } }),
+      "meme/hooks/hooks.json": json({
+        description: "At the start of a session, what meme remembers for the project",
+        hooks: { SessionStart: [{ hooks: [{ type: "command", command: `${quoted} context --hook` }] }] },
+      }),
+      "meme/.mcp.json": json({ meme: { command: meme, args: ["mcp"] } }),
+    },
+    install: (dir) => [`claude plugin marketplace add ${/^[\w./~-]+$/.test(dir) ? dir : `"${dir}"`}`, "claude plugin install meme@meme"],
+    remove: ["claude plugin uninstall meme@meme", "claude plugin marketplace remove meme"],
+  };
+}
+
 export const claudeCodeProfile: Profile = {
   agent: "claude-code",
   name: "Claude Code",
@@ -88,6 +114,10 @@ export const claudeCodeProfile: Profile = {
     "                       a word from the title); it sums up where things",
     "                       stand and waits for your go-ahead",
   ],
+  mcpConnect: "claude mcp add -s user meme -- meme mcp",
+  plugin: claudeCodePlugin,
+  // Cursor loads Claude Code's plugins and runs their hooks (native.md 3.1): there this is not the agent it was installed for.
+  foreignHook: (input, vars) => Boolean(vars.CURSOR_VERSION) || "cursor_version" in input,
   forgetHelp: "Claude Code: meme deletes the session file and its folders (subagents and large\ntool output, file-history backups, session-env).",
   keepsForkParents: false,
   compaction: {
@@ -103,6 +133,8 @@ export const claudeCodeProfile: Profile = {
       const p = a.file_path ?? a.notebook_path;
       return typeof p === "string" ? [p] : [];
     },
+    // Its task list, and the desktop app's own tools (the plan under a message, the recap box, chapters, panes).
+    bookkeeping: /^(TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet|mcp__ccd_\w+)$/,
   },
   recordTypes: {
     user: "read: the user's messages and tool results",

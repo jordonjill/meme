@@ -8,10 +8,13 @@ meme 读取 **Claude Code**、**Codex**、**OpenCode**（1.x）和 **Pi** 的会
 让你在一处列出、查看、搜索它们。想在另一个 Agent（或同一个 Agent 的新会话）里接着做时，
 meme 负责交接：新 Agent 运行 `meme continue <id>`，拿到一份逐字取自原会话的交接内容。
 
-它同时照顾 **WSL 和 Windows**：WSL 里的 meme 能看到 Windows 上的会话，
-Windows 上的 meme 也能看到正在运行的 WSL 发行版里的会话。
+它还有一份各家 Agent 共用的**记忆**：你告诉它的约定和事实，Agent 替你记下的内容，
+以及你选的模型从会话里读出来的东西。每一条都指向它依据的原话。
 
-> 现状：早期版本（0.1.0）。还没有现成的安装包和安装脚本，需要从源码打包（见下文）。
+它同时照顾 **WSL 和 Windows**：WSL 里的 meme 能看到 Windows 上的会话，
+Windows 上的 meme 也能看到正在运行的 WSL 发行版里的会话；记忆两边共用一份。
+
+> 现状：早期版本。记忆是新功能，还没怎么在真的 Agent 和模型上用过。
 
 ## 能做什么
 
@@ -25,6 +28,9 @@ Windows 上的 meme 也能看到正在运行的 WSL 发行版里的会话。
   会带上前面那些会话里你说过的话；Agent 压缩过上下文的，会带上它自己写的摘要。
   meme 不用大模型做摘要，也不往磁盘写任何文件。
 - **彻底删除。** `meme forget` 先列出要删的全部内容，确认后从 Agent 和 meme 里一起删掉。
+- **记住。** 一份各家 Agent 共用的记忆：`meme remember` 用你自己的话记下一条约定或事实，
+  Agent 也可以替你记；配了模型以后，meme 会从你的会话里读出值得留下的内容。
+  `meme context` 把对当前位置成立的内容和这里没做完的任务交给 Agent。见[记忆](#记忆)。
 
 ## 安装
 
@@ -44,7 +50,8 @@ irm https://github.com/jordonjill/meme/releases/latest/download/install.ps1 | ie
 `SHA256SUMS` 核对，放进 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`），
 这个目录不在 PATH 上就加进去，最后运行 `meme install`：找到 Agent，把全部会话镜像一遍。
 `MEME_VERSION=v0.1.0` 装指定的版本；`MEME_NO_MODIFY_PATH=1` 不改 PATH。WSL 和 Windows
-两边的 Agent 里都要用 `! meme continue` 时，两边都要装；`meme install` 发现另一边有 Agent 时会提醒。
+两边的 Agent 里都要用 `! meme continue` 时，两边都要有 meme：`meme install` 发现另一边有 Agent 而没有 meme，
+会问你要不要用那一边的安装脚本把同一个版本也装上。它只在终端里问，问了才装；别的情况下只显示在那边要运行的命令。
 
 `meme install` 不改 `~/.meme` 以外的任何东西：不装 skill，不改 `CLAUDE.md` 或
 `AGENTS.md`，不改设置，不加 hook。`meme install --dry-run` 只显示它会做什么。
@@ -136,6 +143,114 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 最后几轮里重复的用户原话（改成指向上面那一条）、最后几轮剩下的步骤，最后才省掉中间的消息。
 还超的话，在整行处截断并写明。交接内容会写明省掉了什么，用 `meme show` 或 `meme search --session` 能找回来。
 
+## 记忆
+
+meme 有一份各家 Agent 共用的记忆：你对其中一个说过的话，在别的 Agent 里同样算数。里面有三种东西：
+
+- **事实**：你对 Agent 的约定；关于你的事实（做什么、熟悉什么、用的电脑）；关于某个项目的事实；
+  跨项目的事实：几个项目共用的服务、团队的做法、跨很多会话在做的事。不在任何 git 仓库里的会话
+  （比如在家目录里开的）不属于哪个项目，里面说的事记成跨项目的事实。
+- **经验**：从事情的结果里学到的做法，以及它什么时候适用。
+- **没做完的任务**：一个项目里被你打断、或者停在一步中间的会话。这一种不存任何东西，每次从会话里现算。
+
+记忆是新功能，还没怎么在真的 Agent 和模型上用过。
+
+### 它自己形成
+
+配了模型（见下文）以后，你什么都不用做：每次有 Agent 启动时，meme 会在后台去读这段时间里已经静下来的会话，
+最多每 6 小时一次，把以后用得上的留下来。隔一段时间看一眼有什么变化：
+
+```sh
+meme memory digest      # 自上次看过以来的统计，以及 Agent 现在会读到的新变化
+```
+
+有新内容时 `meme status` 会提醒你。看到记错的，用 `meme memory forget <id>` 删掉。
+不想让它在后台跑，在 `~/.meme/config.json` 里写 `"auto": false`。
+
+### 告诉它
+
+```sh
+meme remember "回复用中文；仓库里的东西全部用英文"
+meme remember --project "跑测试前要先启动数据库"
+meme remember --about-me "我在 WSL 和 Windows 上开发"
+meme remember --general "团队的模型网关在 https://llm.example.com/v1"
+```
+
+不加选项，记成你对所有 Agent 的约定；`--project` 记成当前目录所在项目（一个 git 仓库）的事实；`--about-me` 记成关于你的事实；
+`--general` 记成跨项目的事实。
+同一句话再说一遍，不会多出一条。配了模型（见下文）时，由模型来措辞、决定放在哪里（选项只算提示）、
+判断是不是和已有的重复或取代了哪一条；你的原话留作证据。模型判断只针对这一次的话（比如"这次先别跑测试"）不记；
+想原样存下，加 `--as-is`。没配模型时，原话原样存下，什么都不发出去。
+
+- `meme memory` 按文件列出记住的内容。
+- `meme memory show <id>` 显示一条记忆依据的原话，以及是什么时候说的。
+- `meme memory forget <id>` 确认后彻底删除一条：这一条本身、只属于它的证据、meme 自己备份里的文字，都删掉。
+  留下的只有一个哈希值，这样同一句话不会从会话里被重新学回来；你自己再说一遍，它就回来了。
+
+记忆是你能直接读的 Markdown 文件：条目在 `~/.meme/memory`（`RULES.md`、`USER.md`、`MEMORY.md`、`EXPERIENCE.md`，
+每个项目各有一份 `MEMORY.md` 和 `EXPERIENCE.md`），证据在 `~/.meme/evidence`，每天一个文件。
+和镜像一样，密钥在写进去之前就被遮掉了。
+
+### 交给你的 Agent
+
+`meme context` 输出记忆里对当前目录成立的内容：你的约定、关于你的、这个项目的和跨项目的事实、这里没做完的任务；
+用几个词说出这次要做的事（`meme context "给登录接口加限流"`），还会带上相关的条目。
+输出的开头写明它是参考资料，不是指令。在 Agent 里输入 `! meme context`，就把它放进对话。
+想让 Agent 自己拿到它，有两种办法：
+
+- **MCP。** `meme mcp` 通过 Model Context Protocol 把记忆交给 Agent。
+  用那家 Agent 自己的命令接一次就行（`meme mcp --help` 列出了各家的命令）：
+
+  ```sh
+  claude mcp add -s user meme -- meme mcp
+  codex mcp add meme -- meme mcp
+  ```
+
+  接上以后，Agent 有四个工具：`context`、`recall`（查一件事）、`explain`（一条记忆是从哪来的）和 `remember`。
+- **Claude Code 的插件。** `meme plugin` 把插件写进 `~/.meme/plugins/claude-code`，并显示安装它的两条命令。
+  装上以后，Claude Code 每次开始会话都会拿到 `meme context` 的内容，同时有上面那四个工具。
+
+meme 自己不改任何 Agent 的文件，这些命令都由你来运行。
+
+Agent 用 `remember` 替你记东西时，只把你的原话交上来，记忆不由它来写。meme 到你的会话里找这句话，
+找不到就拒绝。找到了，当场回答 Agent，由 meme 在后台自己来写：配了模型，就把你那条消息和前后几条交给模型，
+按和下面同一套规则写出来；没配模型，就用你的原话。这一条指向你说这句话的那条消息。
+Agent 改不了你亲口说过的内容，也带不回你已经忘掉的内容。
+
+在 Agent 里运行 `meme remember` 也是一样：meme 分不出是 Agent 在运行，还是你自己输入了 `! meme remember`，
+所以只有在你说过的话里找到这句话，才记下来。你自己的 `!` 命令要等跑完才写进会话，所以会晚一点、在后台记下；
+两分钟内都没出现在会话里的话不会记，`meme memory digest --all` 里能看到。
+
+### 让模型读你的会话
+
+先配一次模型。任何支持 OpenAI 对话格式的服务都可以；模型在你自己的电脑上，内容就不出本机：
+
+```sh
+meme model set          # 一步步问地址、模型名和 key，先试一次，通了才保存
+meme model              # 现在用的是哪个模型（key 只显示后 4 位）
+meme memory exclude .   # 这个项目的会话永远不发出去
+```
+
+key 在提示时输入，屏幕上不显示，也从不写在命令行上；也可以用 `meme model set --key-env <变量名>`，
+让 meme 从环境变量里取。配好以后，meme 会自己去读已经静下来的会话（见上）。想看它会发出去什么，或者现在就跑一次：
+
+```sh
+meme memory update --dry-run    # 会读哪些、会发出去什么；什么都不发
+meme memory update
+```
+
+- **这会把那些会话的文本发给这个模型**，发之前遮掉了密钥，除此之外不发到任何地方。
+  发的是：你和 AI 说的话（太长的会缩短），AI 每用一次命令或工具记一短行，工具的输出只在失败时才发。
+  AI 的思考过程和它自己的任务清单不发。没配模型就什么都不发；模型在你自己的电脑上，内容就不出本机。
+  被排除的项目，会话从不发送，在那里让 meme 记住的东西也只存你的原话。
+- 记什么、怎么措辞，由模型判断。meme 只在一种情况下才留下一条：模型引的原话确实在这段会话里。
+  你说的话、失败的工具输出的内容，立即生效；只有 AI 自己说过的、或者从事情经过里推断出来的，要在第二个会话里再出现才生效。
+- 会话静下来 2 小时以后才读；后来又接着聊的，只读新的部分。
+  结束超过 14 天、又从没读过的会话不会去读，除非加 `--all`；`--session <id>` 只读指定的一个。
+  后台自己启动的那一次最多读 20 个会话，其余的留到下一次。
+- 模型和排除的项目都存在 `~/.meme/config.json` 里。meme 问模型的提示词都在 [`src/prompts`](src/prompts/README.md)。也可以用环境变量 `MEME_MODEL_URL`、
+  `MEME_MODEL_NAME`、`MEME_MODEL_KEY` 来设置模型，环境变量优先。
+
 ## 命令
 
 | 命令 | 作用 |
@@ -145,7 +260,14 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 | `meme search <模式>` | 像 `rg` 一样搜说过的话（`-F`、`-i`、`-C`；`-a` 搜全部项目）；`--tools` 连工具调用和输出里的匹配也列出。 |
 | `meme continue [<目标>]` | 把会话交接给一个新的 Agent 会话。 |
 | `meme forget [<id>...]` | 从 Agent 和 meme 里彻底删除会话（`-a`：从全部项目里选）。 |
-| `meme status` | 版本、数据位置、会话来源，以及 Agent 升级后 meme 读不了的东西（读不了的会话、不认识的记录类型和 Agent 的版本）。 |
+| `meme remember "<话>"` | 用你自己的话记下一条约定或事实（`--project`、`--about-me`、`--general`）。 |
+| `meme memory` | 列出记住的内容。`show <id>` 追到一条记忆依据的原话，`forget <id>` 彻底删除，`update` 用模型读静下来的会话（`--dry-run` 什么都不发），`exclude` 列出或修改永远不发给模型的项目，`digest` 看自上次以来的变化。 |
+| `meme context [<要做的事>]` | 记忆里对当前目录成立的内容，给 Agent 在开始之前读。 |
+| `meme recall <词>` | 在记忆里找一件事（`--all`：别的项目也找）。 |
+| `meme mcp` | 通过 MCP 把记忆交给 Agent；`--help` 列出各家 Agent 怎么接。 |
+| `meme plugin [<agent>]` | 生成 meme 给某家 Agent 的插件（现在有 Claude Code 的），并显示怎么安装。 |
+| `meme model` | meme 用的模型：查看，`set` 设置（输入 key 时不显示），`test` 试一次，`remove` 删掉。 |
+| `meme status` | 版本、数据位置、记忆在哪、会话来源，以及 Agent 升级后 meme 读不了的东西（读不了的会话、不认识的记录类型和 Agent 的版本）。 |
 | `meme install` / `uninstall` | 把会话全部镜像一遍 / 删除 meme 的数据。 |
 | `meme report` | 出了问题时贴进 issue 的报告：版本、`status`、最近的错误；不含对话内容，家目录、用户名、项目路径都遮掉了。`--session <id>` 再加上那个会话的结构。贴之前请看一遍。 |
 
@@ -196,15 +318,23 @@ Agent 读完交接内容，总结进度，然后等你确认再动手。
 - Claude 桌面版在 WSL 里运行 Claude Code，并在 Windows 的 `.claude\projects\ssh-<id>` 里给每个这样的会话留一份拷贝。
   meme 读 WSL 里的原件，跳过这些拷贝；`meme forget` 删会话时把这份拷贝一起删掉。其他在两处都有的会话（比如把家目录拷到了另一边）只列一次，
   用最后写过的那一份；`meme status` 会说有几个，`meme forget` 会把每一份都删掉。
+- **记忆只有一份，放在 Windows 这一侧。** WSL 里的 meme 把记忆放在 Windows 的用户目录里（`C:\Users\<你>\.meme`），
+  两边的 Agent 用的是同一份；WSL 的 `~/.meme/store` 是指向那个文件夹的链接，`meme status` 会显示记忆在哪。
+  会话镜像仍然各在各的一边。设了 `MEME_HOME` 的话，记忆就放在那个文件夹里。
 - 在 Windows PowerShell 5.1 里，把输出接到管道上（`meme ls | ...`）时，PowerShell
   按控制台代码页解码，中文会乱码。先运行 `[Console]::OutputEncoding = [Text.Encoding]::UTF8` 即可。
   直接显示在窗口里没有问题。
 
 ## 你的数据
 
-- 一切都留在你自己的电脑上，meme 不发任何网络请求。
-- 镜像是 `~/.meme/meme.sqlite`（Windows 上在 `%USERPROFILE%\.meme`），日志在它旁边；
-  设置 `MEME_HOME` 可以换位置。删除的记录会被覆盖（`secure_delete`）。
+- 一切都留在你自己的电脑上，meme 不发任何网络请求。只有两个例外，都是你自己发起的：
+  `meme memory update` 把它读的会话文本发给你配置的模型，而且只发到那里（见[记忆](#记忆)）；
+  `meme install` 问要不要在 WSL 和 Windows 的另一边也装上时，你回答了 y，它就运行那一边的安装脚本，脚本会下载 meme。
+- 镜像是 `~/.meme/raw/sessions.sqlite`（Windows 上在 `%USERPROFILE%\.meme` 里），日志在 `~/.meme/logs`；
+  设置 `MEME_HOME` 可以换这个文件夹的位置。删除的记录会被覆盖（`secure_delete`）。
+- 记忆在 `~/.meme/memory` 和 `~/.meme/evidence`，维护它要用的东西在 `~/.meme/state`；在 WSL 里，这些都在 Windows 用户目录的 `.meme` 里（见上）。
+  `~/.meme/config.json` 里模型的 key 是明文，只有你自己能读；用 `meme model set --key-env <变量名>` 设置的话，key 不写进文件。
+  `meme uninstall` 不删记忆；要删的话，自己删掉这几个文件夹。
 - meme 只读 Agent 的文件（`~/.claude` 或 `CLAUDE_CONFIG_DIR`；`~/.codex` 或 `CODEX_HOME`；
   `~/.local/share/opencode/opencode.db` 或 `OPENCODE_DB`；`~/.pi/agent/sessions` 或 `PI_CODING_AGENT_DIR`），
   唯一的例外是 `meme forget`。它从不写 Agent 的数据库（Codex 的、OpenCode 的）；OpenCode 的库以只读方式打开，跨 WSL 和 Windows 时读的是副本，放在 `~/.meme/cache` 里，`meme uninstall` 会删掉它，`meme forget` 删了会话也会一并删掉它。
@@ -231,7 +361,9 @@ MEME_BIN=dist/meme-linux-x64 bun test test/e2e   # 用打包好的单文件跑�
 `MEME_WSL_RUNNING` 和 `MEME_WSL_EXE`（从 Windows 看到的 WSL）、`MEME_TERMINAL`（当作在终端里）、
 `MEME_SLOW_MS`（慢于这个毫秒数的运行记进 log；0 就每次都记）、
 `MEME_DELETE_TIMEOUT_MS`（Agent 自己的删除命令最多等多久）、
-`MEME_WSL_TIMEOUT_MS`（Windows 上等 `wsl.exe` 最多等多久）。
+`MEME_WSL_TIMEOUT_MS`（Windows 上等 `wsl.exe` 最多等多久）、`MEME_STORE`（记忆放在哪）、
+`MEME_MODEL_URL`、`MEME_MODEL_NAME` 和 `MEME_MODEL_KEY`（模型，代替 `config.json`）、
+`MEME_NO_AUTO_UPDATE`（设为 1 时流水线不会自己启动）。
 
 ## 许可证
 

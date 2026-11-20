@@ -34,6 +34,10 @@ function worldEnv(w: World, extra?: Record<string, string>): Record<string, stri
     USERPROFILE: w.home,
     MEME_ENV: "wsl",
     MEME_WINDOWS_USERS_DIR: w.users,
+    // Memory beside the mirror, so that tests of memory need not know where it goes in WSL; the tests of that set it to "".
+    MEME_STORE: path.join(w.home, ".meme"),
+    // Nothing starts the pipeline by itself in a test, unless the test says so.
+    MEME_NO_AUTO_UPDATE: "1",
     TZ: "UTC",
     // Run from sources, Bun would cache its transpiled files in the fake HOME.
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
@@ -41,20 +45,42 @@ function worldEnv(w: World, extra?: Record<string, string>): Record<string, stri
   };
 }
 
-export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string> } = {}) {
-  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe" });
+/** `input` is what meme reads on standard input. */
+export function run(w: World, args: string[], o: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
+  const p = Bun.spawnSync([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe", ...(o.input === undefined ? {} : { stdin: Buffer.from(o.input) }) });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+}
+
+/** Like `run`, without stopping this process meanwhile: for when meme talks to a server the test itself runs. */
+export async function runAsync(w: World, args: string[], o: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
+  const p = Bun.spawn([...BIN, ...args], { cwd: o.cwd ?? w.home, env: worldEnv(w, o.env), stdout: "pipe", stderr: "pipe", stdin: o.input === undefined ? "ignore" : new Blob([o.input]) });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  return { code, out, err };
+}
+
+/**
+ * meme in a pseudo-terminal with `lines` typed one after another, `pause` ms apart,
+ * the way a person types them: for input read line by line and then key by key. Needs SCRIPT.
+ */
+export async function runTyped(w: World, args: string[], lines: string[], o: { env?: Record<string, string>; pause?: number } = {}) {
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const pause = (o.pause ?? 800) / 1000;
+  const feed = lines.map((l) => `sleep ${pause}; printf '%s\\r' ${quote(l)}`).join("; ");
+  const command = [...BIN, ...args].map(quote).join(" ");
+  const p = Bun.spawn(["sh", "-c", `(${feed}; sleep 2) | ${SCRIPT!} -qec ${quote(command)} /dev/null`], { cwd: w.home, env: worldEnv(w, { TERM: "dumb", ...o.env }), stdout: "pipe", stderr: "pipe" });
+  const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+  return { code, out: out.replace(/\r\n/g, "\n") };
 }
 
 /** util-linux `script`, to run meme in a pseudo-terminal; null where there is none (macOS's takes other options). */
 export const SCRIPT = process.platform === "linux" ? Bun.which("script") : null;
 
 /** meme in a pseudo-terminal, as if typed in one, with `input` typed into it. Needs SCRIPT. Output and input echo mixed. */
-export function runInTerminal(w: World, args: string[], input: string) {
+export function runInTerminal(w: World, args: string[], input: string, o: { env?: Record<string, string> } = {}) {
   const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
   const p = Bun.spawnSync([SCRIPT!, "-qec", [...BIN, ...args].map(quote).join(" "), "/dev/null"], {
     cwd: w.home,
-    env: worldEnv(w, { TERM: "dumb" }),
+    env: worldEnv(w, { TERM: "dumb", ...o.env }),
     stdin: Buffer.from(input),
     stdout: "pipe",
     stderr: "pipe",

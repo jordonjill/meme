@@ -2,6 +2,9 @@ import { statSync } from "node:fs";
 import pkg from "../../../package.json";
 import { sourceTrouble } from "../../adapters";
 import { NOT_JSON } from "../../adapters/read";
+import { newSince } from "../../memory/digest";
+import { storeDir } from "../../memory/place";
+import { entriesIn, memoryPaths } from "../../memory/store";
 import { displayPath } from "../../platform/paths";
 import { wslPlace } from "../../platform/wsl";
 import { agentName, label } from "../../render/labels";
@@ -30,6 +33,18 @@ export async function status(argv: string[]): Promise<number> {
 }
 
 /** What `status` says, also the middle of `meme report`. */
+/** Where memory is kept and how much is in it; on a machine with Windows that is the Windows user's folder, also seen from WSL. */
+function memoryLine(ctx: Context): string {
+  try {
+    const store = storeDir(ctx.platform);
+    const entries = entriesIn(memoryPaths(store).memory);
+    const fresh = newSince(memoryPaths(store));
+    return `${displayPath(store, ctx.platform.home)}, ${entries.length ? plural(entries.length, "entry", "entries") : "nothing remembered yet"}${fresh ? `; ${fresh} new since you last looked: meme memory digest` : ""}`;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 export function statusLines(ctx: Context): string[] {
   const { db, file, readonly, memory } = ctx.store;
   const home = ctx.platform.home;
@@ -45,6 +60,7 @@ export function statusLines(ctx: Context): string[] {
     `Data:         ${displayPath(file, home)}${dbSize}${memory ? (dbSize ? ", read into memory" : " cannot be written; working in memory") : ""}`,
     `Mode:         ${readonly ? "read-only mode: nothing is written; sessions are imported into memory for this run" : "read-write"}`,
     `Mirror:       ${plural(c.sessions, "session")}, ${plural(c.records, "record")}`,
+    `Memory:       ${memoryLine(ctx)}`,
     `Last import:  ${last ? `${when(last, new Date(ctx.now))} (${ago(last, ctx.now)})` : "never"}` +
       (ctx.imported ? `; this run checked ${plural(ctx.imported.scanned, "file")} in ${Math.round(ctx.imported.ms)} ms` : ""),
     "Sources:",

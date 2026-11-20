@@ -4,13 +4,21 @@ import path from "node:path";
 import pkg from "../../package.json";
 import { fileLogger } from "../platform/log";
 import { currentPlatform } from "../platform/paths";
+import { StoreUnreachable } from "../memory/place";
 import { LookupError } from "../store/queries";
 import { CommandError, UsageError } from "./args";
 import { timings } from "./context";
+import { context, contextHelp } from "./commands/context";
 import { continueHelp, continueSession } from "./commands/continue";
 import { forget, forgetHelp } from "./commands/forget";
 import { install, installHelp } from "./commands/install";
 import { ls, lsHelp } from "./commands/ls";
+import { mcp, mcpHelp } from "./commands/mcp";
+import { memory, memoryHelp } from "./commands/memory";
+import { model, modelHelp } from "./commands/model";
+import { plugin, pluginHelp } from "./commands/plugin";
+import { recall, recallHelp } from "./commands/recall";
+import { remember, rememberHelp } from "./commands/remember";
 import { report, reportHelp } from "./commands/report";
 import { search, searchHelp } from "./commands/search";
 import { show, showHelp } from "./commands/show";
@@ -23,6 +31,13 @@ const COMMANDS: Record<string, { run: (argv: string[]) => Promise<number>; help:
   search: { run: search, help: searchHelp },
   continue: { run: continueSession, help: continueHelp },
   forget: { run: forget, help: forgetHelp },
+  remember: { run: remember, help: rememberHelp },
+  memory: { run: memory, help: memoryHelp },
+  context: { run: context, help: contextHelp },
+  recall: { run: recall, help: recallHelp },
+  mcp: { run: mcp, help: mcpHelp },
+  plugin: { run: plugin, help: pluginHelp },
+  model: { run: model, help: modelHelp },
   status: { run: status, help: statusHelp },
   install: { run: install, help: installHelp },
   uninstall: { run: uninstall, help: uninstallHelp },
@@ -39,6 +54,13 @@ Commands:
   search      search past sessions, like rg
   continue    hand a session over to a new agent session
   forget      permanently delete sessions, from the agent and from meme
+  remember    keep a rule or a fact in memory, in your own words
+  memory      what meme remembers: list it, trace an entry, forget one
+  context     what memory holds for here, for an agent to read before it starts
+  recall      find what meme remembers about something
+  mcp         serve memory to an agent (MCP); --help shows how to connect one
+  plugin      write meme's plugin for an agent and show how to install it
+  model       the model meme asks: show it, set it up, try it, remove it
   status      version, data location, session sources
   install     mirror all sessions once and show how to use meme
   uninstall   remove meme's data
@@ -112,7 +134,7 @@ async function run(argv: string[]): Promise<number> {
       process.stderr.write(`meme ${command}: ${err.message}\nRun \`meme ${command} --help\` for usage.\n`);
       return 2;
     }
-    if (err instanceof LookupError || err instanceof CommandError) {
+    if (err instanceof LookupError || err instanceof CommandError || err instanceof StoreUnreachable) {
       process.stderr.write(`meme: ${err.message}\n`);
       return 1;
     }

@@ -237,6 +237,8 @@ export interface ToolKnowledge {
   edited(name: string, args: Record<string, unknown>): string[];
   /** How a call reads in a list when its name says little (a script that runs commands); null for the usual way. */
   describe?(name: string, args: Record<string, unknown>, command: string | null): { name: string; summary: string } | null;
+  /** Its tools that keep its own lists and screens (a task list, a recap in its app): not the work, so memory does not read them. */
+  bookkeeping?: RegExp;
 }
 
 /** How the agent compacts its context (handoff.md §7.8, point 3). */
@@ -300,6 +302,15 @@ export interface Profile {
   firstMessage(command: string): string;
   /** Lines under "In <name>:" in the usage of `meme continue` and `meme install`. */
   howToContinue: string[];
+  /** How the user connects `meme mcp` to it, once: its own command, which meme never runs. */
+  mcpConnect?: string;
+  /**
+   * Its plugin for meme, when it takes one: the files of a folder the user installs with the agent's own
+   * commands. `meme` is the command that runs meme. The files hold wiring only, never memory.
+   */
+  plugin?(meme: string, version: string): { files: Record<string, string>; install(dir: string): string[]; remove: string[] };
+  /** Is this hook call from another agent that loads this one's hooks? Then meme stays silent. */
+  foreignHook?(input: Record<string, unknown>, vars: Record<string, string | undefined>): boolean;
   /** For `meme forget --help`: what deleting one of its sessions removes. */
   forgetHelp: string;
   /** It refuses to delete a session while forks still read their history from it. */
